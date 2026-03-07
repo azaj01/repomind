@@ -14,8 +14,18 @@ export function WhatsNewModal({ isOpen, onClose }: WhatsNewModalProps) {
 
     const versions = [
         {
-            version: "v1.3.4",
+            version: "v2.0",
             isNew: true,
+            features: [
+                "Authentication: Secure sign-in with GitHub to persist your data.",
+                "Personal Dashboard: Track your recent repositories, searches, and analysis in one place.",
+                "Cloud Sync: Access your chat history and saved projects from any device.",
+                "Performance Boost: Significant improvements to repository indexing and chat response times."
+            ]
+        },
+        {
+            version: "v1.3.4",
+            isNew: false,
             features: [
                 "Chat Export: Export chats to Markdown with Mermaid rendering.",
                 "Copy Response: One-click copy for AI responses with enhanced clipboard support and icon updates.",

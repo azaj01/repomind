@@ -14,11 +14,12 @@ import WallOfLove from "@/components/WallOfLove";
 import { GitHubBadge } from "@/components/GitHubBadge";
 import { CAGBadge } from "@/components/CAGBadge";
 import CAGComparison from "@/components/CAGComparison";
-import Footer from "@/components/Footer";
+import { WhatsNewBadge } from "@/components/WhatsNewBadge";
 import Image from "next/image";
 import { InstallPWA } from "@/components/InstallPWA";
 import PublicStats from "@/components/PublicStats";
 import AuthButton from "@/components/AuthButton";
+import Footer from "@/components/Footer";
 import type { SearchHistoryItem } from "@/lib/services/history-service";
 
 export default function HomeClient() {
@@ -90,8 +91,11 @@ export default function HomeClient() {
                         />
                     </div>
 
-                    <h1 className="text-4xl sm:text-5xl md:text-7xl font-bold tracking-tight mb-6 bg-clip-text text-transparent bg-gradient-to-b from-white to-white/60">
+                    <h1 className="text-4xl sm:text-5xl md:text-7xl font-bold tracking-tight mb-6 bg-clip-text text-transparent bg-gradient-to-b from-white to-white/60 relative w-fit mx-auto">
                         RepoMind
+                        <div className="absolute -right-10 -top-2 md:-right-20 md:-top-4 scale-75 md:scale-100">
+                            <WhatsNewBadge />
+                        </div>
                     </h1>
 
                     <CAGBadge />

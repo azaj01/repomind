@@ -12,15 +12,14 @@ export function WhatsNewBadge() {
         <>
             <button
                 onClick={() => setIsModalOpen(true)}
-                className="hover:scale-105 transition-transform group"
+                className="hover:scale-105 transition-transform group relative"
             >
-                <div className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-2 bg-gradient-to-r from-blue-600/20 to-cyan-600/20 border border-blue-600/30 rounded-full backdrop-blur-md hover:border-blue-600/50 transition-colors">
-                    <span className="relative flex h-2 w-2">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full backdrop-blur-sm group-hover:border-blue-500/40 transition-colors">
+                    <span className="relative flex h-1.5 w-1.5">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-500"></span>
                     </span>
-                    <span className="hidden md:inline text-sm font-medium text-blue-200">What's New</span>
-                    <Sparkles className="w-4 h-4 md:hidden text-blue-400" />
+                    <span className="text-[10px] md:text-xs font-bold text-blue-400 tracking-wider">v2.0</span>
                 </div>
             </button>
 
