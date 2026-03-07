@@ -15,7 +15,6 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@ast-grep/cli": "^0.34.3",
     "@babel/parser": "^7.28.5",
     "@babel/traverse": "^7.28.5",
     "@google/generative-ai": "^0.24.1",
