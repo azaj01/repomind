@@ -97,8 +97,8 @@ export default function HomeClient() {
                     <CAGBadge />
 
                     <p className="text-base sm:text-lg md:text-xl text-zinc-400 mb-8 max-w-lg mx-auto">
-                        Deep dive into any repository or profile.
-                        Analyze code, ask questions, and understand projects in seconds.
+                        Understand any codebase in seconds. Deep dive into repositories,
+                        explore profiles, and get instant clarity on complex projects.
                     </p>
 
                     <form onSubmit={handleSubmit} className="w-full max-w-md relative group">
@@ -194,7 +194,7 @@ export default function HomeClient() {
                             "price": "0",
                             "priceCurrency": "USD",
                         },
-                        "description": "RepoMind is an AI-powered tool that allows developers to visualize and chat with GitHub repositories to understand logic and squash bugs.",
+                        "description": "RepoMind is a premium AI-powered platform for codebase mastery, enabling developers to analyze, visualize, and chat with any GitHub repository or profile instantly.",
                         "aggregateRating": {
                             "@type": "AggregateRating",
                             "ratingValue": "4.8",
