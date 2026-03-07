@@ -39,7 +39,6 @@ import { SecurityScanModal } from "./chat/SecurityScanModal";
 
 const REPO_SUGGESTIONS = [
     "Show me the user flow chart",
-    QUICK_SCAN_PROMPT,
     "Evaluate code quality",
     "What's the tech stack?",
     ARCHITECTURE_PROMPT,
@@ -583,6 +582,12 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
                                 <span className="text-zinc-700">/</span>
                                 <span className="text-white font-bold">{repoContext.repo}</span>
                             </h1>
+                            <Link
+                                href={`/repo/${repoContext.owner}/${repoContext.repo}`}
+                                className="hidden lg:flex items-center text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-md bg-white/5 text-zinc-500 hover:bg-white/10 hover:text-white transition-all border border-white/5"
+                            >
+                                Profile
+                            </Link>
                         </div>
                     </div>
 
@@ -604,13 +609,6 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
                             >
                                 <Shield className="w-3.5 h-3.5" />
                                 <span className="hidden lg:inline">Security</span>
-                            </button>
-                            <button
-                                onClick={() => setShowBadgeModal(true)}
-                                className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-all"
-                            >
-                                <CopySquaresIcon className="w-3.5 h-3.5" />
-                                <span className="hidden lg:inline">Badge</span>
                             </button>
                         </div>
 
