@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef } from "react";
-import { signIn, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import type { SecurityFinding } from "@/lib/security-scanner";
 import type { StoredScan } from "@/lib/services/scan-storage";
@@ -16,14 +16,10 @@ import {
     AlertCircle,
     AlertTriangle,
     CheckCircle,
-    Copy,
-    ExternalLink,
     Flame,
-    GitPullRequest,
     Info,
     MessageCircle,
     Shield,
-    Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import ShareButton from "./ShareButton";
@@ -72,56 +68,6 @@ function ConfidenceBadge({ confidence }: { confidence?: SecurityFinding["confide
     );
 }
 
-function BadgeSection({ owner, repo, scanId }: { owner: string; repo: string; scanId: string }) {
-    const badgeUrl = typeof window !== "undefined" ? `${window.location.origin}/api/badge/${owner}/${repo}` : "";
-    const reportUrl = typeof window !== "undefined" ? `${window.location.origin}/report/${scanId}` : "";
-    const markdownSnippet = `[![RepoMind Security](${badgeUrl})](${reportUrl})`;
-
-    const copyToClipboard = () => {
-        navigator.clipboard.writeText(markdownSnippet);
-        toast.success("Badge Markdown copied to clipboard!");
-    };
-
-    if (!badgeUrl) return null;
-
-    return (
-        <div className="p-6 bg-zinc-900 border border-white/10 rounded-2xl shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-            <div className="space-y-4 w-full text-left">
-                <div className="flex items-center gap-2 text-indigo-400">
-                    <Sparkles className="w-5 h-5" />
-                    <h3 className="font-medium">GitHub Status Badge</h3>
-                </div>
-                <p className="text-sm text-zinc-400 max-w-xl">
-                    Add a dynamic security status badge to your GitHub README. It stays updated with your latest security scan results.
-                </p>
-                <div className="flex flex-wrap items-center gap-4">
-                    <div className="bg-black/40 p-3 rounded-lg border border-white/5 flex items-center justify-center min-h-[44px]">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={badgeUrl} alt="RepoMind Security Badge" className="h-[20px]" />
-                    </div>
-                </div>
-            </div>
-            <div className="flex flex-col gap-2 w-full md:w-auto">
-                <button
-                    onClick={copyToClipboard}
-                    className="flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-indigo-500/20 active:scale-95 whitespace-nowrap"
-                >
-                    <Copy className="w-4 h-4" />
-                    Copy Markdown
-                </button>
-                <a
-                    href={badgeUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-sm font-medium transition-all border border-white/5 whitespace-nowrap"
-                >
-                    <ExternalLink className="w-4 h-4" />
-                    View SVG
-                </a>
-            </div>
-        </div>
-    );
-}
 
 interface ReportContentProps {
     scan: StoredScan;
@@ -184,6 +130,13 @@ Can you help me understand how to fix this?`;
                             <h1 className="text-xl font-medium tracking-tight">RepoMind Security Report</h1>
                         </div>
                         <div className="flex flex-wrap items-center gap-2 print:hidden">
+                            <button
+                                onClick={() => router.push(`/chat?q=${encodeURIComponent(`${scan.owner}/${scan.repo}`)}`)}
+                                className="flex items-center justify-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-sm font-medium transition-all border border-white/5 whitespace-nowrap"
+                            >
+                                <MessageCircle className="w-4 h-4" />
+                                Go back to repo chat
+                            </button>
                             <ExportButtons scan={scan} reportRef={reportRef} />
                             <ShareButton scanId={scan.id} />
                         </div>
@@ -207,31 +160,6 @@ Can you help me understand how to fix this?`;
                         </div>
                     </div>
 
-                    <div className="p-5 bg-indigo-500/5 border border-indigo-500/20 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div className="space-y-1">
-                            <h3 className="text-sm font-semibold text-indigo-200">Developer Workflow Boost</h3>
-                            <p className="text-sm text-zinc-300">
-                                Log in to send findings into main chat with full context now. Phase 2 unlocks PR-ready fixes for private repos directly from this report.
-                            </p>
-                        </div>
-                        {!session?.user ? (
-                            <button
-                                onClick={() => signIn("github", { callbackUrl: window.location.href })}
-                                className="px-4 py-2.5 bg-white text-black rounded-xl text-sm font-semibold hover:bg-zinc-100 transition-all whitespace-nowrap"
-                            >
-                                Log in with GitHub
-                            </button>
-                        ) : (
-                            <button
-                                onClick={() => router.push(`/chat?q=${encodeURIComponent(`${scan.owner}/${scan.repo}`)}&prompt=${encodeURIComponent("Prioritize and fix the most critical findings from this security report.")}`)}
-                                className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all whitespace-nowrap"
-                            >
-                                Open Main Chat
-                            </button>
-                        )}
-                    </div>
-
-                    <BadgeSection owner={scan.owner} repo={scan.repo} scanId={scan.id} />
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">

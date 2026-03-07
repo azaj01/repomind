@@ -12,6 +12,7 @@ interface SecurityScanModalProps {
     isOpen: boolean;
     isAuthenticated: boolean;
     deepScansData: DeepScansData | null;
+    latestScanId?: string | null;
     onClose: () => void;
     onRunQuickScan: () => void;
     onRunDeepScan: () => void;
@@ -21,6 +22,7 @@ export function SecurityScanModal({
     isOpen,
     isAuthenticated,
     deepScansData,
+    latestScanId,
     onClose,
     onRunQuickScan,
     onRunDeepScan,
@@ -52,7 +54,7 @@ export function SecurityScanModal({
                         >
                             <div className="flex items-center justify-between mb-1">
                                 <h3 className="text-white font-medium group-hover:text-red-300 transition-colors">Quick Scan</h3>
-                                <span className="text-xs font-mono bg-zinc-950 px-2 py-0.5 rounded text-zinc-400">~ 5 sec</span>
+                                <span className="text-xs font-mono bg-zinc-950 px-2 py-0.5 rounded text-zinc-400">~ 30 sec</span>
                             </div>
                             <p className="text-xs text-zinc-400 leading-relaxed">
                                 Analyzes up to {QUICK_SCAN_FILE_LIMIT} files. Automatically flags potential secrets and common injection points. Fast and low-latency.
@@ -69,7 +71,7 @@ export function SecurityScanModal({
                                     <Sparkles className="w-3.5 h-3.5 text-purple-400" />
                                 </h3>
                                 <div className="flex flex-col items-end">
-                                    <span className="text-xs font-mono bg-zinc-950 px-2 py-0.5 rounded text-zinc-400">~ 20 sec</span>
+                                    <span className="text-xs font-mono bg-zinc-950 px-2 py-0.5 rounded text-zinc-400">~ 2 min</span>
                                     {isAuthenticated && deepScansData && (
                                         <span className="text-[10px] text-zinc-500 mt-1">
                                             {deepScansData.total - deepScansData.used} / {deepScansData.total} remaining
@@ -81,6 +83,20 @@ export function SecurityScanModal({
                                 Analyzes up to {DEEP_SCAN_FILE_LIMIT} files. Utilizes advanced AI pipeline to follow code paths and find complex vulnerabilities.
                             </p>
                         </button>
+
+                        {latestScanId && (
+                            <div className="pt-2 border-t border-white/5">
+                                <a
+                                    href={`/report/${latestScanId}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="w-full flex items-center justify-center gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 py-3 rounded-xl text-sm font-semibold transition-all border border-red-500/20"
+                                >
+                                    <Shield className="w-4 h-4" />
+                                    View Latest Security Report
+                                </a>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

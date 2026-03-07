@@ -41,7 +41,7 @@ export function add(a: number, b: number): number {
     });
 
     it("detects a Stripe secret key", () => {
-        const content = `const stripeKey = "sk_test_STUB_KEY_FOR_TESTING_PURPOSES_ONLY_NOT_REAL";`;
+        const content = `const stripeKey = "sk_test_51Mz7xSA4Y3V5R7z9X1y2z3a4b5c6d7e8f9";`;
         const findings = detectSecrets("payment.ts", content);
         expect(findings.length).toBeGreaterThan(0);
     });

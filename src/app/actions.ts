@@ -50,7 +50,8 @@ import {
     type SecurityScanDeps,
 } from "@/lib/services/security-service";
 import {
-    saveScanResult
+    saveScanResult,
+    getLatestScanId,
 } from "@/lib/services/scan-storage";
 import { recordSearch, getRecentSearches as _getRecentSearches } from "@/lib/services/history-service";
 import {
@@ -486,13 +487,21 @@ export async function scanRepositoryVulnerabilities(
     let scanId: string | undefined;
     try {
         const session = await auth();
+        const userId = session?.user?.id;
+
+        if (userId) {
+            console.log(`📡 Saving scan ${result.meta.depth} for user ${userId}: ${owner}/${repo}`);
+        } else {
+            console.warn(`Anonymous scan performed for ${owner}/${repo} - will not be listed in user dashboard.`);
+        }
+
         scanId = await saveScanResult(owner, repo, {
             depth: result.meta.depth,
             summary: result.summary,
             findings: result.findings,
-        }, session?.user?.id);
+        }, userId);
     } catch (e) {
-        console.warn("Failed to save scan to KV:", e);
+        console.error("Failed to save scan to KV:", e);
     }
 
     return {
@@ -519,6 +528,10 @@ export async function getRemainingDeepScans(): Promise<{ used: number; total: nu
     const currentScans = await kv.get<number>(limitKey) || 0;
 
     return { used: currentScans, total, resetsAt };
+}
+
+export async function getLatestRepoScanId(owner: string, repo: string): Promise<string | null> {
+    return getLatestScanId(owner, repo);
 }
 
 

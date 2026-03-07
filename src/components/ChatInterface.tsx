@@ -8,7 +8,7 @@ import { CopySquaresIcon } from "@/components/icons/CopySquaresIcon";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 
-import { scanRepositoryVulnerabilities, fetchProfile, getRemainingDeepScans } from "@/app/actions";
+import { scanRepositoryVulnerabilities, fetchProfile, getRemainingDeepScans, getLatestRepoScanId } from "@/app/actions";
 import { cn } from "@/lib/utils";
 import { countMessageTokens, formatTokenCount, getTokenWarningLevel, isRateLimitError, getRateLimitErrorMessage, MAX_TOKENS } from "@/lib/tokens";
 import { saveConversation, loadConversation, clearConversation } from "@/lib/storage";
@@ -92,6 +92,7 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
     const [showSecurityModal, setShowSecurityModal] = useState(false);
     const [showLoginModal, setShowLoginModal] = useState(false);
     const [deepScansData, setDeepScansData] = useState<{ used: number; total: number; resetsAt: string } | null>(null);
+    const [latestScanId, setLatestScanId] = useState<string | null>(null);
 
     const handleSubmitRef = useRef<((e?: React.FormEvent, overrideText?: string, submitMode?: SubmitMode) => Promise<void>) | null>(null);
     const isSubmittingRef = useRef(false);
@@ -101,7 +102,12 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
         if (session?.user) {
             getRemainingDeepScans().then(setDeepScansData).catch(console.error);
         }
-    }, [session?.user, showSecurityModal]);
+        if (showSecurityModal) {
+            getLatestRepoScanId(repoContext.owner, repoContext.repo)
+                .then(setLatestScanId)
+                .catch(console.error);
+        }
+    }, [session?.user, showSecurityModal, repoContext.owner, repoContext.repo]);
 
     // Fetch owner profile on mount
     useEffect(() => {
@@ -265,6 +271,10 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
             setMessages((prev) => prev.map((message) =>
                 message.id === placeholderMessageId ? modelMsg : message
             ));
+            // Update latest scan ID after successful scan
+            if (scanId) {
+                setLatestScanId(scanId);
+            }
         } catch (error) {
             console.error("Scan failed:", error);
             toast.error("Security scan failed", {
@@ -928,6 +938,7 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
                 isOpen={showSecurityModal}
                 isAuthenticated={Boolean(session)}
                 deepScansData={deepScansData}
+                latestScanId={latestScanId}
                 onClose={() => setShowSecurityModal(false)}
                 onRunQuickScan={handleRunQuickScanFromModal}
                 onRunDeepScan={handleRunDeepScanFromModal}

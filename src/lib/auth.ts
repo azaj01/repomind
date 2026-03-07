@@ -37,7 +37,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             }
             return true
         },
-        async jwt({ token, profile, account }) {
+        async jwt({ token, profile, account, user }) {
+            if (user?.id) {
+                token.id = user.id;
+            }
             if (profile?.login) {
                 token.username = profile.login;
             }
@@ -50,17 +53,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             return token;
         },
         async session({ session, token }) {
-            if (token.sub && session.user) {
-                session.user.id = token.sub;
+            if (token.id && session.user) {
+                session.user.id = token.id as string;
             }
             if (typeof token.username === "string" && session.user) {
-                (session.user as (typeof session.user) & { username?: string }).username = token.username;
+                (session.user as any).username = token.username;
             }
             if (typeof token.accessToken === "string") {
-                (session as typeof session & { accessToken?: string }).accessToken = token.accessToken;
+                (session as any).accessToken = token.accessToken;
             }
             if (typeof token.oauthScope === "string") {
-                (session as typeof session & { oauthScope?: string }).oauthScope = token.oauthScope;
+                (session as any).oauthScope = token.oauthScope;
             }
             return session;
         },
