@@ -26,6 +26,7 @@ import {
 } from "@/lib/github";
 import {
     trackEvent,
+    trackAuthenticatedQueryEvent,
     getPublicStats,
     trackReportConversionEvent,
     type ReportConversionEvent,
@@ -79,6 +80,11 @@ function getErrorMessage(error: unknown): string {
  * Reads headers at this function's top level (required by Next.js 15).
  */
 async function trackQueryEvent(visitorId: string | undefined): Promise<void> {
+    const session = await auth();
+    if (session?.user?.id) {
+        await trackAuthenticatedQueryEvent(session.user.id);
+    }
+
     if (process.env.NODE_ENV === "development" && process.env.TRACK_ANALYTICS_IN_DEV !== "true") {
         console.log("[Analytics] Skipped (dev). Set TRACK_ANALYTICS_IN_DEV=true to enable.");
         return;

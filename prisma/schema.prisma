@@ -15,6 +15,8 @@ model User {
   emailVerified  DateTime?
   image          String?
   githubLogin    String?        @unique
+  queryCount     Int            @default(0)
+  lastQueryAt    DateTime?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   accounts       Account[]

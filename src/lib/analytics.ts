@@ -1,4 +1,5 @@
 import { kv } from "@vercel/kv";
+import { prisma } from "@/lib/db";
 
 export interface KVUsagePoint {
     timestamp: number;
@@ -9,9 +10,11 @@ export interface AnalyticsData {
     totalVisitors: number;
     totalQueries: number;
     activeUsers24h: number;
+    totalLoggedInUsers: number;
     deviceStats: Record<string, number>;
     countryStats: Record<string, number>;
     recentVisitors: VisitorData[];
+    loggedInUsers: LoggedInUserData[];
     kvStats?: {
         currentSize: number;
         maxSize: number;
@@ -26,6 +29,18 @@ export interface VisitorData {
     lastSeen: number;
     queryCount: number;
     firstSeen: number;
+}
+
+export interface LoggedInUserData {
+    id: string;
+    email: string | null;
+    githubLogin: string | null;
+    queryCount: number;
+    scanCount: number;
+    searchCount: number;
+    chatCount: number;
+    createdAt: number;
+    lastActivityAt: number | null;
 }
 
 export type ReportConversionEvent =
@@ -155,6 +170,134 @@ export async function trackEvent(
     }
 }
 
+export async function trackAuthenticatedQueryEvent(userId: string): Promise<void> {
+    try {
+        await prisma.user.upsert({
+            where: { id: userId },
+            update: {
+                queryCount: { increment: 1 },
+                lastQueryAt: new Date(),
+            },
+            create: {
+                id: userId,
+                queryCount: 1,
+                lastQueryAt: new Date(),
+            },
+        });
+    } catch (error) {
+        console.error("Failed to track authenticated query event:", error);
+    }
+}
+
+function bigIntToNumber(value: bigint | null | undefined): number | null {
+    if (typeof value !== "bigint") return null;
+    const asNumber = Number(value);
+    return Number.isFinite(asNumber) ? asNumber : null;
+}
+
+async function getLoggedInUserStats(): Promise<LoggedInUserData[]> {
+    try {
+        const [users, scanAgg, searchAgg, chatAgg] = await Promise.all([
+            prisma.user.findMany({
+                select: {
+                    id: true,
+                    email: true,
+                    githubLogin: true,
+                    queryCount: true,
+                    createdAt: true,
+                    lastQueryAt: true,
+                },
+                orderBy: [{ lastQueryAt: "desc" }, { createdAt: "desc" }],
+                take: 200,
+            }),
+            prisma.repoScan.groupBy({
+                by: ["userId"],
+                where: { userId: { not: null } },
+                _count: { _all: true },
+                _max: { timestamp: true },
+            }),
+            prisma.recentSearch.groupBy({
+                by: ["userId"],
+                _count: { _all: true },
+                _max: { timestamp: true },
+            }),
+            prisma.chatConversation.groupBy({
+                by: ["userId"],
+                _count: { _all: true },
+                _max: { updatedAt: true },
+            }),
+        ]);
+
+        const scanMap = new Map<string, { count: number; maxTimestamp: number | null }>();
+        for (const row of scanAgg) {
+            if (!row.userId) continue;
+            scanMap.set(row.userId, {
+                count: row._count._all,
+                maxTimestamp: bigIntToNumber(row._max.timestamp),
+            });
+        }
+
+        const searchMap = new Map<string, { count: number; maxTimestamp: number | null }>();
+        for (const row of searchAgg) {
+            searchMap.set(row.userId, {
+                count: row._count._all,
+                maxTimestamp: bigIntToNumber(row._max.timestamp),
+            });
+        }
+
+        const chatMap = new Map<string, { count: number; maxTimestamp: number | null }>();
+        for (const row of chatAgg) {
+            chatMap.set(row.userId, {
+                count: row._count._all,
+                maxTimestamp: row._max.updatedAt ? row._max.updatedAt.getTime() : null,
+            });
+        }
+
+        const rows = users
+            .map<LoggedInUserData>((user) => {
+                const scans = scanMap.get(user.id);
+                const searches = searchMap.get(user.id);
+                const chats = chatMap.get(user.id);
+                const lastActivityAt = Math.max(
+                    user.lastQueryAt?.getTime() ?? 0,
+                    scans?.maxTimestamp ?? 0,
+                    searches?.maxTimestamp ?? 0,
+                    chats?.maxTimestamp ?? 0,
+                );
+
+                return {
+                    id: user.id,
+                    email: user.email,
+                    githubLogin: user.githubLogin,
+                    queryCount: user.queryCount,
+                    scanCount: scans?.count ?? 0,
+                    searchCount: searches?.count ?? 0,
+                    chatCount: chats?.count ?? 0,
+                    createdAt: user.createdAt.getTime(),
+                    lastActivityAt: lastActivityAt > 0 ? lastActivityAt : null,
+                };
+            })
+            .filter((user) => (
+                Boolean(user.email || user.githubLogin) ||
+                user.queryCount > 0 ||
+                user.scanCount > 0 ||
+                user.searchCount > 0 ||
+                user.chatCount > 0
+            ))
+            .sort((a, b) => {
+                const aLast = a.lastActivityAt ?? 0;
+                const bLast = b.lastActivityAt ?? 0;
+                if (aLast !== bLast) return bLast - aLast;
+                return b.queryCount - a.queryCount;
+            });
+
+        return rows;
+    } catch (error) {
+        console.error("Failed to query logged-in user stats:", error);
+        return [];
+    }
+}
+
 export async function trackReportConversionEvent(
     event: ReportConversionEvent,
     scanId?: string
@@ -185,12 +328,17 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
             totalVisitors,
             totalQueries,
             visitorIds,
-            kvInfo
+            kvInfo,
+            loggedInUsers,
         ] = await Promise.all([
             kv.scard("visitors"),
             kv.get<number>("queries:total"),
             kv.smembers("visitors"),
-            getKVStats()
+            getKVStats(),
+            getLoggedInUserStats().catch((error) => {
+                console.error("Failed to fetch logged-in user analytics:", error);
+                return [];
+            }),
         ]);
 
         // Record usage and get history
@@ -261,9 +409,11 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
             totalVisitors: totalVisitors || 0,
             totalQueries: totalQueries || 0,
             activeUsers24h,
+            totalLoggedInUsers: loggedInUsers.length,
             deviceStats,
             countryStats,
             recentVisitors,
+            loggedInUsers,
             kvStats: {
                 currentSize: kvInfo.currentSize,
                 maxSize: kvInfo.maxSize,
@@ -277,47 +427,39 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
             totalVisitors: 0,
             totalQueries: 0,
             activeUsers24h: 0,
+            totalLoggedInUsers: 0,
             deviceStats: {},
             countryStats: {},
-            recentVisitors: []
+            recentVisitors: [],
+            loggedInUsers: [],
         };
     }
 }
 
 /**
- * Fetch lightweight, aggregated stats for public viewing (e.g. landing page)
- * Uses Next.js unstable_cache to cache the results globally
+ * Fetch lightweight, aggregated stats for public viewing (e.g. landing page).
+ * Keep this uncached so landing reflects current KV counters immediately.
  */
-import { unstable_cache } from 'next/cache';
+export async function getPublicStats() {
+    try {
+        const [totalVisitors, totalQueries] = await Promise.all([
+            kv.scard("visitors"),
+            kv.get<number>("queries:total"),
+        ]);
 
-export const getPublicStats = unstable_cache(
-    async () => {
-        try {
-            const [totalVisitors, totalQueries] = await Promise.all([
-                kv.scard("visitors"),
-                kv.get<number>("queries:total")
-            ]);
-
-            return {
-                totalVisitors: totalVisitors || 0,
-                totalQueries: totalQueries || 0
-            };
-        } catch (error: unknown) {
-            console.error("Failed to fetch public stats from KV:", error);
-            // If it's a connection error, it might be worth logging more details
-            const errorMessage = error instanceof Error ? error.message : "";
-            if (errorMessage.includes("ECONNREFUSED") || errorMessage.includes("invalid_token")) {
-                console.error("KV authentication or connection failure. Check environment variables.");
-            }
-            return {
-                totalVisitors: 0,
-                totalQueries: 0
-            };
+        return {
+            totalVisitors: totalVisitors || 0,
+            totalQueries: totalQueries || 0,
+        };
+    } catch (error: unknown) {
+        console.error("Failed to fetch public stats from KV:", error);
+        const errorMessage = error instanceof Error ? error.message : "";
+        if (errorMessage.includes("ECONNREFUSED") || errorMessage.includes("invalid_token")) {
+            console.error("KV authentication or connection failure. Check environment variables.");
         }
-    },
-    ['public-stats'],
-    {
-        revalidate: 600, // Revalidate every 10 minutes
-        tags: ['stats']
+        return {
+            totalVisitors: 0,
+            totalQueries: 0,
+        };
     }
-);
+}

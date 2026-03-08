@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import {
     Users, Activity, Smartphone, Monitor, Globe,
     RefreshCw, ArrowUpDown, ChevronUp, ChevronDown,
-    UserCheck, TrendingUp, Database, Zap
+    UserCheck, TrendingUp, Database, Zap, Mail, Search, MessageSquare
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -26,6 +26,7 @@ type SortConfig = {
 
 export default function StatsDashboardClient({ data, userAgent, country, isMobile }: StatsDashboardClientProps) {
     const router = useRouter();
+    const loggedInUsers = data.loggedInUsers ?? [];
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [selectedRange, setSelectedRange] = useState<HistoryRange>("24h");
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'lastSeen', direction: 'desc' });
@@ -104,6 +105,9 @@ export default function StatsDashboardClient({ data, userAgent, country, isMobil
     const displayedVisitors = useMemo(() => {
         return sortedVisitors.slice(0, visibleCount);
     }, [sortedVisitors, visibleCount]);
+    const displayedLoggedInUsers = useMemo(() => {
+        return loggedInUsers.slice(0, 100);
+    }, [loggedInUsers]);
 
     const requestSort = (key: keyof VisitorData | 'id') => {
         let direction: 'asc' | 'desc' = 'asc';
@@ -187,7 +191,7 @@ export default function StatsDashboardClient({ data, userAgent, country, isMobil
                 </motion.div>
 
                 {/* Main KPIs */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                     <StatsCard
                         title="Total Visitors"
                         value={data.totalVisitors}
@@ -213,6 +217,12 @@ export default function StatsDashboardClient({ data, userAgent, country, isMobil
                         value={activeNow}
                         subValue="Last 5 minutes"
                         icon={<div className="relative"><Globe className="w-5 h-5 text-green-400" />{activeNow > 0 && <div className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full animate-ping" />}</div>}
+                    />
+                    <StatsCard
+                        title="Logged Accounts"
+                        value={data.totalLoggedInUsers ?? loggedInUsers.length}
+                        subValue={`${loggedInUsers.length} shown`}
+                        icon={<UserCheck className="w-5 h-5 text-cyan-400" />}
                     />
                     <StatsCard
                         title="KV Storage"
@@ -510,6 +520,87 @@ export default function StatsDashboardClient({ data, userAgent, country, isMobil
                                 </div>
                             );
                         })()}
+                    </div>
+                </div>
+
+                {/* Logged-In Accounts Table */}
+                <div className="bg-zinc-900/50 border border-white/10 rounded-2xl overflow-hidden">
+                    <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between">
+                        <h2 className="text-xl font-semibold">Logged-In Accounts (Postgres)</h2>
+                        <span className="text-xs text-zinc-500 font-mono">
+                            Showing {displayedLoggedInUsers.length} of {loggedInUsers.length}
+                        </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm whitespace-nowrap">
+                            <thead className="bg-zinc-900/80 text-zinc-400 font-medium">
+                                <tr>
+                                    <th className="px-6 py-4">Account</th>
+                                    <th className="px-6 py-4">Email</th>
+                                    <th className="px-6 py-4 text-right">Queries</th>
+                                    <th className="px-6 py-4 text-right">Scans</th>
+                                    <th className="px-6 py-4 text-right">Searches</th>
+                                    <th className="px-6 py-4 text-right">Chats</th>
+                                    <th className="px-6 py-4">Last Activity (IST)</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {displayedLoggedInUsers.map((user) => (
+                                    <tr key={user.id} className="hover:bg-white/[0.02] transition-colors">
+                                        <td className="px-6 py-4">
+                                            <div className="flex flex-col">
+                                                <span className="text-zinc-200 font-medium">
+                                                    {user.githubLogin ? `@${user.githubLogin}` : user.id.slice(0, 10)}
+                                                </span>
+                                                <span className="text-[10px] text-zinc-500 font-mono uppercase">
+                                                    Joined {formatIST(user.createdAt)}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 text-zinc-300">
+                                            <span className="inline-flex items-center gap-2">
+                                                <Mail className="w-3 h-3 text-zinc-500" />
+                                                {user.email || "N/A"}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 text-right font-mono text-zinc-200">{user.queryCount}</td>
+                                        <td className="px-6 py-4 text-right font-mono text-zinc-200">{user.scanCount}</td>
+                                        <td className="px-6 py-4 text-right font-mono text-zinc-200">
+                                            <span className="inline-flex items-center gap-1">
+                                                <Search className="w-3 h-3 text-zinc-500" />
+                                                {user.searchCount}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 text-right font-mono text-zinc-200">
+                                            <span className="inline-flex items-center gap-1">
+                                                <MessageSquare className="w-3 h-3 text-zinc-500" />
+                                                {user.chatCount}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            {user.lastActivityAt ? (
+                                                <div className="flex flex-col">
+                                                    <span className="text-zinc-300">{formatIST(user.lastActivityAt)}</span>
+                                                    <span className="text-[10px] text-zinc-500 font-mono uppercase">{getRelativeTime(user.lastActivityAt)}</span>
+                                                </div>
+                                            ) : (
+                                                <span className="text-zinc-500">No activity</span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                                {loggedInUsers.length === 0 && (
+                                    <tr>
+                                        <td colSpan={7} className="px-6 py-12 text-center text-zinc-500">
+                                            <div className="flex flex-col items-center gap-2">
+                                                <UserCheck className="w-8 h-8 opacity-20" />
+                                                <p>No logged-in account activity yet.</p>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
 
