@@ -1,10 +1,21 @@
 import { auth } from "@/lib/auth";
 import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { getCanonicalSiteUrl } from "@/lib/site-url";
 
 export const proxy = auth((req) => {
     const { nextUrl } = req;
     const isApiRoute = nextUrl.pathname.startsWith('/api');
+    const canonicalSiteUrl = getCanonicalSiteUrl();
+    const requestHost = (req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? '')
+        .split(':')[0]
+        .toLowerCase();
+    const shouldRedirectToCanonical =
+        !isApiRoute && (requestHost === 'repomind-ai.vercel.app' || requestHost === 'www.repomind.in');
+
+    if (shouldRedirectToCanonical) {
+        const redirectUrl = new URL(`${nextUrl.pathname}${nextUrl.search}`, canonicalSiteUrl);
+        return NextResponse.redirect(redirectUrl, 308);
+    }
 
     if (isApiRoute) {
         // Get the origin of the request
@@ -62,4 +73,3 @@ export const config = {
         "/((?!_next/static|_next/image|favicon.ico).*)",
     ],
 };
-

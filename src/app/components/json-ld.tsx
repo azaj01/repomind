@@ -1,4 +1,8 @@
+import { getCanonicalSiteUrl } from "@/lib/site-url";
+
 export default function JsonLd() {
+    const baseUrl = getCanonicalSiteUrl();
+
     return (
         <script
             type="application/ld+json"
@@ -7,7 +11,7 @@ export default function JsonLd() {
                     "@context": "https://schema.org",
                     "@type": "WebSite",
                     name: "RepoMind",
-                    url: process.env.NEXT_PUBLIC_APP_URL || "https://repomind.in",
+                    url: baseUrl,
                 }),
             }}
         />

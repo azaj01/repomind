@@ -1,11 +1,15 @@
 import { MetadataRoute } from "next";
+import { getCanonicalSiteUrl } from "@/lib/site-url";
 
 export default function robots(): MetadataRoute.Robots {
+    const baseUrl = getCanonicalSiteUrl();
+
     return {
         rules: {
             userAgent: "*",
             allow: "/",
         },
-        sitemap: `${process.env.NEXT_PUBLIC_APP_URL || 'https://repomind.in'}/sitemap.xml`,
+        sitemap: `${baseUrl}/sitemap.xml`,
+        host: baseUrl,
     };
 }

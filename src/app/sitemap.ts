@@ -1,12 +1,14 @@
 import { MetadataRoute } from "next";
 import fs from "fs";
 import path from "path";
+import { getCanonicalSiteUrl } from "@/lib/site-url";
 
 export const dynamic = 'force-static';
 
 interface TopRepoEntry {
     owner: string;
     repo: string;
+    topics?: string[];
 }
 
 function isTopRepoEntry(value: unknown): value is TopRepoEntry {
@@ -21,7 +23,7 @@ function isTopRepoEntry(value: unknown): value is TopRepoEntry {
 }
 
 export default function sitemap(): MetadataRoute.Sitemap {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://repomind.in";
+    const baseUrl = getCanonicalSiteUrl();
 
     const defaultRoutes: MetadataRoute.Sitemap = [
         {
@@ -39,6 +41,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     ];
 
     let repoRoutes: MetadataRoute.Sitemap = [];
+    let topicRoutes: MetadataRoute.Sitemap = [];
 
     try {
             const dataPath = path.join(process.cwd(), 'public', 'data', 'top-repos.json');
@@ -53,10 +56,27 @@ export default function sitemap(): MetadataRoute.Sitemap {
                     changeFrequency: "weekly",
                     priority: 0.8,
                 }));
+
+                const uniqueTopics = new Set<string>();
+                for (const repo of repos) {
+                    if (!Array.isArray(repo.topics)) continue;
+                    for (const topic of repo.topics) {
+                        if (typeof topic === "string" && topic.trim()) {
+                            uniqueTopics.add(topic.toLowerCase());
+                        }
+                    }
+                }
+
+                topicRoutes = Array.from(uniqueTopics).map((topic) => ({
+                    url: `${baseUrl}/topics/${encodeURIComponent(topic)}`,
+                    lastModified: new Date(),
+                    changeFrequency: "weekly",
+                    priority: 0.7,
+                }));
             }
     } catch (e) {
         console.error("Failed to generate sitemap routes from top-repos.json", e);
     }
 
-    return [...defaultRoutes, ...repoRoutes];
+    return [...defaultRoutes, ...repoRoutes, ...topicRoutes];
 }

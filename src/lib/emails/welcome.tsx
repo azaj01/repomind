@@ -12,6 +12,7 @@ import {
     Tailwind,
 } from '@react-email/components';
 import React from 'react';
+import { getCanonicalSiteUrl } from '@/lib/site-url';
 
 interface WelcomeEmailProps {
     username: string;
@@ -20,7 +21,7 @@ interface WelcomeEmailProps {
 
 export const WelcomeEmail = ({
     username,
-    baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://repomind.in',
+    baseUrl = getCanonicalSiteUrl(),
 }: WelcomeEmailProps) => {
     const previewText = `Welcome to RepoMind, ${username}!`;
 

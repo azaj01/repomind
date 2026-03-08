@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Copy, Check, Code2 } from 'lucide-react';
+import { getCanonicalSiteUrl } from '@/lib/site-url';
 
 interface CopyBadgeProps {
     owner: string;
@@ -11,7 +12,7 @@ interface CopyBadgeProps {
 export function CopyBadge({ owner, repo }: CopyBadgeProps) {
     const [copied, setCopied] = useState(false);
 
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://repomind.in";
+    const baseUrl = getCanonicalSiteUrl();
     const markdownSnippet = `[![Analyzed by RepoMind](https://img.shields.io/badge/Analyzed%20by-RepoMind-4F46E5?style=for-the-badge)](${baseUrl}/repo/${owner}/${repo})`;
 
     const handleCopy = async () => {

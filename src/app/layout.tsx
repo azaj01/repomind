@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 import "./globals.css";
 import JsonLd from "./components/json-ld";
 import { Providers } from "@/components/Providers";
+import { getCanonicalSiteUrl } from "@/lib/site-url";
 
 const montserrat = Montserrat({
   variable: "--font-montserrat",
@@ -19,8 +20,10 @@ export const viewport: Viewport = {
   userScalable: false,
 };
 
+const canonicalSiteUrl = getCanonicalSiteUrl();
+
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "https://repomind.in"),
+  metadataBase: new URL(canonicalSiteUrl),
   applicationName: "RepoMind",
   title: {
     default: "RepoMind - Stop reading it! Start talking to it!",
@@ -59,7 +62,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "RepoMind - Stop reading it! Start talking to it!",
     description: "Agentic CAG-powered analysis for GitHub repositories. Chat with your codebase, generate visual flowcharts, uncover deep insights, and accelerate development with AI-driven repository intelligence.",
-    url: process.env.NEXT_PUBLIC_APP_URL || "https://repomind.in",
+    url: canonicalSiteUrl,
     siteName: "RepoMind",
     images: [
       {
