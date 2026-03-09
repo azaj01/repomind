@@ -1,6 +1,8 @@
 import { kv } from "@vercel/kv";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import type { FalsePositiveReviewSummary } from "@/lib/services/report-false-positives";
+import { getFalsePositiveReviewSummary } from "@/lib/services/report-false-positives";
 
 export interface KVUsagePoint {
     timestamp: number;
@@ -22,6 +24,7 @@ export interface AnalyticsData {
         history: KVUsagePoint[];
     };
     reportFunnel?: ReportFunnelMetrics;
+    falsePositiveReview?: FalsePositiveReviewSummary;
 }
 
 export interface VisitorData {
@@ -444,6 +447,7 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
             kvInfo,
             loggedInUsers,
             reportFunnel,
+            falsePositiveReview,
         ] = await Promise.all([
             kv.scard("visitors"),
             kv.get<number>("queries:total"),
@@ -456,6 +460,16 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
             getReportFunnelMetrics().catch((error) => {
                 console.error("Failed to fetch report funnel analytics:", error);
                 return emptyReportFunnelMetrics();
+            }),
+            getFalsePositiveReviewSummary().catch((error) => {
+                console.error("Failed to fetch false positive review data:", error);
+                return {
+                    total: 0,
+                    pending: 0,
+                    confirmedFalsePositive: 0,
+                    rejected: 0,
+                    recentSubmissions: [],
+                };
             }),
         ]);
 
@@ -539,6 +553,7 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
                 history: kvHistory
             },
             reportFunnel,
+            falsePositiveReview,
         };
 
     } catch (error) {
@@ -553,6 +568,13 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
             recentVisitors: [],
             loggedInUsers: [],
             reportFunnel: emptyReportFunnelMetrics(),
+            falsePositiveReview: {
+                total: 0,
+                pending: 0,
+                confirmedFalsePositive: 0,
+                rejected: 0,
+                recentSubmissions: [],
+            },
         };
     }
 }

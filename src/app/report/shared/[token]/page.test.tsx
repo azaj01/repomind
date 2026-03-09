@@ -84,6 +84,8 @@ describe("shared report page token resolution", () => {
             priorScanDiff: { new: 1, resolved: 0, unchanged: 0 },
             topFixes: [],
             findingViews: [],
+            globalFixPrompt: "Fix everything",
+            globalChatHref: "/chat?q=acme%2Fwidget&prompt=Fix%20everything",
         });
 
         const view = await SharedReportByTokenPage({
@@ -93,6 +95,8 @@ describe("shared report page token resolution", () => {
             canShareReport: boolean;
             canGenerateOutreach: boolean;
             shareMode: string;
+            globalFixPrompt: string;
+            globalChatHref: string;
         }>;
 
         expect(trackReportConversionEventMock).toHaveBeenCalledWith("report_viewed_shared", "scan_1");
@@ -101,6 +105,8 @@ describe("shared report page token resolution", () => {
         expect(view.props.canShareReport).toBe(true);
         expect(view.props.canGenerateOutreach).toBe(false);
         expect(view.props.shareMode).toBe("copy-current-url");
+        expect(view.props.globalFixPrompt).toBe("Fix everything");
+        expect(view.props.globalChatHref).toContain("/chat?q=acme%2Fwidget");
     });
 
     it("renders expired report state when scan has expired", async () => {

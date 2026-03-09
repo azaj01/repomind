@@ -23,6 +23,8 @@ export interface ReportViewData {
     priorScanDiff: PriorScanDiff;
     topFixes: ReportFindingView[];
     findingViews: ReportFindingView[];
+    globalFixPrompt: string;
+    globalChatHref: string;
 }
 
 export interface OutreachPackData {
@@ -272,6 +274,96 @@ export function buildFindingChatHref(owner: string, repo: string, finding: Secur
     return `/chat?q=${encodeURIComponent(query)}&prompt=${encodeURIComponent(prompt)}`;
 }
 
+function summarizeSeverityTotals(scan: StoredScan): string {
+    return [
+        `${scan.summary.critical} critical`,
+        `${scan.summary.high} high`,
+        `${scan.summary.medium} medium`,
+        `${scan.summary.low} low`,
+        `${scan.summary.info} info`,
+    ].join(", ");
+}
+
+function buildGlobalFindingSection(view: ReportFindingView): string {
+    return [
+        `### ${view.finding.title}`,
+        `- Severity: ${view.finding.severity.toUpperCase()}`,
+        `- Type: ${view.finding.type}`,
+        `- Location: ${view.finding.file}${view.finding.line ? `:${view.finding.line}` : ""}`,
+        `- Confidence: ${view.finding.confidence ?? "unscored"}`,
+        `- Proof:\n${view.proof}`,
+        `- Impact: ${view.impact}`,
+        `- Recommendation: ${view.finding.recommendation}`,
+        view.finding.snippet
+            ? [
+                "- Code Context:",
+                "```",
+                truncateSnippet(view.finding.snippet, 900),
+                "```",
+            ].join("\n")
+            : "",
+    ]
+        .filter(Boolean)
+        .join("\n");
+}
+
+export function buildGlobalFixPrompt(scan: StoredScan, findingViews: ReportFindingView[]): string {
+    const scanDate = new Date(scan.timestamp).toLocaleString();
+
+    if (findingViews.length === 0) {
+        return [
+            `You are reviewing the security scan for ${scan.owner}/${scan.repo}.`,
+            "",
+            "The latest scan reported no findings that require remediation.",
+            "",
+            "## Scan Context",
+            `- Depth: ${scan.depth === "deep" ? "Deep Analysis" : "Quick Scan"}`,
+            `- Generated: ${scanDate}`,
+            `- Summary: ${summarizeSeverityTotals(scan)}`,
+            "",
+            "## What to produce",
+            "1. Confirm that no code changes are required.",
+            "2. Suggest any follow-up verification checks that would improve confidence.",
+        ].join("\n");
+    }
+
+    const findingsBlock = findingViews
+        .map((view, index) => [
+            `## Finding ${index + 1}`,
+            buildGlobalFindingSection(view),
+        ].join("\n"))
+        .join("\n\n");
+
+    return [
+        `You are helping remediate the full security report for ${scan.owner}/${scan.repo}.`,
+        "",
+        "Address all findings in one coordinated pass.",
+        "",
+        "## Scan Context",
+        `- Depth: ${scan.depth === "deep" ? "Deep Analysis" : "Quick Scan"}`,
+        `- Generated: ${scanDate}`,
+        `- Severity Summary: ${summarizeSeverityTotals(scan)}`,
+        `- Total Findings: ${findingViews.length}`,
+        "",
+        "## Remediation Goal",
+        "- Fix every confirmed issue in this report.",
+        "- Preserve existing product behavior while removing exploit paths.",
+        "- Group related fixes when they share the same root cause.",
+        "- Add regression coverage for each issue cluster and the most important edge cases.",
+        "",
+        findingsBlock,
+        "",
+        "## What to produce",
+        "1. A minimal patch that resolves all findings.",
+        "2. Regression tests covering exploit attempts, valid behavior, and edge cases for each issue cluster.",
+        "3. A short verification checklist for confirming the repo is fixed end-to-end.",
+    ].join("\n");
+}
+
+export function buildGlobalChatHref(owner: string, repo: string, prompt: string): string {
+    return `/chat?q=${encodeURIComponent(`${owner}/${repo}`)}&prompt=${encodeURIComponent(prompt)}`;
+}
+
 export function buildReportViewData(scan: StoredScan, previousScan?: StoredScan | null): ReportViewData {
     const rankedWithIndexes = scan.findings
         .map((finding, index) => ({ finding, index, triageScore: scoreFindingForTriage(finding) }))
@@ -296,11 +388,14 @@ export function buildReportViewData(scan: StoredScan, previousScan?: StoredScan 
     }));
 
     const priorScanDiff = computePriorScanDiff(scan.findings, previousScan?.findings ?? null);
+    const globalFixPrompt = buildGlobalFixPrompt(scan, findingViews);
 
     return {
         priorScanDiff,
         topFixes: findingViews.slice(0, 3),
         findingViews,
+        globalFixPrompt,
+        globalChatHref: buildGlobalChatHref(scan.owner, scan.repo, globalFixPrompt),
     };
 }
 

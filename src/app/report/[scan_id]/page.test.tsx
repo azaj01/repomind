@@ -108,6 +108,8 @@ describe("private report page access", () => {
             priorScanDiff: { new: 1, resolved: 0, unchanged: 0 },
             topFixes: [],
             findingViews: [],
+            globalFixPrompt: "Fix everything",
+            globalChatHref: "/chat?q=acme%2Fwidget&prompt=Fix%20everything",
         });
 
         const view = await ReportPage({ params: Promise.resolve({ scan_id: "scan_1" }) }) as ReactElement<{
@@ -115,12 +117,16 @@ describe("private report page access", () => {
             canShareReport: boolean;
             canGenerateOutreach: boolean;
             shareMode: string;
+            globalFixPrompt: string;
+            globalChatHref: string;
         }>;
         expect(view.type).toBe(ReportContent);
         expect(view.props.isSharedView).toBe(false);
         expect(view.props.canShareReport).toBe(true);
         expect(view.props.canGenerateOutreach).toBe(true);
         expect(view.props.shareMode).toBe("canonical");
+        expect(view.props.globalFixPrompt).toBe("Fix everything");
+        expect(view.props.globalChatHref).toContain("/chat?q=acme%2Fwidget");
     });
 
     it("renders expired report state and tracks event", async () => {

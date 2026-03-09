@@ -50,7 +50,7 @@ function SharedLinkFailureState({ reason }: { reason: SharedLinkFailureReason })
 
 export async function generateMetadata(): Promise<Metadata> {
     return {
-        title: "Shared Security Report - RepoMind",
+        title: "REPOMIND SECURITY REPORT",
         description: "Private security report shared through an expiring signed URL.",
         robots: {
             index: false,
@@ -105,6 +105,8 @@ export default async function SharedReportByTokenPage({
             priorScanDiff={reportView.priorScanDiff}
             topFixes={reportView.topFixes}
             findingViews={reportView.findingViews}
+            globalFixPrompt={reportView.globalFixPrompt}
+            globalChatHref={reportView.globalChatHref}
             hasPreviousScan={Boolean(previousScan)}
             isSharedView={true}
             canShareReport={true}

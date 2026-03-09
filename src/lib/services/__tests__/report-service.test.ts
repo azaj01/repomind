@@ -116,6 +116,10 @@ describe("buildReportViewData", () => {
         expect(view.topFixes.length).toBe(2);
         expect(view.priorScanDiff).toEqual({ new: 1, resolved: 0, unchanged: 1 });
         expect(view.findingViews.length).toBe(2);
+        expect(view.globalChatHref).toContain("/chat?q=acme%2Fwidget");
+        expect(view.globalFixPrompt).toContain("Address all findings in one coordinated pass.");
+        expect(view.globalFixPrompt).toContain("Hardcoded Secret");
+        expect(view.globalFixPrompt).toContain("Potential XSS");
         expect(view.findingViews[0].chatHref).toContain("/chat?q=acme%2Fwidget");
         expect(view.findingViews[0].fixPrompt).toContain("## Vulnerability");
         expect(view.findingViews[0].proof.length).toBeGreaterThan(0);

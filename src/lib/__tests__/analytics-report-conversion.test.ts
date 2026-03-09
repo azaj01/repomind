@@ -15,6 +15,8 @@ const {
     repoScanGroupByMock,
     recentSearchGroupByMock,
     chatGroupByMock,
+    reportFalsePositiveFindManyMock,
+    reportFalsePositiveGroupByMock,
 } = vi.hoisted(() => ({
     pipelineCalls: [] as PipelineCall[],
     scardMock: vi.fn(),
@@ -28,6 +30,8 @@ const {
     repoScanGroupByMock: vi.fn(),
     recentSearchGroupByMock: vi.fn(),
     chatGroupByMock: vi.fn(),
+    reportFalsePositiveFindManyMock: vi.fn(),
+    reportFalsePositiveGroupByMock: vi.fn(),
 }));
 
 vi.mock("@vercel/kv", () => ({
@@ -82,6 +86,10 @@ vi.mock("@/lib/db", () => ({
         chatConversation: {
             groupBy: chatGroupByMock,
         },
+        reportFalsePositive: {
+            findMany: reportFalsePositiveFindManyMock,
+            groupBy: reportFalsePositiveGroupByMock,
+        },
     },
 }));
 
@@ -101,6 +109,8 @@ describe("report conversion analytics", () => {
         repoScanGroupByMock.mockReset();
         recentSearchGroupByMock.mockReset();
         chatGroupByMock.mockReset();
+        reportFalsePositiveFindManyMock.mockReset();
+        reportFalsePositiveGroupByMock.mockReset();
 
         scardMock.mockResolvedValue(0);
         getMock.mockResolvedValue(0);
@@ -113,6 +123,8 @@ describe("report conversion analytics", () => {
         repoScanGroupByMock.mockResolvedValue([]);
         recentSearchGroupByMock.mockResolvedValue([]);
         chatGroupByMock.mockResolvedValue([]);
+        reportFalsePositiveFindManyMock.mockResolvedValue([]);
+        reportFalsePositiveGroupByMock.mockResolvedValue([]);
     });
 
     it("tracks report conversion with total and daily counters", async () => {
@@ -132,5 +144,6 @@ describe("report conversion analytics", () => {
         expect(data.reportFunnel?.weeklyFalsePositiveRate).toBeGreaterThanOrEqual(0);
         expect(data.reportFunnel?.weeklyExpiredLinkFailures).toBeGreaterThanOrEqual(0);
         expect(data.reportFunnel?.totals.report_viewed_shared).toBeGreaterThanOrEqual(0);
+        expect(data.falsePositiveReview?.recentSubmissions).toEqual([]);
     });
 });

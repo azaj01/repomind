@@ -4,11 +4,13 @@ import { useEffect, useState, useMemo } from "react";
 import {
     Users, Activity, Smartphone, Monitor, Globe,
     RefreshCw, ArrowUpDown, ChevronUp, ChevronDown,
-    UserCheck, TrendingUp, Database, Zap, Mail, Search, MessageSquare
+    UserCheck, TrendingUp, Database, Zap, Mail, Search, MessageSquare, ShieldAlert
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import type { AnalyticsData, VisitorData } from "@/lib/analytics";
+import { updateReportFalsePositiveReviewStatus } from "@/app/actions";
+import { toast } from "sonner";
 
 type HistoryRange = "24h" | "1w" | "1m" | "3m";
 
@@ -27,11 +29,13 @@ type SortConfig = {
 export default function StatsDashboardClient({ data, userAgent, country, isMobile }: StatsDashboardClientProps) {
     const router = useRouter();
     const loggedInUsers = useMemo(() => data.loggedInUsers ?? [], [data.loggedInUsers]);
+    const [falsePositiveRows, setFalsePositiveRows] = useState(() => data.falsePositiveReview?.recentSubmissions ?? []);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [selectedRange, setSelectedRange] = useState<HistoryRange>("24h");
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'lastSeen', direction: 'desc' });
     const [visibleCount, setVisibleCount] = useState(15);
     const [currentTime, setCurrentTime] = useState(0);
+    const [pendingSubmissionId, setPendingSubmissionId] = useState<string | null>(null);
 
     useEffect(() => {
         const tick = () => setCurrentTime(Date.now());
@@ -41,10 +45,32 @@ export default function StatsDashboardClient({ data, userAgent, country, isMobil
         return () => clearInterval(intervalId);
     }, []);
 
+    useEffect(() => {
+        setFalsePositiveRows(data.falsePositiveReview?.recentSubmissions ?? []);
+    }, [data.falsePositiveReview]);
+
     const handleRefresh = () => {
         setIsRefreshing(true);
         router.refresh();
         setTimeout(() => setIsRefreshing(false), 1000);
+    };
+
+    const handleFalsePositiveStatusChange = async (
+        submissionId: string,
+        status: "PENDING" | "CONFIRMED_FALSE_POSITIVE" | "REJECTED"
+    ) => {
+        setPendingSubmissionId(submissionId);
+        try {
+            const updated = await updateReportFalsePositiveReviewStatus({ submissionId, status });
+            setFalsePositiveRows((current) => current.map((row) => row.id === submissionId ? updated : row));
+            toast.success("False positive status updated");
+            router.refresh();
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "Failed to update false positive status";
+            toast.error(message);
+        } finally {
+            setPendingSubmissionId(null);
+        }
     };
 
     const formatIST = (timestamp: number) => {
@@ -97,6 +123,7 @@ export default function StatsDashboardClient({ data, userAgent, country, isMobil
     const weeklyFalsePositiveRate = reportFunnel?.weeklyFalsePositiveRate ?? 0;
     const weeklyExpiredLinkFailures = reportFunnel?.weeklyExpiredLinkFailures ?? 0;
     const weeklyConversionRate = reportFunnel?.weeklyConversionRate ?? 0;
+    const falsePositiveReview = data.falsePositiveReview;
 
     const sortedVisitors = useMemo(() => {
         const items = [...data.recentVisitors];
@@ -258,6 +285,22 @@ export default function StatsDashboardClient({ data, userAgent, country, isMobil
                         <MetricTile label="Conv Rate" value={`${weeklyConversionRate.toFixed(1)}%`} />
                         <MetricTile label="False+ Rate" value={`${weeklyFalsePositiveRate.toFixed(1)}%`} />
                         <MetricTile label="Expired Links" value={weeklyExpiredLinkFailures} />
+                    </div>
+                </div>
+
+                <div className="bg-zinc-900/50 border border-white/10 rounded-2xl p-6">
+                    <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+                        <h2 className="text-lg font-semibold flex items-center gap-2">
+                            <ShieldAlert className="w-5 h-5 text-amber-400" />
+                            False Positive Review
+                        </h2>
+                        <span className="text-xs text-zinc-500 uppercase tracking-wider">Recent submissions + review state</span>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <MetricTile label="Total" value={falsePositiveReview?.total ?? 0} />
+                        <MetricTile label="Pending" value={falsePositiveReview?.pending ?? 0} />
+                        <MetricTile label="Confirmed" value={falsePositiveReview?.confirmedFalsePositive ?? 0} />
+                        <MetricTile label="Rejected" value={falsePositiveReview?.rejected ?? 0} />
                     </div>
                 </div>
 
@@ -553,6 +596,84 @@ export default function StatsDashboardClient({ data, userAgent, country, isMobil
                 </div>
 
                 {/* Logged-In Accounts Table */}
+                <div className="bg-zinc-900/50 border border-white/10 rounded-2xl overflow-hidden">
+                    <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between">
+                        <h2 className="text-xl font-semibold">False Positive Queue</h2>
+                        <span className="text-xs text-zinc-500 font-mono">
+                            Showing {falsePositiveRows.length} recent submissions
+                        </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-zinc-900/80 text-zinc-400 font-medium">
+                                <tr>
+                                    <th className="px-6 py-4">Repository</th>
+                                    <th className="px-6 py-4">Finding</th>
+                                    <th className="px-6 py-4">Submitted By</th>
+                                    <th className="px-6 py-4">Created</th>
+                                    <th className="px-6 py-4">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {falsePositiveRows.map((submission) => (
+                                    <tr key={submission.id} className="hover:bg-white/[0.02] transition-colors">
+                                        <td className="px-6 py-4">
+                                            <div className="flex flex-col">
+                                                <span className="text-zinc-200 font-medium">{submission.owner}/{submission.repo}</span>
+                                                <span className="text-[10px] text-zinc-500 font-mono uppercase">
+                                                    {submission.isSharedView ? "Shared report" : "Private report"}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex flex-col gap-1">
+                                                <span className="text-zinc-200">{submission.title}</span>
+                                                <span className="text-xs text-zinc-500">
+                                                    {submission.severity.toUpperCase()} • {submission.file}{submission.line ? `:${submission.line}` : ""}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 text-zinc-300">
+                                            {submission.submittedByGithubLogin ? `@${submission.submittedByGithubLogin}` : "Anonymous"}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex flex-col">
+                                                <span className="text-zinc-300">{formatIST(submission.createdAt)}</span>
+                                                <span className="text-[10px] text-zinc-500 font-mono uppercase">{getRelativeTime(submission.createdAt)}</span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <select
+                                                value={submission.status}
+                                                onChange={(e) => void handleFalsePositiveStatusChange(
+                                                    submission.id,
+                                                    e.target.value as "PENDING" | "CONFIRMED_FALSE_POSITIVE" | "REJECTED"
+                                                )}
+                                                disabled={pendingSubmissionId === submission.id}
+                                                className="min-w-[210px] rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500/50 disabled:opacity-50"
+                                            >
+                                                <option value="PENDING">Pending</option>
+                                                <option value="CONFIRMED_FALSE_POSITIVE">Confirmed False Positive</option>
+                                                <option value="REJECTED">Rejected</option>
+                                            </select>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {falsePositiveRows.length === 0 && (
+                                    <tr>
+                                        <td colSpan={5} className="px-6 py-12 text-center text-zinc-500">
+                                            <div className="flex flex-col items-center gap-2">
+                                                <ShieldAlert className="w-8 h-8 opacity-20" />
+                                                <p>No false positive submissions yet.</p>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <div className="bg-zinc-900/50 border border-white/10 rounded-2xl overflow-hidden">
                     <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between">
                         <h2 className="text-xl font-semibold">Logged-In Accounts (Postgres)</h2>

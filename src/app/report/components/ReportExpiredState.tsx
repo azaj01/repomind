@@ -22,9 +22,9 @@ export function ReportExpiredState({ owner, repo, expiresAt }: ReportExpiredStat
     return (
         <div className="min-h-screen bg-black text-white flex items-center justify-center p-6">
             <div className="max-w-lg w-full rounded-2xl border border-white/10 bg-zinc-900 p-8 space-y-4">
-                <h1 className="text-2xl font-semibold">Report Expired</h1>
+                <h1 className="text-2xl font-semibold">Report Outdated</h1>
                 <p className="text-zinc-300">
-                    This report is no longer available. Reports expire after 7 days. Run a new scan to regenerate it.
+                    This report is no longer current. Security reports expire after 7 days. Run a fresh scan in Repo Chat to regenerate it.
                 </p>
                 {formattedExpiry && (
                     <p className="text-sm text-zinc-500">
@@ -36,7 +36,7 @@ export function ReportExpiredState({ owner, repo, expiresAt }: ReportExpiredStat
                         href={rerunHref}
                         className="inline-flex items-center px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 transition-colors text-sm font-medium"
                     >
-                        Run New Scan
+                        Rescan in Repo Chat
                     </Link>
                     <Link
                         href="/"

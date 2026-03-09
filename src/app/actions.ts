@@ -67,10 +67,14 @@ import {
 } from "@/lib/domain";
 import { answerWithContext, answerWithContextStream } from "@/lib/gemini";
 import { mapProfileStreamChunk } from "@/lib/profile-stream";
-import { buildOutreachPack } from "@/lib/services/report-service";
+import { buildOutreachPack, findingFingerprint as buildFindingFingerprint } from "@/lib/services/report-service";
 import { getPublicSiteUrl } from "@/lib/site-url";
 import { getSessionUserId } from "@/lib/session-guard";
 import { canAccessPrivateReport } from "@/lib/services/report-access";
+import {
+    createFalsePositiveSubmission,
+    updateFalsePositiveStatus,
+} from "@/lib/services/report-false-positives";
 
 function getErrorMessage(error: unknown): string {
     if (error && typeof error === "object" && "message" in error && typeof (error as { message?: unknown }).message === "string") {
@@ -624,6 +628,81 @@ export async function generateOutreachPack(scanId: string, ttlDays: number = 7) 
         linkId: link.linkId,
         expiresAt: link.expiresAt.toISOString(),
     };
+}
+
+export async function submitReportFalsePositive(input: {
+    scanId: string;
+    findingIndex: number;
+    findingFingerprint: string;
+    isSharedView: boolean;
+}) {
+    const session = await auth();
+    const userId = getSessionUserId(session);
+    const scanResult = await getScanResultWithStatus(input.scanId);
+
+    if (scanResult.status === "not_found") {
+        throw new Error("Scan not found");
+    }
+
+    const scan = scanResult.scan;
+    if (!input.isSharedView && !canAccessPrivateReport(session, scan)) {
+        throw new Error("Forbidden");
+    }
+
+    const finding = scan.findings[input.findingIndex];
+    if (!finding) {
+        throw new Error("Finding not found");
+    }
+
+    const fingerprint = buildFindingFingerprint(finding);
+    if (fingerprint !== input.findingFingerprint) {
+        throw new Error("Finding fingerprint mismatch");
+    }
+
+    await createFalsePositiveSubmission({
+        scanId: scan.id,
+        owner: scan.owner,
+        repo: scan.repo,
+        findingFingerprint: fingerprint,
+        findingIndex: input.findingIndex,
+        title: finding.title,
+        severity: finding.severity,
+        type: finding.type,
+        file: finding.file,
+        line: finding.line,
+        confidence: finding.confidence,
+        isSharedView: input.isSharedView,
+        submittedByUserId: userId ?? null,
+    });
+
+    await trackReportConversionEvent("report_false_positive_flagged", scan.id);
+
+    return { ok: true };
+}
+
+const FALSE_POSITIVE_STATUSES = new Set([
+    "PENDING",
+    "CONFIRMED_FALSE_POSITIVE",
+    "REJECTED",
+] as const);
+
+export async function updateReportFalsePositiveReviewStatus(input: {
+    submissionId: string;
+    status: "PENDING" | "CONFIRMED_FALSE_POSITIVE" | "REJECTED";
+}) {
+    const { session, userId } = await requireAuthenticatedActor();
+    if (!isAdminUser(session)) {
+        throw new Error("Forbidden");
+    }
+    if (!FALSE_POSITIVE_STATUSES.has(input.status)) {
+        throw new Error("Invalid status");
+    }
+
+    return updateFalsePositiveStatus({
+        submissionId: input.submissionId,
+        status: input.status,
+        reviewedByUserId: userId ?? null,
+    });
 }
 
 

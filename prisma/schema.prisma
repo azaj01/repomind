@@ -23,6 +23,8 @@ model User {
   sessions       Session[]
   repoScans      RepoScan[]
   createdShareLinks RepoScanShareLink[] @relation("UserCreatedScanShareLinks")
+  submittedFalsePositives ReportFalsePositive[] @relation("UserSubmittedFalsePositives")
+  reviewedFalsePositives  ReportFalsePositive[] @relation("UserReviewedFalsePositives")
   recentSearches RecentSearch[]
   conversations  ChatConversation[]
   emailDeliveries TransactionalEmailDelivery[]
@@ -72,6 +74,7 @@ model RepoScan {
   userId    String?
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   shareLinks RepoScanShareLink[]
+  falsePositiveSubmissions ReportFalsePositive[]
   createdAt DateTime @default(now())
 
   @@index([owner, repo, timestamp(sort: Desc)])
@@ -94,6 +97,41 @@ model RepoScanShareLink {
   @@index([scanId, createdAt(sort: Desc)])
   @@index([createdByUserId, createdAt(sort: Desc)])
   @@index([expiresAt])
+}
+
+enum ReportFalsePositiveStatus {
+  PENDING
+  CONFIRMED_FALSE_POSITIVE
+  REJECTED
+}
+
+model ReportFalsePositive {
+  id                String                    @id @default(cuid())
+  scanId             String
+  owner              String
+  repo               String
+  findingFingerprint String
+  findingIndex       Int
+  title              String
+  severity           String
+  type               String
+  file               String
+  line               Int?
+  confidence         String?
+  isSharedView       Boolean                   @default(false)
+  submittedByUserId  String?
+  status             ReportFalsePositiveStatus @default(PENDING)
+  reviewedByUserId   String?
+  reviewedAt         DateTime?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  scan               RepoScan                  @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  submittedByUser    User?                     @relation("UserSubmittedFalsePositives", fields: [submittedByUserId], references: [id], onDelete: SetNull)
+  reviewedByUser     User?                     @relation("UserReviewedFalsePositives", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([scanId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@index([submittedByUserId, createdAt(sort: Desc)])
 }
 
 model RecentSearch {

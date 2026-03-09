@@ -44,7 +44,7 @@ export async function generateMetadata({ params }: { params: Promise<{ scan_id: 
     }
 
     const { owner, repo, summary } = scan;
-    const desc = `${summary.critical} Critical, ${summary.high} High, ${summary.medium} Medium issues found. Open fix prompts in Repo Chat with proof-backed findings.`;
+    const desc = `${summary.critical} Critical, ${summary.high} High, ${summary.medium} Medium issues found. Review the full RepoMind security report and remediate all findings in one Repo Chat flow.`;
 
     return {
         title: `Security Scan: ${owner}/${repo} - RepoMind`,
@@ -105,6 +105,8 @@ export default async function PrivateReportPage({ params }: { params: Promise<{ 
             priorScanDiff={reportView.priorScanDiff}
             topFixes={reportView.topFixes}
             findingViews={reportView.findingViews}
+            globalFixPrompt={reportView.globalFixPrompt}
+            globalChatHref={reportView.globalChatHref}
             hasPreviousScan={Boolean(previousScan)}
             isSharedView={false}
             canShareReport={true}
