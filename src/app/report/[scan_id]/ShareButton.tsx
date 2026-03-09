@@ -142,11 +142,11 @@ export default function ShareButton({
     };
 
     return (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
             <button
                 onClick={handleShare}
                 disabled={isSharing}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-500 hover:bg-indigo-600 rounded-lg transition-all shadow-md hover:shadow-lg active:scale-95 disabled:opacity-60"
+                className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-white bg-indigo-500 hover:bg-indigo-600 rounded-lg transition-all shadow-md hover:shadow-lg active:scale-95 disabled:opacity-60"
                 title={`Report expires on ${expiryLabel}`}
             >
                 <Share2 className="w-4 h-4" />
@@ -156,7 +156,7 @@ export default function ShareButton({
                 <button
                     onClick={handleCopyOutreachPack}
                     disabled={isGeneratingOutreach}
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-zinc-200 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all border border-white/10 disabled:opacity-60"
+                    className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-zinc-200 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all border border-white/10 disabled:opacity-60"
                 >
                     <Megaphone className="w-4 h-4" />
                     {isGeneratingOutreach ? "Building..." : "Outreach Pack"}
@@ -182,9 +182,11 @@ export default function ShareButton({
                     Copy Outreach
                 </button>
             )}
-            <span className="text-xs text-zinc-400 border border-white/10 rounded-full px-2.5 py-1">
-                Expires on {expiryLabel}
-            </span>
+            {activeLink && (
+                <span className="text-xs text-zinc-400 border border-white/10 rounded-full px-2.5 py-1">
+                    Expires on {new Date(activeLink.expiresAt).toLocaleDateString()}
+                </span>
+            )}
         </div>
     );
 }

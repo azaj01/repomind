@@ -196,41 +196,19 @@ export function ReportContent({
     return (
         <div className="min-h-screen bg-black text-white p-4 md:p-8 selection:bg-indigo-500/30">
             <div className="max-w-4xl mx-auto space-y-8" ref={reportRef}>
-                <div className="space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div className="flex items-center gap-2 text-indigo-400">
-                            <Shield className="w-6 h-6" />
-                            <h1 className="text-xl font-medium tracking-tight">
-                                {isSharedView ? "RepoMind Shared Security Report" : "RepoMind Security Report"}
-                            </h1>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2 print:hidden">
-                            <button
-                                onClick={() => router.push(`/chat?q=${encodeURIComponent(`${scan.owner}/${scan.repo}`)}`)}
-                                className="flex items-center justify-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-sm font-medium transition-all border border-white/5 whitespace-nowrap"
-                            >
-                                <MessageCircle className="w-4 h-4" />
-                                Open Repo Chat
-                            </button>
-                            {canShareReport && (
-                                <ShareButton
-                                    scanId={scan.id}
-                                    canGenerateOutreach={canGenerateOutreach}
-                                    shareMode={shareMode}
-                                    reportExpiresAt={reportExpiresAt}
-                                />
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="p-6 bg-zinc-900 border border-white/10 rounded-2xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div>
-                            <div className="flex items-center gap-2 mb-1">
-                                <h2 className="text-2xl font-semibold text-white">
-                                    <span className="text-zinc-500 font-normal">{scan.owner} / </span>
-                                    {scan.repo}
-                                </h2>
+                <div className="p-6 bg-zinc-900 border border-white/10 rounded-2xl shadow-xl">
+                    <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5">
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2 text-indigo-400">
+                                <Shield className="w-5 h-5" />
+                                <span className="text-sm font-medium tracking-wide uppercase">
+                                    {isSharedView ? "Shared Security Report" : "Security Report"}
+                                </span>
                             </div>
+                            <h1 className="text-2xl md:text-3xl font-semibold text-white tracking-tight">
+                                <span className="text-zinc-500 font-normal">{scan.owner} / </span>
+                                {scan.repo}
+                            </h1>
                             <div className="text-sm text-zinc-400 flex flex-wrap items-center gap-3">
                                 <span>Scanned on {date.toLocaleDateString()} at {date.toLocaleTimeString()}</span>
                                 <span className="hidden sm:inline">•</span>
@@ -244,11 +222,27 @@ export function ReportContent({
                                 )}
                             </div>
                         </div>
-                        <div className="print:hidden md:self-start">
+                        <div className="print:hidden flex flex-col gap-3 lg:items-end">
+                            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                                <button
+                                    onClick={() => router.push(`/chat?q=${encodeURIComponent(`${scan.owner}/${scan.repo}`)}`)}
+                                    className="flex items-center justify-center gap-2 px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-sm font-medium transition-all border border-white/10 whitespace-nowrap"
+                                >
+                                    <MessageCircle className="w-4 h-4" />
+                                    Open Repo Chat
+                                </button>
+                                {canShareReport && (
+                                    <ShareButton
+                                        scanId={scan.id}
+                                        canGenerateOutreach={canGenerateOutreach}
+                                        shareMode={shareMode}
+                                        reportExpiresAt={reportExpiresAt}
+                                    />
+                                )}
+                            </div>
                             <ExportButtons scan={scan} />
                         </div>
                     </div>
-
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
