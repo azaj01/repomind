@@ -1,0 +1,136 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+type PipelineCall = { type: string; key: string };
+
+const {
+    pipelineCalls,
+    scardMock,
+    getMock,
+    smembersMock,
+    keysMock,
+    execInfoMock,
+    lrangeMock,
+    pipelineExecMock,
+    userFindManyMock,
+    repoScanGroupByMock,
+    recentSearchGroupByMock,
+    chatGroupByMock,
+} = vi.hoisted(() => ({
+    pipelineCalls: [] as PipelineCall[],
+    scardMock: vi.fn(),
+    getMock: vi.fn(),
+    smembersMock: vi.fn(),
+    keysMock: vi.fn(),
+    execInfoMock: vi.fn(),
+    lrangeMock: vi.fn(),
+    pipelineExecMock: vi.fn(),
+    userFindManyMock: vi.fn(),
+    repoScanGroupByMock: vi.fn(),
+    recentSearchGroupByMock: vi.fn(),
+    chatGroupByMock: vi.fn(),
+}));
+
+vi.mock("@vercel/kv", () => ({
+    kv: {
+        scard: scardMock,
+        get: getMock,
+        smembers: smembersMock,
+        keys: keysMock,
+        exec: execInfoMock,
+        lrange: lrangeMock,
+        pipeline: () => {
+            const localCalls: PipelineCall[] = [];
+            const pipeline = {
+                get: (key: string) => {
+                    localCalls.push({ type: "get", key });
+                    return pipeline;
+                },
+                hgetall: (key: string) => {
+                    localCalls.push({ type: "hgetall", key });
+                    return pipeline;
+                },
+                incr: (key: string) => {
+                    localCalls.push({ type: "incr", key });
+                    return pipeline;
+                },
+                lpush: () => pipeline,
+                ltrim: () => pipeline,
+                sadd: () => pipeline,
+                hset: () => pipeline,
+                hincrby: () => pipeline,
+                exec: async () => {
+                    pipelineCalls.push(...localCalls);
+                    return pipelineExecMock(localCalls);
+                },
+            };
+            return pipeline;
+        },
+    },
+}));
+
+vi.mock("@/lib/db", () => ({
+    prisma: {
+        user: {
+            findMany: userFindManyMock,
+        },
+        repoScan: {
+            groupBy: repoScanGroupByMock,
+        },
+        recentSearch: {
+            groupBy: recentSearchGroupByMock,
+        },
+        chatConversation: {
+            groupBy: chatGroupByMock,
+        },
+    },
+}));
+
+import { getAnalyticsData, trackReportConversionEvent } from "@/lib/analytics";
+
+describe("report conversion analytics", () => {
+    beforeEach(() => {
+        pipelineCalls.length = 0;
+        scardMock.mockReset();
+        getMock.mockReset();
+        smembersMock.mockReset();
+        keysMock.mockReset();
+        execInfoMock.mockReset();
+        lrangeMock.mockReset();
+        pipelineExecMock.mockReset();
+        userFindManyMock.mockReset();
+        repoScanGroupByMock.mockReset();
+        recentSearchGroupByMock.mockReset();
+        chatGroupByMock.mockReset();
+
+        scardMock.mockResolvedValue(0);
+        getMock.mockResolvedValue(0);
+        smembersMock.mockResolvedValue([]);
+        keysMock.mockResolvedValue([]);
+        execInfoMock.mockResolvedValue("total_data_size:0");
+        lrangeMock.mockResolvedValue([]);
+        pipelineExecMock.mockResolvedValue([]);
+        userFindManyMock.mockResolvedValue([]);
+        repoScanGroupByMock.mockResolvedValue([]);
+        recentSearchGroupByMock.mockResolvedValue([]);
+        chatGroupByMock.mockResolvedValue([]);
+    });
+
+    it("tracks report conversion with total and daily counters", async () => {
+        await trackReportConversionEvent("report_fix_chat_started", "scan_123");
+
+        const incrementedKeys = pipelineCalls.filter((c) => c.type === "incr").map((c) => c.key);
+        expect(incrementedKeys).toContain("stats:report:report_fix_chat_started");
+        expect(incrementedKeys.some((key) => key.startsWith("stats:report:report_fix_chat_started:"))).toBe(true);
+        expect(incrementedKeys).toContain("stats:report:scan:scan_123:report_fix_chat_started");
+    });
+
+    it("returns report funnel metrics in analytics payload", async () => {
+        const data = await getAnalyticsData();
+
+        expect(data.reportFunnel).toBeDefined();
+        expect(data.reportFunnel?.weeklyConversionRate).toBeGreaterThanOrEqual(0);
+        expect(data.reportFunnel?.weeklyFalsePositiveRate).toBeGreaterThanOrEqual(0);
+        expect(data.reportFunnel?.weeklyExpiredLinkFailures).toBeGreaterThanOrEqual(0);
+        expect(data.reportFunnel?.totals.report_viewed_shared).toBeGreaterThanOrEqual(0);
+    });
+});

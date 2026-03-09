@@ -1,14 +1,38 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { processProfileQueryStream } from "@/app/actions";
+import { auth } from "@/lib/auth";
+import { getInvalidSessionApiError, getSessionAuthState, getSessionUserId } from "@/lib/session-guard";
 import type { StreamUpdate } from "@/lib/streaming-types";
 
 function getErrorMessage(error: unknown, fallback: string): string {
     return error instanceof Error ? error.message : fallback;
 }
 
+async function requireAuthenticatedUser() {
+    const session = await auth();
+    const authState = getSessionAuthState(session);
+
+    if (authState === "unauthenticated") {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (authState === "invalid") {
+        return NextResponse.json(getInvalidSessionApiError(), { status: 401 });
+    }
+    if (!getSessionUserId(session)) {
+        return NextResponse.json(getInvalidSessionApiError(), { status: 401 });
+    }
+
+    return null;
+}
+
 export async function POST(req: NextRequest) {
     const encoder = new TextEncoder();
     try {
+        const unauthorizedResponse = await requireAuthenticatedUser();
+        if (unauthorizedResponse) {
+            return unauthorizedResponse;
+        }
+
         const body = await req.json();
         const { query, profileContext, modelPreference } = body;
 

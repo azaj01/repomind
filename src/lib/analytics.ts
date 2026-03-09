@@ -20,6 +20,7 @@ export interface AnalyticsData {
         maxSize: number;
         history: KVUsagePoint[];
     };
+    reportFunnel?: ReportFunnelMetrics;
 }
 
 export interface VisitorData {
@@ -43,12 +44,33 @@ export interface LoggedInUserData {
     lastActivityAt: number | null;
 }
 
-export type ReportConversionEvent =
-    | "report_fix_in_chat_clicked"
-    | "report_discuss_in_chat_clicked"
-    | "report_create_pr_clicked"
-    | "report_create_pr_login_completed"
-    | "report_create_pr_phase2_waitlist_shown";
+export const REPORT_CONVERSION_EVENTS = [
+    "report_viewed_shared",
+    "report_fix_prompt_copied",
+    "report_fix_prompt_previewed",
+    "report_fix_login_gate_shown",
+    "report_fix_login_completed",
+    "report_fix_chat_started",
+    "report_false_positive_flagged",
+    "report_shared_link_invalid",
+    "report_expired_viewed",
+    // Legacy keys kept for backwards compatibility with historical tracking.
+    "report_fix_in_chat_clicked",
+    "report_discuss_in_chat_clicked",
+    "report_create_pr_clicked",
+    "report_create_pr_login_completed",
+    "report_create_pr_phase2_waitlist_shown",
+] as const;
+
+export type ReportConversionEvent = (typeof REPORT_CONVERSION_EVENTS)[number];
+
+export interface ReportFunnelMetrics {
+    totals: Record<ReportConversionEvent, number>;
+    weekly: Record<ReportConversionEvent, number>;
+    weeklyConversionRate: number;
+    weeklyFalsePositiveRate: number;
+    weeklyExpiredLinkFailures: number;
+}
 
 /**
  * Fetch and parse KV info for storage stats
@@ -298,12 +320,91 @@ async function getLoggedInUserStats(): Promise<LoggedInUserData[]> {
     }
 }
 
+function dayKeyFromDate(date: Date): string {
+    return date.toISOString().slice(0, 10);
+}
+
+function getRecentDayKeys(days: number): string[] {
+    const keys: string[] = [];
+    for (let i = 0; i < days; i += 1) {
+        const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+        keys.push(dayKeyFromDate(date));
+    }
+    return keys;
+}
+
+function emptyReportFunnelMetrics(): ReportFunnelMetrics {
+    const zeroTotals = Object.fromEntries(
+        REPORT_CONVERSION_EVENTS.map((event) => [event, 0])
+    ) as Record<ReportConversionEvent, number>;
+
+    return {
+        totals: { ...zeroTotals },
+        weekly: { ...zeroTotals },
+        weeklyConversionRate: 0,
+        weeklyFalsePositiveRate: 0,
+        weeklyExpiredLinkFailures: 0,
+    };
+}
+
+async function getReportFunnelMetrics(): Promise<ReportFunnelMetrics> {
+    try {
+        const totalsPipeline = kv.pipeline();
+        REPORT_CONVERSION_EVENTS.forEach((event) => {
+            totalsPipeline.get<number>(`stats:report:${event}`);
+        });
+        const totalValues = await totalsPipeline.exec<number[]>();
+
+        const totals = emptyReportFunnelMetrics().totals;
+        REPORT_CONVERSION_EVENTS.forEach((event, index) => {
+            totals[event] = Number(totalValues[index] || 0);
+        });
+
+        const dayKeys = getRecentDayKeys(7);
+        const weeklyPipeline = kv.pipeline();
+        for (const event of REPORT_CONVERSION_EVENTS) {
+            for (const dayKey of dayKeys) {
+                weeklyPipeline.get<number>(`stats:report:${event}:${dayKey}`);
+            }
+        }
+
+        const weeklyValues = await weeklyPipeline.exec<number[]>();
+        const weekly = emptyReportFunnelMetrics().weekly;
+
+        let cursor = 0;
+        for (const event of REPORT_CONVERSION_EVENTS) {
+            let totalForEvent = 0;
+            for (let i = 0; i < dayKeys.length; i += 1) {
+                totalForEvent += Number(weeklyValues[cursor] || 0);
+                cursor += 1;
+            }
+            weekly[event] = totalForEvent;
+        }
+
+        const views = weekly.report_viewed_shared;
+        const fixStarts = weekly.report_fix_chat_started;
+        const falsePositiveFlags = weekly.report_false_positive_flagged;
+        const expiredFailures = weekly.report_shared_link_invalid + weekly.report_expired_viewed;
+
+        return {
+            totals,
+            weekly,
+            weeklyConversionRate: views > 0 ? (fixStarts / views) * 100 : 0,
+            weeklyFalsePositiveRate: views > 0 ? (falsePositiveFlags / views) * 100 : 0,
+            weeklyExpiredLinkFailures: expiredFailures,
+        };
+    } catch (error) {
+        console.error("Failed to aggregate report funnel metrics:", error);
+        return emptyReportFunnelMetrics();
+    }
+}
+
 export async function trackReportConversionEvent(
     event: ReportConversionEvent,
     scanId?: string
 ): Promise<void> {
     try {
-        const dayKey = new Date().toISOString().slice(0, 10);
+        const dayKey = dayKeyFromDate(new Date());
         const pipeline = kv.pipeline();
         pipeline.incr(`stats:report:${event}`);
         pipeline.incr(`stats:report:${event}:${dayKey}`);
@@ -330,6 +431,7 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
             visitorIds,
             kvInfo,
             loggedInUsers,
+            reportFunnel,
         ] = await Promise.all([
             kv.scard("visitors"),
             kv.get<number>("queries:total"),
@@ -338,6 +440,10 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
             getLoggedInUserStats().catch((error) => {
                 console.error("Failed to fetch logged-in user analytics:", error);
                 return [];
+            }),
+            getReportFunnelMetrics().catch((error) => {
+                console.error("Failed to fetch report funnel analytics:", error);
+                return emptyReportFunnelMetrics();
             }),
         ]);
 
@@ -418,7 +524,8 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
                 currentSize: kvInfo.currentSize,
                 maxSize: kvInfo.maxSize,
                 history: kvHistory
-            }
+            },
+            reportFunnel,
         };
 
     } catch (error) {
@@ -432,6 +539,7 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
             countryStats: {},
             recentVisitors: [],
             loggedInUsers: [],
+            reportFunnel: emptyReportFunnelMetrics(),
         };
     }
 }

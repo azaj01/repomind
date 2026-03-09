@@ -22,6 +22,7 @@ model User {
   accounts       Account[]
   sessions       Session[]
   repoScans      RepoScan[]
+  createdShareLinks RepoScanShareLink[] @relation("UserCreatedScanShareLinks")
   recentSearches RecentSearch[]
   conversations  ChatConversation[]
   emailDeliveries TransactionalEmailDelivery[]
@@ -64,15 +65,35 @@ model RepoScan {
   owner     String
   repo      String
   timestamp BigInt
+  expiresAt DateTime
   depth     String
   summary   Json
   findings  Json
   userId    String?
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  shareLinks RepoScanShareLink[]
   createdAt DateTime @default(now())
 
   @@index([owner, repo, timestamp(sort: Desc)])
   @@index([userId, timestamp(sort: Desc)])
+}
+
+model RepoScanShareLink {
+  id              String   @id @default(cuid())
+  scanId           String   @unique
+  tokenHash        String   @unique
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdByUserId  String?
+  createdByUser    User?    @relation("UserCreatedScanShareLinks", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt        DateTime @default(now())
+  lastAccessedAt   DateTime?
+  accessCount      Int      @default(0)
+  scan             RepoScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@index([scanId, createdAt(sort: Desc)])
+  @@index([createdByUserId, createdAt(sort: Desc)])
+  @@index([expiresAt])
 }
 
 model RecentSearch {

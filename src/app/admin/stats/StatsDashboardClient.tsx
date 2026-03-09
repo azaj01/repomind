@@ -26,7 +26,7 @@ type SortConfig = {
 
 export default function StatsDashboardClient({ data, userAgent, country, isMobile }: StatsDashboardClientProps) {
     const router = useRouter();
-    const loggedInUsers = data.loggedInUsers ?? [];
+    const loggedInUsers = useMemo(() => data.loggedInUsers ?? [], [data.loggedInUsers]);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [selectedRange, setSelectedRange] = useState<HistoryRange>("24h");
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'lastSeen', direction: 'desc' });
@@ -88,6 +88,15 @@ export default function StatsDashboardClient({ data, userAgent, country, isMobil
         ? (data.totalQueries / data.totalVisitors).toFixed(1)
         : "0";
     const activeNow = data.recentVisitors.filter((v) => isOnline(v.lastSeen)).length;
+    const reportFunnel = data.reportFunnel;
+    const weeklyReportViews = reportFunnel?.weekly.report_viewed_shared ?? 0;
+    const weeklyFixStarts = reportFunnel?.weekly.report_fix_chat_started ?? 0;
+    const weeklyPromptPreviews = reportFunnel?.weekly.report_fix_prompt_previewed ?? 0;
+    const weeklyPromptCopies = reportFunnel?.weekly.report_fix_prompt_copied ?? 0;
+    const weeklyLoginGates = reportFunnel?.weekly.report_fix_login_gate_shown ?? 0;
+    const weeklyFalsePositiveRate = reportFunnel?.weeklyFalsePositiveRate ?? 0;
+    const weeklyExpiredLinkFailures = reportFunnel?.weeklyExpiredLinkFailures ?? 0;
+    const weeklyConversionRate = reportFunnel?.weeklyConversionRate ?? 0;
 
     const sortedVisitors = useMemo(() => {
         const items = [...data.recentVisitors];
@@ -230,6 +239,26 @@ export default function StatsDashboardClient({ data, userAgent, country, isMobil
                         subValue={`${((data.kvStats?.currentSize || 0) / (data.kvStats?.maxSize || 1) * 100).toFixed(2)}% of ${formatSize(data.kvStats?.maxSize || 0)}`}
                         icon={<Database className="w-5 h-5 text-amber-400" />}
                     />
+                </div>
+
+                <div className="bg-zinc-900/50 border border-white/10 rounded-2xl p-6">
+                    <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+                        <h2 className="text-lg font-semibold flex items-center gap-2">
+                            <Zap className="w-5 h-5 text-indigo-400" />
+                            Report to Chat Funnel (7d)
+                        </h2>
+                        <span className="text-xs text-zinc-500 uppercase tracking-wider">{"North star: report -> chat starts"}</span>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+                        <MetricTile label="Shared Views" value={weeklyReportViews} />
+                        <MetricTile label="Prompt Previews" value={weeklyPromptPreviews} />
+                        <MetricTile label="Prompt Copies" value={weeklyPromptCopies} />
+                        <MetricTile label="Login Gates" value={weeklyLoginGates} />
+                        <MetricTile label="Fix Chats" value={weeklyFixStarts} />
+                        <MetricTile label="Conv Rate" value={`${weeklyConversionRate.toFixed(1)}%`} />
+                        <MetricTile label="False+ Rate" value={`${weeklyFalsePositiveRate.toFixed(1)}%`} />
+                        <MetricTile label="Expired Links" value={weeklyExpiredLinkFailures} />
+                    </div>
                 </div>
 
                 {/* Secondary Metrics & Simple Trends */}
@@ -758,5 +787,14 @@ function StatsCard({ title, value, icon, subValue, trend }: {
                 <div className="text-xs text-zinc-500 mt-2 font-medium uppercase tracking-wider">{subValue}</div>
             )}
         </motion.div>
+    );
+}
+
+function MetricTile({ label, value }: { label: string; value: string | number }) {
+    return (
+        <div className="rounded-xl border border-white/10 bg-zinc-950/60 p-3">
+            <p className="text-[11px] uppercase tracking-wider text-zinc-500">{label}</p>
+            <p className="mt-1 text-lg font-semibold text-zinc-100">{value}</p>
+        </div>
     );
 }

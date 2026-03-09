@@ -19,7 +19,6 @@ import {
     getRepo,
     getDefaultBranchHeadSha,
     getRepoFileTree,
-    getFileContent,
     getFileContentBatch,
     getProfileReadme,
     getUserRepos,
@@ -50,11 +49,16 @@ import {
 import {
     saveScanResult,
     getLatestScanId,
+    getScanResultWithStatus,
 } from "@/lib/services/scan-storage";
 import { recordSearch, getRecentSearches as _getRecentSearches } from "@/lib/services/history-service";
 import {
     searchRepositoryCode as _searchRepositoryCode,
 } from "@/lib/services/artifact-service";
+import {
+    createScanShareLink as createScanShareLinkRecord,
+    resolveScanFromShareToken as resolveScanFromShareTokenRecord,
+} from "@/lib/services/scan-share-links";
 import {
     toProfileContext,
     buildProfileContextString,
@@ -63,6 +67,10 @@ import {
 } from "@/lib/domain";
 import { answerWithContext, answerWithContextStream } from "@/lib/gemini";
 import { mapProfileStreamChunk } from "@/lib/profile-stream";
+import { buildOutreachPack } from "@/lib/services/report-service";
+import { getPublicSiteUrl } from "@/lib/site-url";
+import { getSessionUserId } from "@/lib/session-guard";
+import { canAccessPrivateReport } from "@/lib/services/report-access";
 
 function getErrorMessage(error: unknown): string {
     if (error && typeof error === "object" && "message" in error && typeof (error as { message?: unknown }).message === "string") {
@@ -97,6 +105,14 @@ async function trackQueryEvent(visitorId: string | undefined): Promise<void> {
     } catch (e) {
         console.error("Analytics tracking failed:", e);
     }
+}
+
+async function requireAuthenticatedActor() {
+    const session = await auth();
+    if (!session?.user) {
+        throw new Error("Unauthorized");
+    }
+    return { session, userId: getSessionUserId(session) };
 }
 
 // ─── Private: Profile context ─────────────────────────────────────────────────
@@ -327,7 +343,6 @@ export async function processProfileQuery(
 ) {
     await trackQueryEvent(visitorId);
     const context = await buildFullProfileContext(profileContext, query);
-    const ctx = toProfileContext(profileContext.profile);
     const answer = await answerWithContext(
         query,
         context,
@@ -357,7 +372,7 @@ export async function* processProfileQueryStream(
         const context = await buildFullProfileContext(
             profileContext,
             query,
-            (msg) => { /* progress updates are fire-and-forget in this path */ }
+            () => { /* progress updates are fire-and-forget in this path */ }
         );
 
         yield {
@@ -368,7 +383,6 @@ export async function* processProfileQueryStream(
             progress: 75
         };
 
-        const ctx = toProfileContext(profileContext.profile);
         const stream = answerWithContextStream(
             query,
             context,
@@ -541,6 +555,75 @@ export async function getRemainingDeepScans(): Promise<{ used: number; total: nu
 
 export async function getLatestRepoScanId(owner: string, repo: string): Promise<string | null> {
     return getLatestScanId(owner, repo);
+}
+
+export async function createScanShareLink(scanId: string, ttlDays: number = 7) {
+    const { session, userId } = await requireAuthenticatedActor();
+    const scanResult = await getScanResultWithStatus(scanId);
+    if (scanResult.status === "not_found") {
+        throw new Error("Scan not found");
+    }
+    if (scanResult.status === "expired") {
+        throw new Error("Report expired. Run a new scan.");
+    }
+    const scan = scanResult.scan;
+
+    if (!canAccessPrivateReport(session, scan)) {
+        throw new Error("Forbidden");
+    }
+
+    const link = await createScanShareLinkRecord({
+        scanId,
+        createdByUserId: userId ?? null,
+        canonicalExpiresAt: new Date(scan.expiresAt),
+        ttlDays,
+    });
+
+    return {
+        linkId: link.linkId,
+        url: `${getPublicSiteUrl()}/report/shared/${link.token}`,
+        expiresAt: link.expiresAt.toISOString(),
+        createdAt: link.createdAt.toISOString(),
+    };
+}
+
+export async function resolveScanFromShareToken(token: string) {
+    return resolveScanFromShareTokenRecord(token);
+}
+
+export async function generateOutreachPack(scanId: string, ttlDays: number = 7) {
+    const { session, userId } = await requireAuthenticatedActor();
+    if (!isAdminUser(session)) {
+        throw new Error("Forbidden");
+    }
+
+    const scanResult = await getScanResultWithStatus(scanId);
+    if (scanResult.status === "not_found") {
+        throw new Error("Scan not found");
+    }
+    if (scanResult.status === "expired") {
+        throw new Error("Report expired. Run a new scan.");
+    }
+    const scan = scanResult.scan;
+
+    if (!canAccessPrivateReport(session, scan)) {
+        throw new Error("Forbidden");
+    }
+
+    const link = await createScanShareLinkRecord({
+        scanId,
+        createdByUserId: userId ?? null,
+        canonicalExpiresAt: new Date(scan.expiresAt),
+        ttlDays,
+    });
+    const shareUrl = `${getPublicSiteUrl()}/report/shared/${link.token}`;
+    const outreach = buildOutreachPack(scan, shareUrl);
+
+    return {
+        ...outreach,
+        linkId: link.linkId,
+        expiresAt: link.expiresAt.toISOString(),
+    };
 }
 
 

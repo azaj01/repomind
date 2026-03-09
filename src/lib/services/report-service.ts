@@ -7,18 +7,31 @@ export interface PriorScanDiff {
     unchanged: number;
 }
 
-export interface FindingActionPayload {
+export interface ReportFindingView {
     index: number;
+    finding: SecurityFinding;
     fingerprint: string;
-    chatPrompt: string;
+    triageScore: number;
+    proof: string;
+    impact: string;
+    confidenceRationale: string;
+    fixPrompt: string;
     chatHref: string;
 }
 
 export interface ReportViewData {
     priorScanDiff: PriorScanDiff;
-    topFixes: SecurityFinding[];
-    rankedFindings: SecurityFinding[];
-    findingActions: FindingActionPayload[];
+    topFixes: ReportFindingView[];
+    findingViews: ReportFindingView[];
+}
+
+export interface OutreachPackData {
+    maintainerNote: string;
+    strongestFinding: ReportFindingView | null;
+    impactStatement: string;
+    shareUrl: string;
+    fixChatCta: string;
+    outreachMessage: string;
 }
 
 const severityWeight: Record<SecurityFinding["severity"], number> = {
@@ -37,6 +50,14 @@ const confidenceWeight: Record<NonNullable<SecurityFinding["confidence"]>, numbe
 
 function normalizeToken(input: string): string {
     return input.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function getFindingScore(finding: SecurityFinding): number {
+    if (typeof finding.confidenceScore === "number") return finding.confidenceScore;
+    if (finding.confidence === "high") return 0.9;
+    if (finding.confidence === "medium") return 0.72;
+    if (finding.confidence === "low") return 0.45;
+    return 0.7;
 }
 
 function exploitabilityScore(finding: SecurityFinding): number {
@@ -72,6 +93,66 @@ function exploitabilityScore(finding: SecurityFinding): number {
     }
 
     return score;
+}
+
+function summarizeEvidence(finding: SecurityFinding): string[] {
+    if (Array.isArray(finding.evidence) && finding.evidence.length > 0) {
+        return finding.evidence
+            .slice(0, 3)
+            .map((e) => `${e.message}${typeof e.line === "number" ? ` (line ${e.line})` : ""}`);
+    }
+    return [
+        `Detector rule: ${finding.ruleId ?? "unlabeled"}${finding.engine ? ` (${finding.engine})` : ""}.`,
+    ];
+}
+
+function buildFindingProof(finding: SecurityFinding): string {
+    const location = `${finding.file}${finding.line ? `:${finding.line}` : ""}`;
+    const evidence = summarizeEvidence(finding)
+        .map((item) => `- ${item}`)
+        .join("\n");
+
+    return [
+        `Location: \`${location}\`.`,
+        evidence,
+    ].join("\n");
+}
+
+function buildImpactStatement(finding: SecurityFinding): string {
+    const text = normalizeToken(`${finding.title} ${finding.description} ${finding.recommendation}`);
+    const path = finding.file.toLowerCase();
+
+    if (finding.type === "secret") {
+        return "Exposed credentials can allow unauthorized service access and downstream compromise until keys are rotated.";
+    }
+    if (/(auth|authorization|permission|session|token|unauth|bypass)/i.test(text) || /(auth|session|token|api\/)/.test(path)) {
+        return "Attackers may bypass intended access controls and invoke privileged workflows, increasing abuse and quota-exhaustion risk.";
+    }
+    if (/sql injection/.test(text)) {
+        return "A crafted input could alter database queries, potentially exposing or mutating data outside intended query boundaries.";
+    }
+    if (/command injection|exec|child_process/.test(text)) {
+        return "Tainted input at execution sinks can lead to arbitrary command execution in the server runtime.";
+    }
+    if (/xss|cross-site scripting|innerhtml|dangerouslysetinnerhtml/.test(text)) {
+        return "Injected client-side script can steal session context, manipulate UI state, or perform actions on behalf of users.";
+    }
+    if (/path traversal/.test(text)) {
+        return "An attacker could read or access files outside intended directories by controlling path segments.";
+    }
+    if (finding.severity === "critical" || finding.severity === "high") {
+        return "This finding has high exploitability and should be remediated quickly to reduce direct security exposure.";
+    }
+    return "This issue weakens security posture and can become a higher-risk exploit path when combined with other weaknesses.";
+}
+
+function buildConfidenceRationale(finding: SecurityFinding): string {
+    const score = getFindingScore(finding);
+    const pct = Math.round(score * 100);
+    const evidenceCount = Array.isArray(finding.evidence) ? finding.evidence.length : 0;
+    const evidenceText = evidenceCount > 0 ? `${evidenceCount} evidence signal${evidenceCount === 1 ? "" : "s"}` : "rule match";
+
+    return `Confidence: ${finding.confidence ?? "unlabeled"} (${pct}%). Source: ${finding.engine ?? "scanner"}${finding.ruleId ? ` / ${finding.ruleId}` : ""} with ${evidenceText}.`;
 }
 
 export function findingFingerprint(finding: SecurityFinding): string {
@@ -134,16 +215,54 @@ export function computePriorScanDiff(
     };
 }
 
+function truncateSnippet(snippet?: string, maxLength = 1400): string {
+    if (!snippet) return "Snippet unavailable. Use file/line context to inspect the exact sink.";
+    if (snippet.length <= maxLength) return snippet;
+    return `${snippet.slice(0, maxLength)}\n... (truncated)`;
+}
+
 export function buildFindingChatPrompt(owner: string, repo: string, finding: SecurityFinding): string {
     const location = `${finding.file}${finding.line ? `:${finding.line}` : ""}`;
+    const proof = buildFindingProof(finding);
+    const impact = buildImpactStatement(finding);
+    const confidenceRationale = buildConfidenceRationale(finding);
+    const snippet = truncateSnippet(finding.snippet);
 
     return [
-        `Help me fix this security vulnerability in ${owner}/${repo}.`,
-        `Issue: ${finding.title} (${finding.severity.toUpperCase()})`,
-        `Location: ${location}`,
-        `Description: ${finding.description}`,
-        `Recommendation: ${finding.recommendation}`,
-        "Please propose a minimal safe patch and include regression tests.",
+        `You are helping fix a security vulnerability in ${owner}/${repo}.`,
+        "",
+        "## Vulnerability",
+        `- Title: ${finding.title}`,
+        `- Severity: ${finding.severity.toUpperCase()}`,
+        `- Location: ${location}`,
+        `- CWE: ${finding.cwe ?? "Not mapped"}`,
+        "",
+        "## Proof",
+        proof,
+        "",
+        "## Impact",
+        impact,
+        "",
+        "## Confidence",
+        confidenceRationale,
+        "",
+        "## Existing Recommendation",
+        finding.recommendation,
+        "",
+        "## Code Context",
+        "```",
+        snippet,
+        "```",
+        "",
+        "## Desired Secure Behavior",
+        "- Enforce strict input validation/sanitization at source boundaries.",
+        "- Ensure dangerous sinks only receive trusted/normalized values.",
+        "- Preserve existing business behavior while removing the exploit path.",
+        "",
+        "## What to produce",
+        "1. A minimal patch for the vulnerable file(s).",
+        "2. Regression tests covering: exploit attempt, valid input, and edge cases.",
+        "3. A short verification checklist (how to confirm the issue is fixed).",
     ].join("\n");
 }
 
@@ -154,21 +273,85 @@ export function buildFindingChatHref(owner: string, repo: string, finding: Secur
 }
 
 export function buildReportViewData(scan: StoredScan, previousScan?: StoredScan | null): ReportViewData {
-    const rankedFindings = rankFindingsForTriage(scan.findings);
-    const topFixes = rankedFindings.slice(0, 3);
-    const priorScanDiff = computePriorScanDiff(scan.findings, previousScan?.findings ?? null);
+    const rankedWithIndexes = scan.findings
+        .map((finding, index) => ({ finding, index, triageScore: scoreFindingForTriage(finding) }))
+        .sort((a, b) => {
+            const scoreDelta = b.triageScore - a.triageScore;
+            if (scoreDelta !== 0) return scoreDelta;
+            const severityDelta = (severityWeight[b.finding.severity] ?? 0) - (severityWeight[a.finding.severity] ?? 0);
+            if (severityDelta !== 0) return severityDelta;
+            return a.index - b.index;
+        });
 
-    const findingActions = scan.findings.map((finding, index) => ({
+    const findingViews = rankedWithIndexes.map(({ finding, index, triageScore }) => ({
         index,
+        finding,
         fingerprint: findingFingerprint(finding),
-        chatPrompt: buildFindingChatPrompt(scan.owner, scan.repo, finding),
+        triageScore,
+        proof: buildFindingProof(finding),
+        impact: buildImpactStatement(finding),
+        confidenceRationale: buildConfidenceRationale(finding),
+        fixPrompt: buildFindingChatPrompt(scan.owner, scan.repo, finding),
         chatHref: buildFindingChatHref(scan.owner, scan.repo, finding),
     }));
 
+    const priorScanDiff = computePriorScanDiff(scan.findings, previousScan?.findings ?? null);
+
     return {
         priorScanDiff,
-        topFixes,
-        rankedFindings,
-        findingActions,
+        topFixes: findingViews.slice(0, 3),
+        findingViews,
+    };
+}
+
+function isHighPriorityOutreachCandidate(view: ReportFindingView): boolean {
+    const severity = view.finding.severity;
+    const confidence = view.finding.confidence;
+    return (severity === "critical" || severity === "high") && confidence === "high";
+}
+
+export function buildOutreachPack(scan: StoredScan, shareUrl: string): OutreachPackData {
+    const reportView = buildReportViewData(scan);
+    const shareOrigin = (() => {
+        try {
+            return new URL(shareUrl).origin;
+        } catch {
+            return "";
+        }
+    })();
+    const strongestFinding =
+        reportView.findingViews.find(isHighPriorityOutreachCandidate) ?? reportView.findingViews[0] ?? null;
+    const strongestImpact = strongestFinding?.impact ?? "No validated findings were available to include.";
+    const fixChatCta = strongestFinding
+        ? `Open this finding in Repo Chat for a patch + regression tests:\n${shareOrigin}${strongestFinding.chatHref}`
+        : `Open the repository in Repo Chat for guided remediation:\n${shareOrigin}/chat?q=${encodeURIComponent(`${scan.owner}/${scan.repo}`)}`;
+
+    const maintainerNote = [
+        `Hi ${scan.owner} maintainers,`,
+        "",
+        `I ran a security review on ${scan.owner}/${scan.repo} and identified ${scan.summary.total} issue${scan.summary.total === 1 ? "" : "s"} (${scan.summary.high} high / ${scan.summary.critical} critical).`,
+        "Sharing this privately first so you can triage safely before any public disclosure.",
+    ].join("\n");
+
+    const outreachMessage = [
+        maintainerNote,
+        "",
+        strongestFinding
+            ? `Strongest finding: ${strongestFinding.finding.title} in ${strongestFinding.finding.file}${strongestFinding.finding.line ? `:${strongestFinding.finding.line}` : ""}.`
+            : "No strongest finding available.",
+        `Impact: ${strongestImpact}`,
+        "",
+        `Private report link (expires automatically): ${shareUrl}`,
+        "",
+        fixChatCta,
+    ].join("\n");
+
+    return {
+        maintainerNote,
+        strongestFinding,
+        impactStatement: strongestImpact,
+        shareUrl,
+        fixChatCta,
+        outreachMessage,
     };
 }

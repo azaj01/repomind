@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { FileCode, ChevronRight, ArrowLeft, Sparkles, Github, Menu, MessageCircle, Shield, Download, Trash2, X, GitFork } from "lucide-react";
+import { FileCode, ChevronRight, ArrowLeft, Sparkles, Menu, MessageCircle, Shield, Download, Trash2, X, GitFork } from "lucide-react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { BotIcon } from "@/components/icons/BotIcon";
@@ -8,7 +8,7 @@ import { CopySquaresIcon } from "@/components/icons/CopySquaresIcon";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 
-import { scanRepositoryVulnerabilities, fetchProfile, getRemainingDeepScans, getLatestRepoScanId } from "@/app/actions";
+import { scanRepositoryVulnerabilities, fetchProfile, getRemainingDeepScans, getLatestRepoScanId, createScanShareLink } from "@/app/actions";
 import { cn } from "@/lib/utils";
 import { countMessageTokens, formatTokenCount, getTokenWarningLevel, isRateLimitError, getRateLimitErrorMessage, MAX_TOKENS } from "@/lib/tokens";
 import { saveConversation, loadConversation, clearConversation } from "@/lib/storage";
@@ -820,10 +820,17 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
                                                         View Full Report
                                                     </Link>
                                                     <button
-                                                        onClick={() => {
-                                                            const url = `${window.location.origin}/report/${msg.scanId}`;
-                                                            navigator.clipboard.writeText(url);
-                                                            toast.success("Report link copied!");
+                                                        onClick={async () => {
+                                                            try {
+                                                                const link = await createScanShareLink(msg.scanId!);
+                                                                await navigator.clipboard.writeText(link.url);
+                                                                toast.success("Signed report link copied!", {
+                                                                    description: `Expires on ${new Date(link.expiresAt).toLocaleDateString()}`,
+                                                                });
+                                                            } catch (error) {
+                                                                const message = error instanceof Error ? error.message : "Failed to share report";
+                                                                toast.error("Failed to share report", { description: message });
+                                                            }
                                                         }}
                                                         className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-zinc-300 bg-zinc-800 hover:bg-zinc-700 border border-white/10 rounded-lg transition-colors shadow-sm"
                                                     >

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { SecurityFinding } from "@/lib/security-scanner";
 import type { StoredScan } from "@/lib/services/scan-storage";
 import {
+    buildFindingChatPrompt,
+    buildOutreachPack,
     buildReportViewData,
     computePriorScanDiff,
     findingFingerprint,
@@ -82,12 +84,13 @@ describe("rankFindingsForTriage", () => {
 });
 
 describe("buildReportViewData", () => {
-    it("returns top fixes, diff summary, and finding action payloads", () => {
+    it("returns top fixes, diff summary, and evidence-first finding views", () => {
         const scan: StoredScan = {
             id: "scan-1",
             owner: "acme",
             repo: "widget",
             timestamp: Date.now(),
+            expiresAt: Date.now() + 60_000,
             depth: "quick",
             summary: {
                 total: 2,
@@ -112,8 +115,76 @@ describe("buildReportViewData", () => {
         const view = buildReportViewData(scan, previous);
         expect(view.topFixes.length).toBe(2);
         expect(view.priorScanDiff).toEqual({ new: 1, resolved: 0, unchanged: 1 });
-        expect(view.findingActions.length).toBe(2);
-        expect(view.findingActions[0].chatHref).toContain("/chat?q=acme%2Fwidget");
-        expect(view.findingActions[0].chatPrompt).toContain("Help me fix this security vulnerability");
+        expect(view.findingViews.length).toBe(2);
+        expect(view.findingViews[0].chatHref).toContain("/chat?q=acme%2Fwidget");
+        expect(view.findingViews[0].fixPrompt).toContain("## Vulnerability");
+        expect(view.findingViews[0].proof.length).toBeGreaterThan(0);
+        expect(view.findingViews[0].impact.length).toBeGreaterThan(0);
+        expect(view.findingViews[0].confidenceRationale).toContain("Confidence:");
+    });
+});
+
+describe("buildFindingChatPrompt", () => {
+    it("includes snippet, secure target behavior, and testing instructions", () => {
+        const finding = makeFinding({
+            severity: "high",
+            line: 42,
+            snippet: "42| db.query(`SELECT * FROM users WHERE id = ${req.query.id}`);",
+            ruleId: "sqli-tainted-dynamic-query",
+            confidence: "high",
+            confidenceScore: 0.92,
+            evidence: [{ type: "sink", message: "query sink receives tainted input", line: 42 }],
+        });
+
+        const prompt = buildFindingChatPrompt("acme", "widget", finding);
+        expect(prompt).toContain("## Vulnerability");
+        expect(prompt).toContain("## Proof");
+        expect(prompt).toContain("## Impact");
+        expect(prompt).toContain("## Desired Secure Behavior");
+        expect(prompt).toContain("## What to produce");
+        expect(prompt).toContain("Regression tests");
+        expect(prompt).toContain("SELECT * FROM users");
+    });
+});
+
+describe("buildOutreachPack", () => {
+    it("creates a private-first outreach message with strongest finding and CTA", () => {
+        const scan: StoredScan = {
+            id: "scan-10",
+            owner: "acme",
+            repo: "widget",
+            timestamp: Date.now(),
+            expiresAt: Date.now() + 60_000,
+            depth: "deep",
+            summary: {
+                total: 2,
+                critical: 1,
+                high: 1,
+                medium: 0,
+                low: 0,
+                info: 0,
+            },
+            findings: [
+                makeFinding({
+                    title: "Authentication Bypass",
+                    severity: "critical",
+                    confidence: "high",
+                    file: "src/app/api/admin/route.ts",
+                }),
+                makeFinding({
+                    title: "Potential XSS",
+                    severity: "high",
+                    confidence: "high",
+                    file: "src/components/Profile.tsx",
+                }),
+            ],
+        };
+
+        const outreach = buildOutreachPack(scan, "https://repomind.in/report/shared/token123");
+        expect(outreach.maintainerNote).toContain("privately first");
+        expect(outreach.strongestFinding?.finding.title).toBe("Authentication Bypass");
+        expect(outreach.shareUrl).toContain("/report/shared/");
+        expect(outreach.fixChatCta).toContain("/chat?q=acme%2Fwidget");
+        expect(outreach.outreachMessage).toContain("Strongest finding");
     });
 });

@@ -1,18 +1,14 @@
 "use client";
 
-import { Download, FileText, FileImage } from 'lucide-react';
+import { Download, FileText } from 'lucide-react';
 import { StoredScan } from '@/lib/services/scan-storage';
 import { toast } from 'sonner';
-import { useState } from 'react';
 
 interface ExportButtonsProps {
     scan: StoredScan;
-    reportRef: React.RefObject<HTMLDivElement | null>;
 }
 
-export function ExportButtons({ scan, reportRef }: ExportButtonsProps) {
-    const [isExporting, setIsExporting] = useState(false);
-
+export function ExportButtons({ scan }: ExportButtonsProps) {
     const severityIcons: Record<string, string> = {
         critical: '🔴',
         high: '🟠',
@@ -85,7 +81,7 @@ export function ExportButtons({ scan, reportRef }: ExportButtonsProps) {
     };
 
     return (
-        <div className="flex items-center gap-2 mt-4 sm:mt-0 no-export print:hidden">
+        <div className="flex items-center gap-2 no-export print:hidden">
             <button
                 onClick={handleMarkdownExport}
                 className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-zinc-300 bg-zinc-800 hover:bg-zinc-700 hover:text-white border border-white/10 rounded-lg transition-colors shadow-sm"
@@ -96,12 +92,11 @@ export function ExportButtons({ scan, reportRef }: ExportButtonsProps) {
             </button>
             <button
                 onClick={handlePdfExport}
-                disabled={isExporting}
-                className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 border border-indigo-500/50 rounded-lg transition-colors shadow-sm disabled:opacity-50"
+                className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 border border-indigo-500/50 rounded-lg transition-colors shadow-sm"
                 title="Download PDF"
             >
                 <Download className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{isExporting ? 'Exporting...' : 'PDF'}</span>
+                <span className="hidden sm:inline">PDF</span>
             </button>
         </div>
     );

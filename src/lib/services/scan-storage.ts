@@ -1,22 +1,32 @@
 import { prisma } from "@/lib/db";
 import type { SecurityFinding, ScanSummary } from "@/lib/security-scanner";
 
+export const SCAN_RETENTION_DAYS = 7;
+const SCAN_RETENTION_MS = SCAN_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+
 export interface StoredScan {
     id: string;
     owner: string;
     repo: string;
     timestamp: number;
+    expiresAt: number;
     depth: "quick" | "deep";
     summary: ScanSummary;
     findings: SecurityFinding[];
     userId?: string;
 }
 
+export type ScanLookupResult =
+    | { status: "ok"; scan: StoredScan }
+    | { status: "expired"; scan: StoredScan }
+    | { status: "not_found" };
+
 function mapStoredScan(record: {
     id: string;
     owner: string;
     repo: string;
     timestamp: bigint;
+    expiresAt: Date;
     depth: string;
     summary: unknown;
     findings: unknown;
@@ -27,11 +37,16 @@ function mapStoredScan(record: {
         owner: record.owner,
         repo: record.repo,
         timestamp: Number(record.timestamp),
+        expiresAt: record.expiresAt.getTime(),
         depth: record.depth === "deep" ? "deep" : "quick",
         summary: record.summary as ScanSummary,
         findings: record.findings as SecurityFinding[],
         userId: record.userId ?? undefined,
     };
+}
+
+export function isScanExpired(scan: Pick<StoredScan, "expiresAt">): boolean {
+    return scan.expiresAt <= Date.now();
 }
 
 export async function saveScanResult(
@@ -46,12 +61,14 @@ export async function saveScanResult(
 ): Promise<string> {
     const id = crypto.randomUUID();
     const timestamp = Date.now();
+    const expiresAt = timestamp + SCAN_RETENTION_MS;
 
     const record: StoredScan = {
         id,
         owner,
         repo,
         timestamp,
+        expiresAt,
         userId,
         ...data,
     };
@@ -62,6 +79,7 @@ export async function saveScanResult(
             owner: record.owner,
             repo: record.repo,
             timestamp: BigInt(record.timestamp),
+            expiresAt: new Date(record.expiresAt),
             depth: record.depth,
             summary: record.summary as object,
             findings: record.findings as unknown as object[],
@@ -72,14 +90,33 @@ export async function saveScanResult(
     return id;
 }
 
-export async function getScanResult(id: string): Promise<StoredScan | null> {
+export async function getScanResultWithStatus(id: string): Promise<ScanLookupResult> {
     const record = await prisma.repoScan.findUnique({ where: { id } });
-    return record ? mapStoredScan(record) : null;
+    if (!record) {
+        return { status: "not_found" };
+    }
+
+    const scan = mapStoredScan(record);
+    if (isScanExpired(scan)) {
+        return { status: "expired", scan };
+    }
+
+    return { status: "ok", scan };
+}
+
+export async function getScanResult(id: string): Promise<StoredScan | null> {
+    const result = await getScanResultWithStatus(id);
+    return result.status === "ok" ? result.scan : null;
 }
 
 export async function getLatestScanId(owner: string, repo: string): Promise<string | null> {
+    const now = new Date();
     const latest = await prisma.repoScan.findFirst({
-        where: { owner, repo },
+        where: {
+            owner,
+            repo,
+            expiresAt: { gt: now },
+        },
         orderBy: { timestamp: "desc" },
         select: { id: true },
     });
@@ -106,6 +143,7 @@ export async function getPreviousScan(
             repo,
             id: { not: currentScanId },
             timestamp: { lt: BigInt(resolvedTimestamp) },
+            expiresAt: { gt: new Date() },
         },
         orderBy: { timestamp: "desc" },
     });
@@ -115,7 +153,10 @@ export async function getPreviousScan(
 
 export async function getUserScans(userId: string, limit?: number): Promise<StoredScan[]> {
     const scans = await prisma.repoScan.findMany({
-        where: { userId },
+        where: {
+            userId,
+            expiresAt: { gt: new Date() },
+        },
         orderBy: { timestamp: "desc" },
         ...(typeof limit === "number" && limit > 0 ? { take: limit } : {}),
     });
