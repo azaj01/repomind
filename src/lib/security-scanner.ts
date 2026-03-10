@@ -339,6 +339,16 @@ const SECRET_PATTERNS = [
     },
 ];
 
+function isLikelyPasswordFormField(line: string): boolean {
+    const normalized = line.toLowerCase();
+    if (!normalized.includes("password")) return false;
+    return (
+        /<input\b[^>]*type\s*=\s*["']password["']/.test(normalized) ||
+        /\btype\s*=\s*["']password["']/.test(normalized) ||
+        /\bautocomplete\s*=\s*["'](?:new|current)-password["']/.test(normalized)
+    );
+}
+
 export function detectSecrets(filepath: string, content: string): SecurityFinding[] {
     const findings: SecurityFinding[] = [];
     if (typeof content !== 'string') return findings;
@@ -354,6 +364,7 @@ export function detectSecrets(filepath: string, content: string): SecurityFindin
         if (trimmed.startsWith('//') || trimmed.startsWith('#') || trimmed.startsWith('*')) return;
 
         SECRET_PATTERNS.forEach(pattern => {
+            if (isLikelyPasswordFormField(trimmed) && pattern.name === "Hardcoded Password") return;
             if (pattern.regex.test(line)) {
                 // Avoid flagging placeholder values like "your-api-key-here"
                 if (/your[-_]?|<.*?>|example|placeholder|xxx|fake|dummy|changeme/i.test(line)) return;

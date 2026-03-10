@@ -9,6 +9,7 @@ import {
     buildScanConfig,
     filterCodeFiles,
     selectDependencyFiles,
+    selectSupabasePolicyFiles,
 } from "@/lib/services/security-service";
 import type { SecurityFinding } from "@/lib/security-scanner";
 
@@ -209,5 +210,35 @@ describe("selectDependencyFiles", () => {
         const deps = selectDependencyFiles(files, config, true);
         expect(deps.some((file) => file.path === "package.json")).toBe(true);
         expect(deps.some((file) => file.path === "package-lock.json")).toBe(true);
+    });
+});
+
+describe("selectSupabasePolicyFiles", () => {
+    it("includes SQL policy files from common supabase folders", () => {
+        const files = [
+            { path: "supabase/migrations/20260310_auth.sql" },
+            { path: "supabase/policies/projects.sql" },
+            { path: "supabase/sql/helpers.sql" },
+            { path: "src/app.ts" },
+        ];
+        const config = buildScanConfig({});
+        const selected = selectSupabasePolicyFiles(files, config, 10);
+
+        expect(selected.map((file) => file.path)).toEqual([
+            "supabase/migrations/20260310_auth.sql",
+            "supabase/policies/projects.sql",
+            "supabase/sql/helpers.sql",
+        ]);
+    });
+
+    it("respects maxFiles cap for policy context selection", () => {
+        const files = [
+            { path: "supabase/migrations/1.sql" },
+            { path: "supabase/migrations/2.sql" },
+            { path: "supabase/migrations/3.sql" },
+        ];
+        const config = buildScanConfig({});
+        const selected = selectSupabasePolicyFiles(files, config, 2);
+        expect(selected).toHaveLength(2);
     });
 });

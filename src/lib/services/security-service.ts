@@ -217,6 +217,22 @@ export function selectDependencyFiles(
     });
 }
 
+const SUPABASE_POLICY_PATH = /^supabase\/(migrations|sql|policies|schema)\/.+\.sql$/i;
+
+export function selectSupabasePolicyFiles(
+    files: Array<{ path: string; sha?: string }>,
+    config: SecurityScanConfig,
+    maxFiles: number
+): Array<{ path: string; sha?: string }> {
+    return files
+        .filter(({ path }) => {
+            if (!SUPABASE_POLICY_PATH.test(path)) return false;
+            if (config.excludeMatchers.length > 0 && matchesAny(path, config.excludeMatchers)) return false;
+            return true;
+        })
+        .slice(0, maxFiles);
+}
+
 // ─── Core Service ──────────────────────────────────────────────────────────────
 
 /**
@@ -261,6 +277,11 @@ export async function runSecurityScan(
     const riskSorted = [...files].sort((a, b) => scorePathRisk(b.path) - scorePathRisk(a.path));
     const codeFiles = filterCodeFiles(riskSorted, config);
     const dependencyFiles = selectDependencyFiles(riskSorted, config, config.aiEnabled);
+    const policyContextCandidates = selectSupabasePolicyFiles(
+        riskSorted,
+        config,
+        config.analysisProfile === "deep" ? 40 : 16
+    );
 
     const selectedFiles = [...codeFiles];
     for (const file of dependencyFiles) {
@@ -268,9 +289,11 @@ export async function runSecurityScan(
             selectedFiles.push(file);
         }
     }
+    const selectedPaths = new Set(selectedFiles.map((file) => file.path));
+    const additionalPolicyFiles = policyContextCandidates.filter((file) => !selectedPaths.has(file.path));
 
     console.log(
-        `🔍 Security Scan [${config.analysisProfile}]: ${selectedFiles.length} files selected (code=${codeFiles.length}, deps=${dependencyFiles.length}, total=${files.length})`
+        `🔍 Security Scan [${config.analysisProfile}]: ${selectedFiles.length} files selected (code=${codeFiles.length}, deps=${dependencyFiles.length}, policy_ctx=${policyContextCandidates.length}, total=${files.length})`
     );
 
     const fetchStartedAt = Date.now();
@@ -289,6 +312,27 @@ export async function runSecurityScan(
         })
     );
     const filesWithContent = fetchedFiles.filter((file): file is { path: string; content: string } => Boolean(file));
+
+    const fetchedPolicyFiles = await Promise.all(
+        additionalPolicyFiles.map(async (file) => {
+            try {
+                const content = await fetchContent(owner, repo, file.path, file.sha);
+                if (typeof content === "string" && content.length > 0) {
+                    return { path: file.path, content };
+                }
+                return null;
+            } catch (error) {
+                console.warn(`❌ Failed to fetch policy context file ${file.path}:`, error);
+                return null;
+            }
+        })
+    );
+    const policyFilesWithContent = fetchedPolicyFiles.filter(
+        (file): file is { path: string; content: string } => Boolean(file)
+    );
+    const verificationContextFiles = Array.from(
+        new Map([...filesWithContent, ...policyFilesWithContent].map((file) => [file.path, file])).values()
+    );
     const fetchDurationMs = Date.now() - fetchStartedAt;
 
     const deterministicStartedAt = Date.now();
@@ -342,6 +386,8 @@ export async function runSecurityScan(
         owner,
         repo,
         findings: withSnippets,
+        repositoryFiles: verificationContextFiles,
+        enableAiAdjudication: config.aiEnabled,
     });
 
     const summary = getScanSummary(verification.verifiedFindings) as ScanSummary & { debug?: Record<string, number> };
@@ -350,6 +396,7 @@ export async function runSecurityScan(
         codeFilesFiltered: codeFiles.length,
         dependencyFilesIncluded: dependencyFiles.length,
         filesSuccessfullyFetched: filesWithContent.length,
+        policyContextFilesFetched: policyFilesWithContent.length,
         patternFindings: deterministicFindings.length,
         deterministicFindings: deterministicFindings.length,
         aiFindings: aiFindings.length,

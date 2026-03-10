@@ -90,6 +90,23 @@ type GeminiSecurityCall = {
     args?: Record<string, unknown>;
 };
 
+export type SecurityAdjudicationVerdict = "true_positive" | "false_positive" | "needs_more_evidence";
+
+export interface SecurityAdjudicationInput {
+    finding: SecurityFinding;
+    policyEvidenceAvailable: boolean;
+    policyEvidenceSummary: string;
+    policyFiles: string[];
+}
+
+export interface SecurityAdjudicationResult {
+    verdict: SecurityAdjudicationVerdict;
+    confidence: number;
+    justification: string;
+    evidenceUsed: string[];
+    rawText: string;
+}
+
 function getString(value: unknown): string {
     return typeof value === "string" ? value : "";
 }
@@ -121,6 +138,155 @@ function redactPromptSecrets(input: string): string {
         .replace(/ghp_[a-zA-Z0-9]{20,}/g, "[REDACTED_GITHUB_TOKEN]")
         .replace(/AKIA[0-9A-Z]{16}/g, "[REDACTED_AWS_KEY]")
         .replace(/(password|token|secret)\s*[:=]\s*['"][^'"]+['"]/gi, "$1=[REDACTED]");
+}
+
+function clampConfidence(value: unknown, fallback = 0): number {
+    const numeric = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(numeric)) return fallback;
+    return Math.max(0, Math.min(1, numeric));
+}
+
+function normalizeVerdict(value: unknown): SecurityAdjudicationVerdict | null {
+    if (value === "true_positive" || value === "false_positive" || value === "needs_more_evidence") {
+        return value;
+    }
+    return null;
+}
+
+function extractJsonPayload(text: string): string | null {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start === -1 || end <= start) return null;
+    return text.slice(start, end + 1);
+}
+
+function fallbackAdjudication(rawText: string, reason: string): SecurityAdjudicationResult {
+    return {
+        verdict: "needs_more_evidence",
+        confidence: 0,
+        justification: reason,
+        evidenceUsed: [],
+        rawText,
+    };
+}
+
+function parseAdjudicationResponse(text: string): SecurityAdjudicationResult | null {
+    const jsonPayload = extractJsonPayload(text);
+    if (!jsonPayload) return null;
+
+    try {
+        const parsed = JSON.parse(jsonPayload) as {
+            verdict?: unknown;
+            confidence?: unknown;
+            justification?: unknown;
+            evidence_used?: unknown;
+        };
+        const verdict = normalizeVerdict(parsed.verdict);
+        if (!verdict) return null;
+
+        const evidenceUsed = Array.isArray(parsed.evidence_used)
+            ? parsed.evidence_used.filter((item): item is string => typeof item === "string").slice(0, 6)
+            : [];
+        const justification = typeof parsed.justification === "string"
+            ? parsed.justification.trim()
+            : "";
+        if (!justification) return null;
+
+        return {
+            verdict,
+            confidence: clampConfidence(parsed.confidence, 0),
+            justification,
+            evidenceUsed,
+            rawText: text,
+        };
+    } catch {
+        return null;
+    }
+}
+
+export async function adjudicateSecurityFindingWithGemini(
+    input: SecurityAdjudicationInput
+): Promise<SecurityAdjudicationResult> {
+    try {
+        const finding = input.finding;
+        const title = finding.title.trim();
+        const description = finding.description.trim();
+        const recommendation = finding.recommendation.trim();
+        const snippet = redactPromptSecrets((finding.snippet ?? "").slice(0, 2500));
+        const policySummary = input.policyEvidenceSummary.trim() || "No policy evidence provided.";
+        const policyFiles = input.policyFiles.length > 0 ? input.policyFiles.slice(0, 20).join("\n") : "(none)";
+        const findingText = `${title} ${description} ${recommendation}`.toLowerCase();
+        const authzContext = /(auth|authoriz|permission|ownership|rls|row level|supabase)/.test(findingText);
+
+        const prompt = `
+You are adjudicating one security scanner finding.
+Your job is to classify it as a true positive, false positive, or needs more evidence.
+
+Return ONLY JSON with this exact shape:
+{
+  "verdict": "true_positive" | "false_positive" | "needs_more_evidence",
+  "confidence": 0.0-1.0,
+  "justification": "short rationale grounded in provided evidence",
+  "evidence_used": ["bullet evidence 1", "bullet evidence 2"]
+}
+
+Rules:
+- Never guess.
+- For auth/authz findings in Supabase-like apps, if DB policy evidence is missing or insufficient, return "needs_more_evidence".
+- For non-auth findings, use code evidence and security semantics; do not require DB policy evidence.
+- Web search can support framework/security context but cannot replace repository evidence.
+- Do not invent files, policies, or code.
+
+Finding:
+- Title: ${title}
+- Severity: ${finding.severity}
+- File: ${finding.file}${finding.line ? `:${finding.line}` : ""}
+- Description: ${description}
+- Recommendation: ${recommendation}
+- Snippet:
+\`\`\`
+${snippet || "(not available)"}
+\`\`\`
+
+Repository policy evidence available: ${input.policyEvidenceAvailable ? "yes" : "no"}
+Policy files considered:
+${policyFiles}
+
+Policy evidence summary:
+${policySummary}
+`;
+
+        const model = getGenAI().getGenerativeModel({
+            model: DEFAULT_MODEL,
+            tools: [{ googleSearch: {} }],
+        });
+
+        const response = await model.generateContent(prompt);
+        const text = response.response.text();
+        const parsed = parseAdjudicationResponse(text);
+        if (!parsed) {
+            return fallbackAdjudication(text, "Adjudicator output was invalid JSON; treating as needs_more_evidence.");
+        }
+
+        if (authzContext && !input.policyEvidenceAvailable && parsed.verdict !== "needs_more_evidence") {
+            return {
+                verdict: "needs_more_evidence",
+                confidence: Math.min(parsed.confidence, 0.2),
+                justification: "Auth/authz finding lacks repository DB policy evidence; requires more evidence.",
+                evidenceUsed: parsed.evidenceUsed,
+                rawText: text,
+            };
+        }
+
+        return parsed;
+    } catch (error: unknown) {
+        const errorInfo = getErrorInfo(error);
+        console.error("Gemini adjudication error:", errorInfo.message ?? error);
+        return fallbackAdjudication(
+            "",
+            "Adjudicator failed to execute; treating as needs_more_evidence."
+        );
+    }
 }
 
 /**

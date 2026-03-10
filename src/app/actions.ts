@@ -490,6 +490,8 @@ export async function scanRepositoryVulnerabilities(
             includePatterns: config.includePatterns,
             excludePatterns: config.excludePatterns,
             selectedPaths: config.selectedPaths ? Array.from(config.selectedPaths).sort() : null,
+            verificationContextVersion: "supabase-policy-v1",
+            adjudicationMode: config.aiEnabled ? "gemini-web-v1" : "off",
         },
         engineVersion: config.engineVersion,
         cacheKeyVersion: config.cacheKeyVersion,

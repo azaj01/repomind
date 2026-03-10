@@ -46,6 +46,25 @@ export function add(a: number, b: number): number {
         expect(findings.length).toBeGreaterThan(0);
     });
 
+    it("does not flag password form inputs as hardcoded passwords", () => {
+        const content = `
+            <input
+              type="password"
+              autoComplete="current-password"
+              placeholder="••••••••"
+              value={password}
+            />
+        `;
+        const findings = detectSecrets("src/components/LoginForm.tsx", content);
+        expect(findings.some((finding) => /hardcoded password/i.test(finding.title))).toBe(false);
+    });
+
+    it("still flags literal password assignments", () => {
+        const content = `const config = { "password": "SuperSecret123!" };`;
+        const findings = detectSecrets("config.ts", content);
+        expect(findings.some((finding) => /hardcoded password/i.test(finding.title))).toBe(true);
+    });
+
     it("includes file path in findings", () => {
         const content = `const key = "AKIA1234567890ABCDEF";`;
         const findings = detectSecrets("secrets/config.ts", content);

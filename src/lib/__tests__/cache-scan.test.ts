@@ -99,4 +99,48 @@ describe("security scan cache helpers", () => {
         const secondKey = setexMock.mock.calls[1]?.[0];
         expect(firstKey).not.toBe(secondKey);
     });
+
+    it("changes cache identity when adjudication config changes", async () => {
+        setexMock.mockResolvedValue("OK");
+
+        await cacheSecurityScanResult(
+            "acme",
+            "widget",
+            {
+                scanKey: "security_scan",
+                files: ["src/a.ts"],
+                revision: "abc123",
+                scanConfig: {
+                    analysisProfile: "deep",
+                    aiAssist: "on",
+                    adjudicationMode: "off",
+                },
+                engineVersion: "scan-engine-v2",
+                cacheKeyVersion: "v2",
+            },
+            { findings: [] }
+        );
+
+        await cacheSecurityScanResult(
+            "acme",
+            "widget",
+            {
+                scanKey: "security_scan",
+                files: ["src/a.ts"],
+                revision: "abc123",
+                scanConfig: {
+                    analysisProfile: "deep",
+                    aiAssist: "on",
+                    adjudicationMode: "gemini-web-v1",
+                },
+                engineVersion: "scan-engine-v2",
+                cacheKeyVersion: "v2",
+            },
+            { findings: [] }
+        );
+
+        const firstKey = setexMock.mock.calls[0]?.[0];
+        const secondKey = setexMock.mock.calls[1]?.[0];
+        expect(firstKey).not.toBe(secondKey);
+    });
 });
