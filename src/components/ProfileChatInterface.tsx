@@ -638,9 +638,6 @@ export function ProfileChatInterface({ profile, profileReadme, repoReadmes }: Pr
                         onRequireAuth={() => setShowLoginModal(true)}
                     />
                 </form>
-                <div className="mt-2 text-[10px] text-zinc-500 text-center">
-                    RepoMind can make mistakes. Consider checking important information.
-                </div>
             </div>
 
             <ConfirmDialog
