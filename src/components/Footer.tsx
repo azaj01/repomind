@@ -25,13 +25,21 @@ export default function Footer() {
                     © {new Date().getFullYear()} RepoMind. All rights reserved.
                 </p>
 
-                <button
-                    onClick={() => setIsOpen(true)}
-                    className="flex items-center gap-2 px-4 py-2 rounded-full bg-zinc-900/50 border border-white/10 text-zinc-400 hover:text-white hover:border-white/20 transition-all text-sm group"
-                >
-                    <MessageSquarePlus className="w-4 h-4 group-hover:text-purple-400 transition-colors" />
-                    <span>Request a feature / Report a bug</span>
-                </button>
+                <div className="flex items-center gap-6">
+                    <a
+                        href="/blog"
+                        className="text-zinc-500 hover:text-white transition-colors text-sm font-medium"
+                    >
+                        Insights
+                    </a>
+                    <button
+                        onClick={() => setIsOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 rounded-full bg-zinc-900/50 border border-white/10 text-zinc-400 hover:text-white hover:border-white/20 transition-all text-sm group"
+                    >
+                        <MessageSquarePlus className="w-4 h-4 group-hover:text-purple-400 transition-colors" />
+                        <span>Request a feature / Report a bug</span>
+                    </button>
+                </div>
             </div>
 
             {/* Contact Popup */}

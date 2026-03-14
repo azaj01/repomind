@@ -1,9 +1,6 @@
 import { getAnalyticsData } from "@/lib/analytics";
 import { auth } from "@/lib/auth";
-import { isAdminUser } from "@/lib/admin-auth";
 import { headers } from "next/headers";
-import AdminLoginPage from "./AdminLoginPage";
-import AdminAccessDeniedPage from "./AdminAccessDeniedPage";
 import StatsDashboardClient from "./StatsDashboardClient";
 
 export const dynamic = 'force-dynamic'; // Ensure real-time data
@@ -11,13 +8,8 @@ export const dynamic = 'force-dynamic'; // Ensure real-time data
 export default async function AdminStatsPage() {
     const session = await auth();
 
-    if (!session?.user) {
-        return <AdminLoginPage />;
-    }
-    if (!isAdminUser(session)) {
-        return <AdminAccessDeniedPage />;
-    }
-
+    // The root layout already handles redirects if unauthenticated
+    // But we still fetch session here to pass information to the client component if needed
     const data = await getAnalyticsData();
 
     // Get current user debug info
@@ -35,7 +27,7 @@ export default async function AdminStatsPage() {
             userAgent={userAgent}
             country={country || "Unknown"}
             isMobile={isMobile}
-            currentUsername={session.user.username ?? null}
+            currentUsername={session?.user?.username ?? null}
         />
     );
 }

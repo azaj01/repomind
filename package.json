@@ -77,5 +77,8 @@
     "typescript": "^5",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.0.18"
+  },
+  "prisma": {
+    "seed": "tsx scripts/seed-blog.ts"
   }
 }

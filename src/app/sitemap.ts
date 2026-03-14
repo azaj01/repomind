@@ -2,6 +2,7 @@ import { MetadataRoute } from "next";
 import fs from "fs";
 import path from "path";
 import { getCanonicalSiteUrl } from "@/lib/site-url";
+import { getPublishedPosts } from "@/lib/services/blog-service";
 
 export const dynamic = 'force-static';
 
@@ -22,8 +23,9 @@ function isTopRepoEntry(value: unknown): value is TopRepoEntry {
     );
 }
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const baseUrl = getCanonicalSiteUrl();
+    const blogPosts = await getPublishedPosts();
 
     const defaultRoutes: MetadataRoute.Sitemap = [
         {
@@ -37,7 +39,19 @@ export default function sitemap(): MetadataRoute.Sitemap {
             lastModified: new Date(),
             changeFrequency: "weekly",
             priority: 0.9,
-        }
+        },
+        {
+            url: `${baseUrl}/blog`,
+            lastModified: new Date(),
+            changeFrequency: "daily",
+            priority: 0.9,
+        },
+        ...blogPosts.map((post) => ({
+            url: `${baseUrl}/blog/${post.slug}`,
+            lastModified: new Date(),
+            changeFrequency: "monthly" as const,
+            priority: 0.7,
+        })),
     ];
 
     let repoRoutes: MetadataRoute.Sitemap = [];
