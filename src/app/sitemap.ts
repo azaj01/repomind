@@ -23,10 +23,40 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
             priority: 0.9,
         },
         {
-            url: `${baseUrl}/code-analyzer`,
+            url: `${baseUrl}/solutions`,
             lastModified: new Date(),
             changeFrequency: "weekly",
             priority: 0.85,
+        },
+        {
+            url: `${baseUrl}/compare`,
+            lastModified: new Date(),
+            changeFrequency: "weekly",
+            priority: 0.8,
+        },
+        {
+            url: `${baseUrl}/explore`,
+            lastModified: new Date(),
+            changeFrequency: "weekly",
+            priority: 0.75,
+        },
+        {
+            url: `${baseUrl}/about`,
+            lastModified: new Date(),
+            changeFrequency: "monthly",
+            priority: 0.5,
+        },
+        {
+            url: `${baseUrl}/privacy`,
+            lastModified: new Date(),
+            changeFrequency: "yearly",
+            priority: 0.3,
+        },
+        {
+            url: `${baseUrl}/terms`,
+            lastModified: new Date(),
+            changeFrequency: "yearly",
+            priority: 0.3,
         },
         {
             url: `${baseUrl}/security-scanner`,
@@ -35,7 +65,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
             priority: 0.85,
         },
         {
-            url: `${baseUrl}/repo-analyzer`,
+            url: `${baseUrl}/github-repository-analysis`,
+            lastModified: new Date(),
+            changeFrequency: "weekly",
+            priority: 0.85,
+        },
+        {
+            url: `${baseUrl}/ai-code-review-tool`,
             lastModified: new Date(),
             changeFrequency: "weekly",
             priority: 0.85,

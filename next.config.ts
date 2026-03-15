@@ -8,6 +8,25 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '5mb',
     },
   },
+  async redirects() {
+    return [
+      {
+        source: "/code-analyzer",
+        destination: "/ai-code-review-tool",
+        permanent: true,
+      },
+      {
+        source: "/repo-analyzer",
+        destination: "/github-repository-analysis",
+        permanent: true,
+      },
+      {
+        source: "/architecture-analyzer",
+        destination: "/github-repository-analysis",
+        permanent: true,
+      },
+    ];
+  },
   images: {
     remotePatterns: [
       {

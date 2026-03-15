@@ -72,14 +72,14 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        const anonId = getAnonymousActorId(req.headers);
         if (userId) {
+            await trackAuthenticatedQueryEvent(userId, anonId);
+        } else {
             const userAgent = req.headers.get("user-agent") ?? "";
             const country = req.headers.get("x-vercel-ip-country") ?? "Unknown";
             const device = /mobile/i.test(userAgent) ? "mobile" : "desktop";
-            await Promise.all([
-                trackAuthenticatedQueryEvent(userId),
-                trackEvent(userId, "query", { country, device, userAgent }),
-            ]);
+            await trackEvent(anonId, "query", { country, device, userAgent });
         }
 
         const username = typeof profileContext?.username === "string" ? profileContext.username : undefined;

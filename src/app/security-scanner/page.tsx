@@ -32,11 +32,11 @@ export default function SecurityScannerPage() {
           <Link href="/chat" className="px-5 py-3 rounded-lg bg-white text-black font-medium hover:bg-zinc-200 transition-colors">
             Start Security Scan
           </Link>
-          <Link href="/code-analyzer" className="px-5 py-3 rounded-lg border border-zinc-700 text-zinc-200 hover:bg-zinc-900 transition-colors">
-            Code Analyzer
+          <Link href="/ai-code-review-tool" className="px-5 py-3 rounded-lg border border-zinc-700 text-zinc-200 hover:bg-zinc-900 transition-colors">
+            AI Code Review Tool
           </Link>
-          <Link href="/repo-analyzer" className="px-5 py-3 rounded-lg border border-zinc-700 text-zinc-200 hover:bg-zinc-900 transition-colors">
-            Repo Analyzer
+          <Link href="/github-repository-analysis" className="px-5 py-3 rounded-lg border border-zinc-700 text-zinc-200 hover:bg-zinc-900 transition-colors">
+            Repository Analysis
           </Link>
         </div>
       </div>

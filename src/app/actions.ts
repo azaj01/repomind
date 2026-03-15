@@ -110,15 +110,21 @@ function getErrorMessage(error: unknown): string {
  */
 async function trackQueryEvent(visitorId: string | undefined): Promise<void> {
     const session = await auth();
+    
+    // If authenticated, we use trackAuthenticatedQueryEvent which handles 
+    // migration from anonId (visitorId) and excludes admins.
     if (session?.user?.id) {
-        await trackAuthenticatedQueryEvent(session.user.id);
+        await trackAuthenticatedQueryEvent(session.user.id, visitorId);
+        return;
     }
 
     if (process.env.NODE_ENV === "development" && process.env.TRACK_ANALYTICS_IN_DEV !== "true") {
         console.log("[Analytics] Skipped (dev). Set TRACK_ANALYTICS_IN_DEV=true to enable.");
         return;
     }
+
     if (!visitorId) return;
+
     try {
         const h = await headers();
         const userAgent = h.get("user-agent") ?? "";

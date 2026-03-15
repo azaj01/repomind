@@ -139,7 +139,8 @@ async function recordKVUsageHistory(currentSize: number): Promise<KVUsagePoint[]
 }
 
 /**
- * Track a user event (e.g., query)
+ * Track an anonymous visitor event (e.g., query) in KV.
+ * Only tracks if the ID starts with 'anon_'.
  */
 export async function trackEvent(
     visitorId: string,
@@ -150,13 +151,15 @@ export async function trackEvent(
         userAgent?: string;
     }
 ) {
+    // Only track actual anonymous visitors here.
+    if (!visitorId.startsWith("anon_")) {
+        return;
+    }
+
     try {
         const timestamp = Date.now();
         const visitorKey = `visitor:${visitorId}`;
 
-        // Check if visitor exists and run all updates in a single pipeline.
-        // Using hgetall to detect a new visitor avoids a separate kv.exists
-        // round-trip before the pipeline (which previously added ~1 sequential RTT).
         const existing = await kv.hgetall(visitorKey);
         const pipeline = kv.pipeline();
 
@@ -197,21 +200,53 @@ export async function trackEvent(
         await pipeline.exec();
     } catch (error) {
         console.error("Failed to track analytics event:", error);
-        // Don't throw, analytics shouldn't break the app
     }
 }
 
-export async function trackAuthenticatedQueryEvent(userId: string): Promise<void> {
+/**
+ * Track an authenticated user query event in Postgres.
+ * Also handles migrating stats from an anonymous visitor ID if provided.
+ */
+export async function trackAuthenticatedQueryEvent(userId: string, anonId?: string): Promise<void> {
     try {
+        // 1. Fetch user to check if admin
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { githubLogin: true }
+        });
+
+        if (isAdminActorUsername(user?.githubLogin)) {
+            return;
+        }
+
+        // 2. Migration logic: if anonId provided, move its queryCount from KV to Postgres
+        let migratedQueries = 0;
+        if (anonId && anonId.startsWith("anon_")) {
+            const visitorKey = `visitor:${anonId}`;
+            const existing = await kv.hgetall(visitorKey) as any;
+
+            if (existing && existing.queryCount) {
+                migratedQueries = Number(existing.queryCount);
+
+                // Atomic migration: decrement KV total and remove visitor record
+                await Promise.all([
+                    kv.srem("visitors", anonId),
+                    kv.del(visitorKey),
+                    kv.decrby("queries:total", migratedQueries)
+                ]);
+            }
+        }
+
+        // 3. Increment authenticated user stats in Postgres
         await prisma.user.upsert({
             where: { id: userId },
             update: {
-                queryCount: { increment: 1 },
+                queryCount: { increment: migratedQueries + 1 },
                 lastQueryAt: new Date(),
             },
             create: {
                 id: userId,
-                queryCount: 1,
+                queryCount: migratedQueries + 1,
                 lastQueryAt: new Date(),
             },
         });
@@ -296,7 +331,7 @@ async function getLoggedInUserStats(): Promise<LoggedInUserData[]> {
         }
 
         const rows = (users as UserRow[])
-            .map((user): LoggedInUserData => {
+            .map((user): LoggedInUserData | null => {
                 const scans = scanMap.get(user.id);
                 const searches = searchMap.get(user.id);
                 const chats = chatMap.get(user.id);
@@ -306,6 +341,10 @@ async function getLoggedInUserStats(): Promise<LoggedInUserData[]> {
                     searches?.maxTimestamp ?? 0,
                     chats?.maxTimestamp ?? 0,
                 );
+
+                if (isAdminActorUsername(user.githubLogin)) {
+                    return null;
+                }
 
                 return {
                     id: user.id,
@@ -319,12 +358,15 @@ async function getLoggedInUserStats(): Promise<LoggedInUserData[]> {
                     lastActivityAt: lastActivityAt > 0 ? lastActivityAt : null,
                 };
             })
-            .filter((user) => (
-                Boolean(user.email || user.githubLogin) ||
-                user.queryCount > 0 ||
-                user.scanCount > 0 ||
-                user.searchCount > 0 ||
-                user.chatCount > 0
+            .filter((user): user is LoggedInUserData => (
+                user !== null &&
+                (
+                    Boolean(user.email || user.githubLogin) ||
+                    user.queryCount > 0 ||
+                    user.scanCount > 0 ||
+                    user.searchCount > 0 ||
+                    user.chatCount > 0
+                )
             ))
             .sort((a, b) => {
                 const aLast = a.lastActivityAt ?? 0;
@@ -496,23 +538,17 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
     try {
         // Parallelize fetching independent data
         const [
-            totalVisitors,
-            totalQueries,
-            visitorIds,
+            totalVisitorsAggRaw,
+            totalQueriesAggRaw,
+            visitorIdsRaw,
             kvInfo,
-            loggedInUsers,
             reportFunnel,
             falsePositiveReview,
-            manualAdjustments,
         ] = await Promise.all([
             kv.scard("visitors"),
             kv.get<number>("queries:total"),
             kv.smembers("visitors"),
             getKVStats(),
-            getLoggedInUserStats().catch((error) => {
-                console.error("Failed to fetch logged-in user analytics:", error);
-                return [];
-            }),
             getReportFunnelMetrics().catch((error) => {
                 console.error("Failed to fetch report funnel analytics:", error);
                 return emptyReportFunnelMetrics();
@@ -526,6 +562,23 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
                     rejected: 0,
                     recentSubmissions: [],
                 };
+            }),
+        ]);
+
+        const totalVisitorsAgg = Number(totalVisitorsAggRaw || 0);
+        const totalQueriesAgg = Number(totalQueriesAggRaw || 0);
+        const visitorIds = (visitorIdsRaw as string[]) || [];
+
+        // Any ID in the 'visitors' KV set is considered an anonymous (or unmigrated historical) visitor.
+        // Logged-in users who migrate are removed from this set.
+        const totalAnonVisitors = visitorIds.length;
+        const totalAnonQueries = totalQueriesAgg;
+
+        // Fetch logged-in user summary stats
+        const [loggedInUsers, manualAdjustments] = await Promise.all([
+            getLoggedInUserStats().catch((error) => {
+                console.error("Failed to fetch logged-in user analytics:", error);
+                return [];
             }),
             getManualAnalyticsAdjustments(),
         ]);
@@ -592,12 +645,11 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
         // but for a dashboard, showing stats for the most recent 500 is a fair trade-off
         // unless we transition to pre-aggregated keys (next step)
 
-        // Sort visitors by last seen (descending)
-        recentVisitors.sort((a, b) => b.lastSeen - a.lastSeen);
+        const authQueryTotal = loggedInUsers.reduce((sum: number, u: LoggedInUserData) => sum + (u.queryCount || 0), 0);
 
         return {
-            totalVisitors: (totalVisitors || 0) + manualAdjustments.visitors,
-            totalQueries: (totalQueries || 0) + manualAdjustments.queries,
+            totalVisitors: totalAnonVisitors + manualAdjustments.visitors + loggedInUsers.length,
+            totalQueries: (totalAnonQueries || 0) + manualAdjustments.queries + authQueryTotal,
             activeUsers24h,
             totalLoggedInUsers: loggedInUsers.length,
             deviceStats,
@@ -643,24 +695,64 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
 const getCachedPublicStats = unstable_cache(
     async () => {
         try {
-            const [totalVisitors, totalQueries, totalScans, manualAdjustments] = await Promise.all([
-                kv.scard("visitors"),
+            const adminUsername = process.env.ADMIN_GITHUB_USERNAME?.trim();
+            
+            // 1. Fetch KV data
+            const [kvVisitorIdsRaw, totalAnonQueriesRaw, manualAdjustments] = await Promise.all([
+                kv.smembers("visitors"),
                 kv.get<number>("queries:total"),
-                prisma.repoScan.count(),
                 getManualAnalyticsAdjustments(),
             ]);
 
-            return {
-                totalVisitors: (totalVisitors || 0) + manualAdjustments.visitors,
-                totalQueries: (totalQueries || 0) + manualAdjustments.queries,
+            const visitorIds = (kvVisitorIdsRaw as string[]) || [];
+            // Count all IDs in KV. These are exclusively anonymous visitors or unmigrated historical records.
+            const totalAnonVisitors = visitorIds.length;
+            const totalAnonQueries = Number(totalAnonQueriesRaw || 0);
+
+            // 2. Fetch Postgres data (excluding admin)
+            const [totalScans, loggedInUserCount, authQueryAgg] = await Promise.all([
+                prisma.repoScan.count({
+                    where: adminUsername ? {
+                        OR: [
+                            { userId: null },
+                            { user: { githubLogin: { not: adminUsername } } },
+                            { user: { githubLogin: null } }
+                        ]
+                    } : {}
+                }),
+                prisma.user.count({ 
+                    where: adminUsername ? { 
+                        OR: [
+                            { githubLogin: { not: adminUsername } },
+                            { githubLogin: null }
+                        ]
+                    } : {} 
+                }),
+                prisma.user.aggregate({
+                    where: adminUsername ? { 
+                        OR: [
+                            { githubLogin: { not: adminUsername } },
+                            { githubLogin: null }
+                        ]
+                    } : {},
+                    _sum: { queryCount: true }
+                })
+            ]);
+
+            const authQueryTotal = authQueryAgg._sum.queryCount || 0;
+
+            const finalStats = {
+                totalVisitors: totalAnonVisitors + manualAdjustments.visitors + loggedInUserCount,
+                totalQueries: totalAnonQueries + manualAdjustments.queries + authQueryTotal,
                 totalScans,
             };
+
+            // Debug log for admin visibility (only in server console)
+            console.log("[Analytics] Calculated public stats:", finalStats);
+
+            return finalStats;
         } catch (error: unknown) {
-            console.error("Failed to fetch public stats from KV:", error);
-            const errorMessage = error instanceof Error ? error.message : "";
-            if (errorMessage.includes("ECONNREFUSED") || errorMessage.includes("invalid_token")) {
-                console.error("KV authentication or connection failure. Check environment variables.");
-            }
+            console.error("Failed to fetch public stats:", error);
             return {
                 totalVisitors: 0,
                 totalQueries: 0,
@@ -668,7 +760,7 @@ const getCachedPublicStats = unstable_cache(
             };
         }
     },
-    ["public-stats-v1"],
+    ["public-stats-v2"], // Bumped key to force refresh
     {
         revalidate: 60,
         tags: ["public-stats"],
