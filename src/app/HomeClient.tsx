@@ -181,11 +181,27 @@ export default function HomeClient({
                             ) : (
                                 <>
                                     <span>Try:</span>
-                                    <button onClick={() => setInput("torvalds")} className="hover:text-white transition-colors">torvalds</button>
-                                    <span className="inline">•</span>
-                                    <button onClick={() => setInput("facebook/react")} className="hover:text-white transition-colors">facebook/react</button>
-                                    <span className="hidden sm:inline">•</span>
-                                    <button onClick={() => setInput("vercel/next.js")} className="hidden md:inline hover:text-white transition-colors">vercel/next.js</button>
+                                    {trendingRepos.length > 0 ? (
+                                        trendingRepos.slice(0, 3).map((repo, i) => (
+                                            <span key={`${repo.owner}/${repo.repo}`} className={`${i === 2 ? 'hidden sm:flex' : 'flex'} items-center gap-2`}>
+                                                <button 
+                                                    onClick={() => setInput(`${repo.owner}/${repo.repo}`)} 
+                                                    className="hover:text-white transition-colors truncate max-w-[120px]"
+                                                >
+                                                    {repo.repo}
+                                                </button>
+                                                {i < 2 && <span className={`${i === 1 ? 'hidden sm:inline' : 'inline'}`}>•</span>}
+                                            </span>
+                                        ))
+                                    ) : (
+                                        <>
+                                            <button onClick={() => setInput("torvalds")} className="hover:text-white transition-colors">torvalds</button>
+                                            <span className="inline">•</span>
+                                            <button onClick={() => setInput("facebook/react")} className="hover:text-white transition-colors">facebook/react</button>
+                                            <span className="hidden sm:inline">•</span>
+                                            <button onClick={() => setInput("vercel/next.js")} className="hidden md:inline hover:text-white transition-colors">vercel/next.js</button>
+                                        </>
+                                    )}
                                 </>
                             )}
                         </div>
@@ -194,7 +210,7 @@ export default function HomeClient({
                             href="/trending"
                             className="flex items-center gap-1.5 px-3 py-1 md:py-1.5 rounded-full bg-zinc-900/50 border border-white/5 hover:border-blue-500/30 text-blue-400 hover:text-blue-300 transition-all text-[10px] md:text-xs font-semibold animate-soft-pulse hover:animate-none"
                         >
-                            <TrendingUp size={12} className="md:w-3.5 md:h-3.5" /> Trending Top Repositories
+                            <TrendingUp size={12} className="md:w-3.5 md:h-3.5" /> Explore Trending Repositories
                         </Link>
                     </div>
                 </motion.div>
@@ -221,7 +237,7 @@ export default function HomeClient({
                     <div className="max-w-7xl mx-auto">
                         <div className="mb-12">
                             <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-4 text-white flex items-center gap-3">
-                                <TrendingUp className="text-blue-400" size={36} /> Trending Top <span className="bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">Repositories</span>
+                                <TrendingUp className="text-blue-400" size={36} /> Explore Trending <span className="bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">Repositories</span>
                             </h2>
                             <p className="text-zinc-400 text-lg max-w-2xl">
                                 Explore the projects getting the most heat on GitHub this week. Instantly analyze any of them with RepoMind.

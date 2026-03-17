@@ -4,7 +4,7 @@ import { getCuratedRepos } from '@/lib/repo-catalog';
 import TrendingClient from '@/components/TrendingClient';
 
 export const metadata: Metadata = {
-  title: "Trending YouTube & GitHub Repositories | RepoMind",
+  title: "Explore Trending Repositories | RepoMind",
   description: "Explore this week's most trending GitHub repositories. Analyze them instantly with RepoMind's AI-driven intelligence.",
   keywords: ["trending github repos", "popular repositories", "github trends", "trending code", "repo analysis"],
   alternates: {

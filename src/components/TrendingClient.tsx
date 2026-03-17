@@ -82,7 +82,7 @@ export default function TrendingClient({ initialRepos }: TrendingClientProps) {
                             <TrendingUp size={48} className="text-blue-400" />
                         </div>
                         <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6">
-                            Trending Top <span className="bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">Repositories</span>
+                            Explore Trending <span className="bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">Repositories</span>
                         </h1>
                         <p className="text-zinc-400 text-lg md:text-xl max-w-2xl mx-auto leading-relaxed">
                             Discover the most influential and rapidly growing projects on GitHub this week.
@@ -93,35 +93,35 @@ export default function TrendingClient({ initialRepos }: TrendingClientProps) {
             </section>
 
             {/* Filter Bar */}
-            <section className="sticky top-16 z-40 bg-black/80 backdrop-blur-md border-b border-white/5 py-4 px-6 mb-12">
-                <div className="max-w-7xl mx-auto flex flex-col md:flex-row gap-4">
+            <section className="sticky top-16 z-40 bg-black/80 backdrop-blur-md border-b border-white/5 py-3 px-4 md:px-6 mb-12">
+                <div className="max-w-7xl mx-auto flex flex-row items-center gap-2 md:gap-4">
                     <div className="relative flex-1 group">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 w-4 h-4 group-focus-within:text-blue-400 transition-colors" />
+                        <Search className="absolute left-3 md:left-4 top-1/2 -translate-y-1/2 text-zinc-500 w-3.5 h-3.5 group-focus-within:text-blue-400 transition-colors" />
                         <input 
                             type="text"
-                            placeholder="Find a trending project..."
+                            placeholder="Find..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full bg-zinc-900/50 border border-white/10 rounded-2xl py-3 pl-12 pr-4 text-sm focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all"
+                            className="w-full bg-zinc-900/50 border border-white/10 rounded-xl md:rounded-2xl py-2 md:py-3 pl-10 md:pl-12 pr-4 text-xs md:text-sm focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all placeholder:text-zinc-600"
                         />
                     </div>
-                    <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 scrollbar-hide">
-                        <Filter size={14} className="text-zinc-500 shrink-0" />
+                    <div className="flex items-center gap-1.5 md:gap-2 overflow-x-auto scrollbar-hide shrink-0 max-w-[60%] md:max-w-none">
+                        <Filter size={12} className="text-zinc-500 shrink-0 hidden sm:block" />
                         <button
                             onClick={() => setSelectedLanguage(null)}
-                            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${
+                            className={`px-3 md:px-4 py-2 rounded-lg md:rounded-xl text-[10px] md:text-xs font-bold whitespace-nowrap transition-all border ${
                                 !selectedLanguage 
                                 ? "bg-blue-500 border-blue-400 text-white shadow-[0_0_20px_rgba(59,130,246,0.3)]" 
                                 : "bg-zinc-900 border-white/5 text-zinc-500 hover:border-white/20"
                             }`}
                         >
-                            All Languages
+                            All
                         </button>
                         {languages.slice(0, 8).map(lang => (
                             <button
                                 key={lang}
                                 onClick={() => setSelectedLanguage(lang)}
-                                className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${
+                                className={`px-3 md:px-4 py-2 rounded-lg md:rounded-xl text-[10px] md:text-xs font-bold whitespace-nowrap transition-all border ${
                                     selectedLanguage === lang
                                     ? "bg-blue-500 border-blue-400 text-white shadow-[0_0_20px_rgba(59,130,246,0.3)]" 
                                     : "bg-zinc-900 border-white/5 text-zinc-500 hover:border-white/20"
