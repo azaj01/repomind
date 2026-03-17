@@ -7,6 +7,12 @@ const { getPublishedPostsMock, getCanonicalSiteUrlMock, getCuratedReposMock, get
   getIndexableTopicsMock: vi.fn(),
 }));
 
+vi.mock("node:fs", () => ({
+  default: {
+    statSync: vi.fn().mockReturnValue({ mtime: new Date("2026-03-15T10:00:00Z") }),
+  },
+}));
+
 vi.mock("@/lib/services/blog-service", () => ({
   getPublishedPosts: getPublishedPostsMock,
 }));
