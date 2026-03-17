@@ -18,6 +18,7 @@ export interface CatalogRepoEntry {
   language: string | null;
   tier?: RepoTier;
   rank?: number;
+  trendingScore?: number;
 }
 
 interface CatalogData {
@@ -50,6 +51,7 @@ function normalizeRepo(entry: CatalogRepoEntry): CatalogRepoEntry {
     language: entry.language,
     tier: entry.tier,
     rank: entry.rank,
+    trendingScore: entry.trendingScore,
   };
 }
 
