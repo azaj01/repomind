@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
-import { ArrowRight, Loader2, Star, GitFork, MessageSquare, Globe } from "lucide-react";
+import { ArrowRight, Loader2, Star, GitFork, MessageSquare, Globe, TrendingUp } from "lucide-react";
 import { fetchGitHubData, getRecentSearches } from "./actions";
 import TrustedByMarquee from "@/components/TrustedByMarquee";
 import InteractiveDemo from "@/components/InteractiveDemo";
@@ -159,35 +159,44 @@ export default function HomeClient({
                         </motion.p>
                     )}
 
-                    <div className="mt-8 md:mt-10 flex flex-wrap justify-center gap-3 md:gap-4 text-xs md:text-sm text-zinc-500">
-                        {session && recentSearches.length > 0 ? (
-                            <>
-                                <span>Recent:</span>
-                                {recentSearches.map((search, i) => (
-                                    <span key={search.query} className="flex items-center gap-3 md:gap-4">
-                                        <button
-                                            onClick={() => setInput(search.query)}
-                                            className="hover:text-white transition-colors"
-                                        >
-                                            {search.query}
-                                        </button>
-                                        {i < recentSearches.length - 1 && <span className="hidden sm:inline">•</span>}
-                                    </span>
-                                ))}
-                            </>
-                        ) : (
-                            <>
-                                <span>Try:</span>
-                                <button onClick={() => setInput("torvalds")} className="hover:text-white transition-colors">torvalds</button>
-                                <span className="hidden sm:inline">•</span>
-                                <button onClick={() => setInput("facebook/react")} className="hover:text-white transition-colors">facebook/react</button>
-                                <span className="hidden sm:inline">•</span>
-                                <button onClick={() => setInput("vercel/next.js")} className="hover:text-white transition-colors">vercel/next.js</button>
-                            </>
-                        )}
-                    </div>
-
                     <PublicStats />
+
+                    <div className="mt-6 md:mt-10 flex flex-col items-center gap-4 md:gap-6 w-full">
+                        <div className="flex flex-wrap justify-center items-center gap-2 md:gap-4 text-[10px] sm:text-xs md:text-sm text-zinc-500">
+                            {session && recentSearches.length > 0 ? (
+                                <>
+                                    <span>Recent:</span>
+                                    {recentSearches.slice(0, 3).map((search, i) => (
+                                        <span key={search.query} className={`${i >= 2 ? 'hidden sm:flex' : 'flex'} items-center gap-2 md:gap-4`}>
+                                            <button
+                                                onClick={() => setInput(search.query)}
+                                                className="hover:text-white transition-colors truncate max-w-[120px] md:max-w-none"
+                                            >
+                                                {search.query}
+                                            </button>
+                                            {i < Math.min(recentSearches.length, 3) - 1 && <span className={`${i >= 1 ? 'hidden sm:inline' : 'inline'}`}>•</span>}
+                                        </span>
+                                    ))}
+                                </>
+                            ) : (
+                                <>
+                                    <span>Try:</span>
+                                    <button onClick={() => setInput("torvalds")} className="hover:text-white transition-colors">torvalds</button>
+                                    <span className="inline">•</span>
+                                    <button onClick={() => setInput("facebook/react")} className="hover:text-white transition-colors">facebook/react</button>
+                                    <span className="hidden sm:inline">•</span>
+                                    <button onClick={() => setInput("vercel/next.js")} className="hidden md:inline hover:text-white transition-colors">vercel/next.js</button>
+                                </>
+                            )}
+                        </div>
+
+                        <Link 
+                            href="/trending"
+                            className="flex items-center gap-1.5 px-3 py-1 md:py-1.5 rounded-full bg-zinc-900/50 border border-white/5 hover:border-blue-500/30 text-blue-400 hover:text-blue-300 transition-all text-[10px] md:text-xs font-semibold animate-soft-pulse hover:animate-none"
+                        >
+                            <TrendingUp size={12} className="md:w-3.5 md:h-3.5" /> Trending Top Repositories
+                        </Link>
+                    </div>
                 </motion.div>
             </section>
 
@@ -208,11 +217,11 @@ export default function HomeClient({
             </div>
 
             {trendingRepos.length > 0 && (
-                <section className="relative z-10 w-full bg-black py-24 px-6 border-t border-white/5">
+                <section id="trending-section" className="relative z-10 w-full bg-black py-24 px-6 border-t border-white/5">
                     <div className="max-w-7xl mx-auto">
                         <div className="mb-12">
-                            <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-4 text-white">
-                                Trending <span className="bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">Repositories</span>
+                            <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-4 text-white flex items-center gap-3">
+                                <TrendingUp className="text-blue-400" size={36} /> Trending Top <span className="bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">Repositories</span>
                             </h2>
                             <p className="text-zinc-400 text-lg max-w-2xl">
                                 Explore the projects getting the most heat on GitHub this week. Instantly analyze any of them with RepoMind.
@@ -274,13 +283,13 @@ export default function HomeClient({
 
                         {hasMoreRepos && (
                             <div className="mt-12 text-center">
-                                <button 
-                                    onClick={() => setVisibleReposCount(prev => prev + 50)}
+                                <Link 
+                                    href="/trending"
                                     className="inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-zinc-900 border border-white/10 text-white font-bold hover:bg-zinc-800 transition-colors group"
                                 >
-                                    Explore more repositories
+                                    Explore all trending repositories
                                     <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-                                </button>
+                                </Link>
                             </div>
                         )}
                     </div>

@@ -1,15 +1,16 @@
-name: Refresh Repo Catalog
+name: Refresh Tiered Repo Catalog
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 3 * * 1"
+    - cron: "0 3 * * 1" # Weekly refresh on Mondays
 
 permissions:
   contents: write
 
 jobs:
   refresh:
+    name: Refresh & Validate Catalog (7.6k Tiered Repos)
     runs-on: ubuntu-latest
 
     steps:
@@ -25,10 +26,19 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
-      - name: Refresh trending repository dataset
+      - name: Refresh tiered repository dataset
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run data:refresh:repos
+
+      - name: Validate data integrity
+        run: |
+          REPO_COUNT=$(grep -c '"owner"' public/data/top-repos.json)
+          echo "Found $REPO_COUNT repositories."
+          if [ "$REPO_COUNT" -lt 7000 ]; then
+            echo "Error: Catalog size ($REPO_COUNT) is below the minimum threshold (7000)."
+            exit 1
+          fi
 
       - name: Commit refreshed dataset
         run: |
@@ -40,5 +50,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add public/data/top-repos.json
-          git commit -m "chore(data): refresh trending repo catalog"
+          git commit -m "chore(data): refresh tiered repo catalog (7.6k target)"
           git push
+        # NOTE: Sitemap is refreshed automatically on the next Vercel deployment after this commit.

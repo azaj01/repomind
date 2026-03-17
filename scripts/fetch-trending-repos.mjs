@@ -145,6 +145,13 @@ async function run() {
       }
     }
     console.log(`   ✅ Finished ${config.tier}: +${tierCollectedCount} repos`);
+    
+    // Save progress after each tier
+    const dataDir = path.resolve(process.cwd(), "public/data");
+    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+    const outputPath = path.join(dataDir, "top-repos.json");
+    fs.writeFileSync(outputPath, JSON.stringify(collected, null, 2));
+    console.log(`   💾 Progress saved to ${outputPath}`);
   }
 
   const dataDir = path.resolve(process.cwd(), "public/data");
@@ -154,6 +161,13 @@ async function run() {
   fs.writeFileSync(outputPath, JSON.stringify(collected, null, 2));
 
   console.log(`\n🎉 Process complete! Total repos: ${collected.length}`);
+  const tierStats = collected.reduce((acc, repo) => {
+    acc[repo.tier] = (acc[repo.tier] || 0) + 1;
+    return acc;
+  }, {});
+  Object.entries(tierStats).forEach(([tier, count]) => {
+    console.log(`   🔸 ${tier}: ${count} repos`);
+  });
   console.log(`📄 Saved to ${outputPath}`);
 }
 
