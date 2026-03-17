@@ -60,6 +60,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
             priority: 0.75,
         },
         {
+            url: `${baseUrl}/trending`,
+            lastModified: catalogModDate,
+            changeFrequency: "weekly",
+            priority: 0.9,
+        },
+        {
             url: `${baseUrl}/about`,
             lastModified: getFileModDate("src/app/about/page.tsx"),
             changeFrequency: "monthly",
