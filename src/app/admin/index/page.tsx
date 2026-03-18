@@ -6,6 +6,8 @@ import IndexManagementClient from "./IndexManagementClient";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 
+export const revalidate = 0;
+
 export default async function AdminIndexManagementPage() {
   const session = await auth();
 

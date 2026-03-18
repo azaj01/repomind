@@ -11,7 +11,8 @@ import {
   ExternalLink,
   ChevronLeft,
   PlusCircle,
-  BarChart2
+  BarChart2,
+  Search
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState } from "react";
@@ -21,6 +22,7 @@ const menuItems = [
   { icon: LayoutDashboard, label: "Admin Home", href: "/admin" },
   { icon: BarChart2, label: "Analytics", href: "/admin/stats" },
   { icon: FileText, label: "Blog Posts", href: "/admin/blog" },
+  { icon: Search, label: "Index Manager", href: "/admin/index" },
   { icon: Settings, label: "Settings", href: "/admin/settings" },
 ];
 

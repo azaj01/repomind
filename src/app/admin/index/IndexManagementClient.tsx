@@ -1,9 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Database, Hash, Search, ArrowUpRight, Star, Globe, TrendingUp, Clock, Calendar, BarChart3 } from "lucide-react";
+import { 
+  Database, Hash, Search, ArrowUpRight, Star, Globe, 
+  TrendingUp, Clock, Calendar, BarChart3, RefreshCw,
+  CheckCircle2, AlertCircle
+} from "lucide-react";
 import { CatalogRepoEntry, RepoTier } from "@/lib/repo-catalog";
 import Link from "next/link";
+import { refreshCatalogAction } from "./actions";
 
 interface Props {
   repos: CatalogRepoEntry[];
@@ -16,10 +21,13 @@ interface Props {
 }
 
 export default function IndexManagementClient({ repos, topics, stats }: Props) {
+  console.log(`[IndexClient] Repos: ${repos.length}, Topics: ${topics.length}`);
   const [activeTab, setActiveTab] = useState<'repos' | 'topics'>('repos');
   const [repoSearch, setRepoSearch] = useState("");
   const [topicSearch, setTopicSearch] = useState("");
   const [selectedTier, setSelectedTier] = useState<RepoTier | 'all'>('all');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshStatus, setRefreshStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   const filteredRepos = repos.filter(repo => {
     const matchesSearch = (repo.owner + "/" + repo.repo).toLowerCase().includes(repoSearch.toLowerCase()) ||
@@ -32,16 +40,69 @@ export default function IndexManagementClient({ repos, topics, stats }: Props) {
     topic.toLowerCase().includes(topicSearch.toLowerCase())
   ).slice(0, 500);
 
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    setRefreshStatus('idle');
+    try {
+      await refreshCatalogAction();
+      setRefreshStatus('success');
+      setTimeout(() => setRefreshStatus('idle'), 3000);
+    } catch (error) {
+      console.error("Failed to refresh catalog:", error);
+      setRefreshStatus('error');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const getTierColor = (tier: string) => {
+    switch (tier) {
+      case 'all-time': return 'bg-blue-500/10 border-blue-500/20 text-blue-400';
+      case 'yearly': return 'bg-purple-500/10 border-purple-500/20 text-purple-400';
+      case '6-month': return 'bg-orange-500/10 border-orange-500/20 text-orange-400';
+      case 'monthly': return 'bg-pink-500/10 border-pink-500/20 text-pink-400';
+      case 'weekly': return 'bg-green-500/10 border-green-500/20 text-green-400';
+      default: return 'bg-zinc-500/10 border-zinc-500/20 text-zinc-400';
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      {/* Tier Overview Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        {(Object.entries(stats.tierCounts) as [RepoTier, number][]).map(([tier, count]) => (
-          <div key={tier} className="bg-zinc-900 shadow-sm border border-white/5 p-4 rounded-2xl">
-            <div className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-1">{tier}</div>
-            <div className="text-xl font-bold">{count.toLocaleString()}</div>
-          </div>
-        ))}
+      {/* Header with Refresh Button */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 flex-1">
+          {(Object.entries(stats.tierCounts) as [RepoTier, number][]).map(([tier, count]) => (
+            <div key={tier} className="bg-zinc-900 shadow-sm border border-white/5 p-4 rounded-2xl">
+              <div className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-1">{tier}</div>
+              <div className="text-xl font-bold">{count.toLocaleString()}</div>
+            </div>
+          ))}
+        </div>
+        
+        <button
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className={`group flex items-center gap-2 px-4 py-2.5 rounded-xl border transition-all ${
+            refreshStatus === 'success' ? 'bg-green-500/10 border-green-500/50 text-green-400' :
+            refreshStatus === 'error' ? 'bg-red-500/10 border-red-500/50 text-red-400' :
+            'bg-zinc-900 border-white/5 text-zinc-400 hover:text-white hover:border-white/20'
+          }`}
+        >
+          {isRefreshing ? (
+            <RefreshCw size={18} className="animate-spin" />
+          ) : refreshStatus === 'success' ? (
+            <CheckCircle2 size={18} />
+          ) : refreshStatus === 'error' ? (
+            <AlertCircle size={18} />
+          ) : (
+            <RefreshCw size={18} className="group-hover:rotate-180 transition-transform duration-500" />
+          )}
+          <span className="text-sm font-bold">
+            {isRefreshing ? 'Refreshing...' : 
+             refreshStatus === 'success' ? 'Refreshed' : 
+             refreshStatus === 'error' ? 'Failed' : 'Refresh Cache'}
+          </span>
+        </button>
       </div>
 
       {/* Tabs */}
@@ -58,6 +119,10 @@ export default function IndexManagementClient({ repos, topics, stats }: Props) {
         >
           Topics ({stats.totalTopics.toLocaleString()})
         </button>
+      </div>
+
+      <div className="text-[10px] text-zinc-700 font-mono">
+        Debug: Props.repos.length={repos.length}, Props.topics.length={topics.length}, Stats.totalRepos={stats.totalRepos}
       </div>
 
       {activeTab === 'repos' ? (
@@ -94,6 +159,7 @@ export default function IndexManagementClient({ repos, topics, stats }: Props) {
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-400">Rank</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-400">Repository</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-400">Tier</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-400">Trending</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-400">Stars</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-400">Language</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-400 text-right">Action</th>
@@ -110,13 +176,19 @@ export default function IndexManagementClient({ repos, topics, stats }: Props) {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
-                        repo.tier === 'all-time' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
-                        repo.tier === 'weekly' ? 'bg-green-500/10 border-green-500/20 text-green-400' :
-                        'bg-zinc-500/10 border-zinc-500/20 text-zinc-400'
-                      }`}>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${getTierColor(repo.tier || '')}`}>
                         {repo.tier}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      {repo.trendingScore ? (
+                        <div className="flex items-center gap-1.5 text-pink-400 font-mono text-xs">
+                          <TrendingUp size={12} />
+                          {repo.trendingScore.toFixed(1)}
+                        </div>
+                      ) : (
+                        <span className="text-zinc-600 text-xs">-</span>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-sm">
                       <div className="flex items-center gap-1 text-zinc-300">
