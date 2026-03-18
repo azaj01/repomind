@@ -1,35 +1,37 @@
-import { Suspense } from 'react';
-import { Metadata } from 'next';
-import HomeClient from './HomeClient';
-import { getHomepagePosts } from '@/lib/services/blog-service';
-import { getCuratedRepos } from '@/lib/repo-catalog';
+import { Suspense } from "react";
+import { Metadata } from "next";
+import HomeClient from "./HomeClient";
+import { getHomepagePosts } from "@/lib/services/blog-service";
+import { getCuratedRepos } from "@/lib/repo-catalog";
+import { getPublicStats } from "@/lib/analytics";
 
 export const metadata: Metadata = {
-  title: "AI Code Analyzer & Security Scanner for GitHub Repos | RepoMind",
-  description:
-    "RepoMind is an AI code analyzer and security scanner for GitHub repositories. Analyze architecture, review code, and audit repos faster.",
-  keywords: [
-    "code analyzer",
-    "security scanner",
-    "repo analyzer",
-    "github code analyzer",
-    "repository security scanner",
-    "ai code review tool",
-  ],
-  alternates: {
-    canonical: '/',
-  },
+    title: "AI Code Analyzer & Security Scanner for GitHub Repos | RepoMind",
+    description:
+        "RepoMind is an AI code analyzer and security scanner for GitHub repositories. Analyze architecture, review code, and audit repos faster.",
+    keywords: [
+        "code analyzer",
+        "security scanner",
+        "repo analyzer",
+        "github code analyzer",
+        "repository security scanner",
+        "ai code review tool",
+    ],
+    alternates: {
+        canonical: "/",
+    },
 };
 
 export default async function Home() {
-  const [latestPosts, trendingRepos] = await Promise.all([
-    getHomepagePosts(),
-    getCuratedRepos('weekly'),
-  ]);
+    const [latestPosts, trendingRepos, publicStats] = await Promise.all([
+        getHomepagePosts(),
+        getCuratedRepos("weekly"),
+        getPublicStats(),
+    ]);
 
-  return (
-    <Suspense fallback={null}>
-      <HomeClient initialPosts={latestPosts} trendingRepos={trendingRepos} />
-    </Suspense>
-  );
+    return (
+        <Suspense fallback={null}>
+            <HomeClient initialPosts={latestPosts} trendingRepos={trendingRepos} publicStats={publicStats} />
+        </Suspense>
+    );
 }

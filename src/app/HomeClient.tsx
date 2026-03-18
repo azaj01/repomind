@@ -26,12 +26,20 @@ import { INVALID_SESSION_ERROR_PARAM } from "@/lib/session-guard";
 import { BlogPost } from "@prisma/client";
 import { CatalogRepoEntry } from "@/lib/repo-catalog";
 
-export default function HomeClient({ 
-    initialPosts = [], 
-    trendingRepos = [] 
-}: { 
-    initialPosts?: BlogPost[], 
-    trendingRepos?: CatalogRepoEntry[] 
+type PublicStatsData = {
+    totalVisitors: number;
+    totalQueries: number;
+    totalScans: number;
+};
+
+export default function HomeClient({
+    initialPosts = [],
+    trendingRepos = [],
+    publicStats,
+}: {
+    initialPosts?: BlogPost[];
+    trendingRepos?: CatalogRepoEntry[];
+    publicStats: PublicStatsData;
 }) {
     const [input, setInput] = useState("");
     const [loading, setLoading] = useState(false);
@@ -159,7 +167,7 @@ export default function HomeClient({
                         </motion.p>
                     )}
 
-                    <PublicStats />
+                    <PublicStats stats={publicStats} />
 
                     <div className="mt-6 md:mt-10 flex flex-col items-center gap-4 md:gap-6 w-full">
                         <div className="flex flex-wrap justify-center items-center gap-2 md:gap-4 text-[10px] sm:text-xs md:text-sm text-zinc-500">
