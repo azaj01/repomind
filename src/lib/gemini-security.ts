@@ -1,6 +1,7 @@
 import { getGenAI, DEFAULT_MODEL } from "./ai-client";
 import type { FunctionDeclaration, GenerationConfig } from "@google/generative-ai";
 import type { SecurityFinding } from "./security-scanner";
+import { SECURITY_AI_CONTEXT_LIMIT } from "./security-scan-config";
 
 /**
  * Gemini function declarations for security analysis
@@ -213,6 +214,79 @@ function parseAdjudicationResponse(text: string): SecurityAdjudicationResult | n
     }
 }
 
+/**
+ * Intelligently truncates file content to stay within AI context limits
+ * while preserving security-sensitive parts of the code.
+ */
+function getSmartFileContext(content: string, maxChars: number): string {
+    if (content.length <= maxChars) return content;
+
+    const headerSize = 2500;
+    const footerSize = 1000;
+    const chunkPadding = 600;
+    const reserved = headerSize + footerSize;
+    const budget = maxChars - reserved;
+
+    if (budget <= 0) return content.slice(0, maxChars);
+
+    const sensitiveKeywords = [
+        "exec", "spawn", "query", "eval", "dangerouslySet", "innerHTML",
+        "req.body", "req.query", "params", "process.env", "password", "secret",
+        "fetch", "axios", "prisma.", "db.", "connect", "cookie"
+    ];
+
+    const indices: number[] = [];
+    sensitiveKeywords.forEach(kw => {
+        let pos = content.indexOf(kw);
+        while (pos !== -1) {
+            indices.push(pos);
+            pos = content.indexOf(kw, pos + 1);
+        }
+    });
+
+    if (indices.length === 0) {
+        return content.slice(0, headerSize) + "\n// ... [TRUNCATED MIDDLE] ...\n" + content.slice(-footerSize);
+    }
+
+    // Sort and cluster indices
+    indices.sort((a, b) => a - b);
+    const chunks: { start: number; end: number }[] = [];
+    let currentBudget = budget;
+
+    for (const index of indices) {
+        if (currentBudget <= 0) break;
+        
+        const start = Math.max(headerSize, index - chunkPadding);
+        const end = Math.min(content.length - footerSize, index + chunkPadding);
+        
+        const last = chunks[chunks.length - 1];
+        if (last && start <= last.end) {
+            const added = end - last.end;
+            if (added > 0 && currentBudget >= added) {
+                last.end = end;
+                currentBudget -= added;
+            }
+        } else {
+            const size = end - start;
+            if (currentBudget >= size) {
+                chunks.push({ start, end });
+                currentBudget -= size;
+            }
+        }
+    }
+
+    let result = content.slice(0, headerSize) + "\n// ... [TRUNCATED] ...\n";
+    chunks.forEach((chunk, i) => {
+        result += content.slice(chunk.start, chunk.end);
+        if (i < chunks.length - 1 || chunks[chunks.length - 1].end < content.length - footerSize) {
+            result += "\n// ... [TRUNCATED] ...\n";
+        }
+    });
+    result += content.slice(-footerSize);
+
+    return result;
+}
+
 export async function adjudicateSecurityFindingWithGemini(
     input: SecurityAdjudicationInput
 ): Promise<SecurityAdjudicationResult> {
@@ -320,9 +394,8 @@ export async function analyzeCodeWithGemini(
         const filesContext = files
             .map((file) => {
                 const redacted = redactPromptSecrets(file.content);
-                return `\n--- FILE: ${file.path} ---\n\`\`\`\n${redacted.slice(0, 3000)} ${
-                    redacted.length > 3000 ? "... (truncated)" : ""
-                }\n\`\`\``;
+                const smartContent = getSmartFileContext(redacted, SECURITY_AI_CONTEXT_LIMIT);
+                return `\n--- FILE: ${file.path} ---\n\`\`\`\n${smartContent}\n\`\`\``;
             })
             .join("\n");
 
@@ -423,74 +496,6 @@ Rules:
     }
 }
 
-export async function generateSecurityPatch(params: {
-    filePath: string;
-    fileContent: string;
-    line?: number;
-    description: string;
-    recommendation: string;
-    snippet?: string;
-}): Promise<{ patch: string; explanation: string }> {
-    try {
-        const model = getGenAI().getGenerativeModel({
-            model: DEFAULT_MODEL,
-            generationConfig: getSecurityThinkingGenerationConfig(),
-        });
-
-        const contextSnippet = params.snippet || "";
-        const lineInfo = params.line ? `Line: ${params.line}` : "Line: unknown";
-
-        const prompt = `
-You are a security engineer. Generate a minimal, safe fix for the vulnerability.
-
-File: ${params.filePath}
-${lineInfo}
-
-Issue:
-${params.description}
-
-Recommendation:
-${params.recommendation}
-
-Context snippet:
-\`\`\`
-${contextSnippet}
-\`\`\`
-
-Full file (may be truncated):
-\`\`\`
-${params.fileContent.slice(0, 8000)}
-${params.fileContent.length > 8000 ? "\n... (truncated)" : ""}
-\`\`\`
-
-Return ONLY valid JSON with keys:
-- "patch": a unified diff with --- a/${params.filePath} and +++ b/${params.filePath}
-- "explanation": a short explanation of the fix
-
-Do not include markdown fences.`;
-
-        const result = await model.generateContent(prompt);
-        const text = result.response.text();
-        const start = text.indexOf("{");
-        const end = text.lastIndexOf("}");
-        const jsonPayload = start !== -1 && end > start ? text.slice(start, end + 1) : null;
-        if (!jsonPayload) {
-            return { patch: text.trim(), explanation: "Model response did not include JSON." };
-        }
-
-        const parsed = JSON.parse(jsonPayload) as { patch?: unknown; explanation?: unknown };
-        return {
-            patch: String(parsed.patch || "").trim(),
-            explanation: String(parsed.explanation || "").trim(),
-        };
-    } catch (error: unknown) {
-        console.error("Gemini patch generation error:", error);
-        return {
-            patch: "",
-            explanation: "Failed to generate patch.",
-        };
-    }
-}
 
 /**
  * Validate AI findings to prevent false positives.

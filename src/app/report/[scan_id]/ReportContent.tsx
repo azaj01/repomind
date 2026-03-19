@@ -343,7 +343,7 @@ export function ReportContent({
         try {
             await navigator.clipboard.writeText(globalFixPrompt);
             void trackReportConversion("report_fix_prompt_copied", scan.id);
-            toast.success("Fix prompt copied. Paste it in Repo Chat to remediate vulnerabilities.");
+            toast.success("AI remediation prompt copied. Paste it in Repo Chat to fix vulnerabilities.");
             setShowFixPromptModal(false);
         } catch {
             toast.error("Failed to copy prompt");
@@ -506,7 +506,7 @@ export function ReportContent({
                                             className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-zinc-800 px-3.5 py-2 text-sm font-medium text-zinc-200 transition-all hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
                                         >
                                             <Copy className="w-4 h-4" />
-                                            Get LLM-Ready Fix Prompt
+                                            Remediate with AI
                                         </button>
                                         <button
                                             onClick={() => { void handleCopyVerifiedReportSnippet(); }}
@@ -585,7 +585,7 @@ export function ReportContent({
                                         className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-zinc-800 px-3.5 py-2 text-sm font-medium text-zinc-200 transition-all hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
                                     >
                                         <Copy className="w-4 h-4" />
-                                        Get LLM-Ready Fix Prompt
+                                        Remediate with AI
                                     </button>
                                 )}
                                 {!isOutdated && (
@@ -1008,9 +1008,9 @@ export function ReportContent({
                             <div className="space-y-2">
                                 <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-indigo-300">
                                     <Copy className="w-3.5 h-3.5" />
-                                    LLM-Ready Prompt
+                                    AI Remediation
                                 </div>
-                                <h3 className="text-xl font-semibold text-white">Preview Fix Prompt</h3>
+                                <h3 className="text-xl font-semibold text-white">Remediate with AI</h3>
                                 <p className="text-sm text-zinc-400">
                                     Review the remediation prompt, then copy it to continue fixing vulnerabilities in chat.
                                 </p>

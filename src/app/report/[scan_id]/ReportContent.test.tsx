@@ -106,7 +106,7 @@ describe("ReportContent", () => {
             />
         );
 
-        expect(html).toContain("Get LLM-Ready Fix Prompt");
+        expect(html).toContain("Remediate with AI");
         expect(html).toContain("Talk to the Codebase");
         expect(html).toContain("Repository Profile");
         expect(html).toContain("Share Report");

@@ -10,3 +10,4 @@ export const DEFAULT_CONFIDENCE_THRESHOLD = {
     quick: 0.78,
     deep: 0.68,
 } as const;
+export const SECURITY_AI_CONTEXT_LIMIT = 32000;
