@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Loader2, FileCode, AlertCircle } from "lucide-react";
+import { X, Loader2, AlertCircle } from "lucide-react";
+import { FileIcon } from "./FileIcon";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -165,7 +166,7 @@ export function FilePreview({ isOpen, filePath, repoOwner, repoName, onClose }: 
                     {/* Header */}
                     <div className="flex items-center justify-between p-4 border-b border-white/10 bg-zinc-900/80 backdrop-blur-sm">
                         <div className="flex items-center gap-3">
-                            <FileCode className="w-5 h-5 text-purple-400" />
+                            <FileIcon filename={filePath?.split('/').pop() || ''} className="w-5 h-5" />
                             <h2 className="text-white font-semibold truncate max-w-md" title={filePath || ''}>
                                 {filePath}
                             </h2>

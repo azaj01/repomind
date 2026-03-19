@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { ChevronRight, Folder, FileText, CheckSquare, Square } from "lucide-react";
+import { FileIcon, FolderIcon } from "./FileIcon";
+import { ChevronRight, CheckSquare, Square } from "lucide-react";
 
 interface FileTreePickerProps {
     files: Array<{ path: string }>;
@@ -102,10 +103,10 @@ function FileNode({
         const isChecked = selectedSet.has(node.path);
         return (
             <div className="flex items-center gap-2 py-1" style={{ paddingLeft }}>
-                <button type="button" onClick={() => toggleFile(node.path)} className="text-zinc-400 hover:text-white">
+                <button type="button" onClick={() => toggleFile(node.path)} className="text-zinc-400 hover:text-white shrink-0">
                     {isChecked ? <CheckSquare className="w-4 h-4 text-purple-400" /> : <Square className="w-4 h-4" />}
                 </button>
-                <FileText className="w-4 h-4 text-zinc-500" />
+                <FileIcon filename={node.name} />
                 <span className="text-xs text-zinc-300 truncate">{node.name}</span>
             </div>
         );
@@ -118,13 +119,13 @@ function FileNode({
     return (
         <div>
             <div className="flex items-center gap-2 py-1" style={{ paddingLeft }}>
-                <button type="button" onClick={() => toggleExpand(node.path)} className="text-zinc-400 hover:text-white">
+                <button type="button" onClick={() => toggleExpand(node.path)} className="text-zinc-400 hover:text-white shrink-0">
                     <ChevronRight className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                 </button>
-                <button type="button" onClick={() => toggleDirectory(dirPaths)} className="text-zinc-400 hover:text-white">
+                <button type="button" onClick={() => toggleDirectory(dirPaths)} className="text-zinc-400 hover:text-white shrink-0">
                     {allSelected ? <CheckSquare className="w-4 h-4 text-purple-400" /> : <Square className="w-4 h-4" />}
                 </button>
-                <Folder className="w-4 h-4 text-zinc-500" />
+                <FolderIcon name={node.name} isExpanded={isExpanded} />
                 <span className="text-xs text-zinc-300">{node.name || 'root'}</span>
             </div>
             {isExpanded && (

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { File, Folder, FolderOpen, GitBranch, ChevronRight, ChevronDown, X, AlertCircle, Star, GitFork, CircleDot, Calendar } from "lucide-react";
+import { FileIcon, FolderIcon } from "./FileIcon";
+import { GitBranch, ChevronRight, ChevronDown, X, AlertCircle, Star, GitFork, CircleDot, Calendar } from "lucide-react";
 import { FileNode, GitHubRepo } from "@/lib/github";
 import { cn } from "@/lib/utils";
 
@@ -111,13 +112,9 @@ function FileTreeNode({
                 )}
 
                 {isFolder ? (
-                    isExpanded ? (
-                        <FolderOpen className="w-4 h-4 text-blue-400 shrink-0" />
-                    ) : (
-                        <Folder className="w-4 h-4 text-blue-400 shrink-0" />
-                    )
+                    <FolderIcon name={node.name} isExpanded={isExpanded} />
                 ) : (
-                    <File className="w-4 h-4 text-zinc-500 shrink-0" />
+                    <FileIcon filename={node.name} />
                 )}
 
                 <span className="truncate">{node.name}</span>
