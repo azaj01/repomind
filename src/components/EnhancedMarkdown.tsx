@@ -65,11 +65,44 @@ interface EnhancedMarkdownProps {
     currentOwner?: string;
     currentRepo?: string;
     isStreaming?: boolean;
+    fileTree?: { path: string }[];
 }
 
-export function EnhancedMarkdown({ content, components, currentOwner, currentRepo, isStreaming = false }: EnhancedMarkdownProps) {
+export function EnhancedMarkdown({ content, components, currentOwner, currentRepo, isStreaming = false, fileTree = [] }: EnhancedMarkdownProps) {
     const parts = useMemo(() => parseCardContent(content), [content]);
     
+    const resolvePath = (path: string, isFolder: boolean) => {
+        if (!fileTree || fileTree.length === 0) return path;
+        
+        // Exact match
+        if (fileTree.some(f => f.path === path)) return path;
+        
+        // Find all matches that end with the given path
+        const matches = fileTree.filter(f => f.path.endsWith('/' + path) || f.path === path);
+        if (matches.length === 1) return matches[0].path;
+        
+        if (matches.length > 1) {
+            // Priority 1: src or lib
+            const priorityMatch = matches.find(m => m.path.startsWith('src/') || m.path.startsWith('lib/'));
+            if (priorityMatch) return priorityMatch.path;
+            
+            // Priority 2: Not tests
+            const nonTestMatch = matches.find(m => !m.path.includes('test'));
+            if (nonTestMatch) return nonTestMatch.path;
+            
+            // Priority 3: Shortest path (usually more likely to be the main one)
+            return matches.sort((a, b) => a.path.length - b.path.length)[0].path;
+        }
+
+        // For folders, we can also check if any file starts with that path
+        if (isFolder) {
+            const prefixMatch = fileTree.find(f => f.path.startsWith(path + '/'));
+            if (prefixMatch) return path; // Folder exists as a prefix
+        }
+
+        return path;
+    };
+
     const mergedComponents = useMemo(() => ({
         a: (props: any) => (
             <SmartLink
@@ -110,16 +143,74 @@ export function EnhancedMarkdown({ content, components, currentOwner, currentRep
                     />
                 );
             }
+
+            // Detect if this is likely a file or folder path
+            const hasExtension = /\.(ts|tsx|js|jsx|py|md|css|json|yaml|yml|sh|html|go|rs|java|c|cpp|h|sql|env|json)$/.test(childrenStr);
+            const hasSlash = childrenStr.includes('/');
+            const isKnownFolder = ['src', 'lib', 'app', 'components', 'pages', 'public', 'tests', 'docs'].includes(childrenStr.toLowerCase());
+            
+            const isFilePath = !match && hasExtension && !childrenStr.includes(' ') && childrenStr.length > 2;
+            const isFolder = !match && !isFilePath && (
+                childrenStr.endsWith('/') || 
+                (hasSlash && !childrenStr.includes(' ')) ||
+                isKnownFolder
+            ) && childrenStr.length > 2;
+            
+            if (isFilePath) {
+                const fullPath = resolvePath(childrenStr, false);
+                const exists = fileTree.length > 0 && fileTree.some(f => f.path === fullPath);
+                
+                if (exists) {
+                    return (
+                        <button
+                            onClick={(e) => {
+                                e.preventDefault();
+                                window.dispatchEvent(new CustomEvent('open-file-preview', { detail: fullPath }));
+                            }}
+                            className="bg-zinc-800/30 hover:bg-zinc-700/50 px-1.5 py-0.5 rounded border border-white/5 text-sm font-mono text-purple-300 hover:text-purple-200 transition-all cursor-pointer group"
+                            title={`Open ${fullPath}`}
+                        >
+                            {children}
+                            <span className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-zinc-500">↗</span>
+                        </button>
+                    );
+                }
+            }
+
+            if (isFolder) {
+                const baseFolder = childrenStr.endsWith('/') ? childrenStr.slice(0, -1) : childrenStr;
+                const fullFolderPath = resolvePath(baseFolder, true);
+                const exists = fileTree.length > 0 && (
+                    fileTree.some(f => f.path === fullFolderPath) || 
+                    fileTree.some(f => f.path.startsWith(fullFolderPath + '/'))
+                );
+
+                if (exists) {
+                    return (
+                        <button
+                            onClick={(e) => {
+                                e.preventDefault();
+                                window.dispatchEvent(new CustomEvent('reveal-folder', { detail: fullFolderPath }));
+                            }}
+                            className="bg-zinc-800/30 hover:bg-zinc-700/50 px-1.5 py-0.5 rounded border border-white/5 text-sm font-mono text-blue-300 hover:text-blue-200 transition-all cursor-pointer group"
+                            title={`Reveal ${fullFolderPath}`}
+                        >
+                            {children}
+                            <span className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-zinc-500">📁</span>
+                        </button>
+                    );
+                }
+            }
             
             return (
-                <code className={className || "bg-zinc-800/50 px-1.5 py-0.5 rounded text-sm font-mono text-purple-300"} {...rest}>
+                <code className={className || "bg-zinc-800/30 px-1.5 py-0.5 rounded border border-white/5 text-sm font-mono text-zinc-300"} {...rest}>
                     {children}
                 </code>
             );
         },
         p: ({ children }: any) => <div className="mb-6 last:mb-0 leading-relaxed">{children}</div>,
         ...components
-    }), [currentOwner, currentRepo, components]);
+    }), [currentOwner, currentRepo, components, fileTree, isStreaming, resolvePath]);
 
     return (
         <>

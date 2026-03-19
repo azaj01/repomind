@@ -19,6 +19,7 @@ interface MessageContentProps {
     currentOwner?: string;
     currentRepo?: string;
     isStreaming?: boolean;
+    fileTree?: { path: string }[];
 }
 
 interface MarkdownCodeProps extends HTMLAttributes<HTMLElement> {
@@ -47,12 +48,45 @@ export function MessageContent({
     currentOwner,
     currentRepo,
     isStreaming = false,
+    fileTree = [],
 }: MessageContentProps) {
     const repairedContent = useMemo(
         () => repairMarkdown(stripEliteSvgBanner(content)),
         [content]
     );
     const isStreamingMessage = isStreaming;
+
+    const resolvePath = (path: string, isFolder: boolean) => {
+        if (!fileTree || fileTree.length === 0) return path;
+        
+        // Exact match
+        if (fileTree.some(f => f.path === path)) return path;
+        
+        // Find all matches that end with the given path
+        const matches = fileTree.filter(f => f.path.endsWith('/' + path) || f.path === path);
+        if (matches.length === 1) return matches[0].path;
+        
+        if (matches.length > 1) {
+            // Priority 1: src or lib
+            const priorityMatch = matches.find(m => m.path.startsWith('src/') || m.path.startsWith('lib/'));
+            if (priorityMatch) return priorityMatch.path;
+            
+            // Priority 2: Not tests
+            const nonTestMatch = matches.find(m => !m.path.includes('test'));
+            if (nonTestMatch) return nonTestMatch.path;
+            
+            // Priority 3: Shortest path
+            return matches.sort((a, b) => a.path.length - b.path.length)[0].path;
+        }
+
+        // For folders, we can also check if any file starts with that path
+        if (isFolder) {
+            const prefixMatch = fileTree.find(f => f.path.startsWith(path + '/'));
+            if (prefixMatch) return path; // Folder exists as a prefix
+        }
+
+        return path;
+    };
 
     const components = useMemo(() => ({
         code: ({ className, children, inline, ...props }: MarkdownCodeProps) => {
@@ -93,21 +127,83 @@ export function MessageContent({
                 }
             }
 
-            const contentStr = String(children ?? "");
-            const isBlock = contentStr.endsWith("\n");
+            const childrenStr = String(children ?? "").replace(/\n$/, "");
+            const isBlock = childrenStr.endsWith("\n");
             const shouldRenderBlock = Boolean(match) || isBlock || inline === false;
 
-            return shouldRenderBlock ? (
-                <CodeBlock
-                    language={match?.[1] ?? "markdown"}
-                    value={contentStr.replace(/\n$/, "")}
-                    components={components}
-                    owner={currentOwner}
-                    repo={currentRepo}
-                />
-            ) : (
+            if (shouldRenderBlock) {
+                return (
+                    <CodeBlock
+                        language={match?.[1] ?? "markdown"}
+                        value={childrenStr}
+                        components={components}
+                        owner={currentOwner}
+                        repo={currentRepo}
+                    />
+                );
+            }
+
+            // Detect if this is likely a file or folder path
+            const hasExtension = /\.(ts|tsx|js|jsx|py|md|css|json|yaml|yml|sh|html|go|rs|java|c|cpp|h|sql|env|json)$/.test(childrenStr);
+            const hasSlash = childrenStr.includes('/');
+            const isKnownFolder = ['src', 'lib', 'app', 'components', 'pages', 'public', 'tests', 'docs'].includes(childrenStr.toLowerCase());
+
+            const isFilePath = !match && hasExtension && !childrenStr.includes(' ') && childrenStr.length > 2;
+            const isFolder = !match && !isFilePath && (
+                childrenStr.endsWith('/') || 
+                (hasSlash && !childrenStr.includes(' ')) ||
+                isKnownFolder
+            ) && childrenStr.length > 2;
+
+            if (isFilePath) {
+                const fullPath = resolvePath(childrenStr, false);
+                const exists = fileTree.length > 0 && fileTree.some(f => f.path === fullPath);
+
+                if (exists) {
+                    return (
+                        <button
+                            onClick={(e) => {
+                                e.preventDefault();
+                                window.dispatchEvent(new CustomEvent('open-file-preview', { detail: fullPath }));
+                            }}
+                            className="bg-zinc-800/30 hover:bg-zinc-700/50 px-1.5 py-0.5 rounded border border-white/5 text-sm font-mono text-purple-300 hover:text-purple-200 transition-all cursor-pointer group"
+                            title={`Open ${fullPath}`}
+                        >
+                            {children}
+                            <span className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-zinc-500">↗</span>
+                        </button>
+                    );
+                }
+            }
+
+            if (isFolder) {
+                const baseFolder = childrenStr.endsWith('/') ? childrenStr.slice(0, -1) : childrenStr;
+                const fullFolderPath = resolvePath(baseFolder, true);
+                const exists = fileTree.length > 0 && (
+                    fileTree.some(f => f.path === fullFolderPath) || 
+                    fileTree.some(f => f.path.startsWith(fullFolderPath + '/'))
+                );
+
+                if (exists) {
+                    return (
+                        <button
+                            onClick={(e) => {
+                                e.preventDefault();
+                                window.dispatchEvent(new CustomEvent('reveal-folder', { detail: fullFolderPath }));
+                            }}
+                            className="bg-zinc-800/30 hover:bg-zinc-700/50 px-1.5 py-0.5 rounded border border-white/5 text-sm font-mono text-blue-300 hover:text-blue-200 transition-all cursor-pointer group"
+                            title={`Reveal ${fullFolderPath}`}
+                        >
+                            {children}
+                            <span className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-zinc-500">📁</span>
+                        </button>
+                    );
+                }
+            }
+
+            return (
                 <code
-                    className="bg-zinc-800 px-1.5 py-0.5 rounded text-red-400 font-mono text-sm"
+                    className="bg-zinc-800/30 px-1.5 py-0.5 rounded border border-white/5 text-zinc-300 font-mono text-sm"
                     {...props}
                 >
                     {children}
@@ -140,7 +236,7 @@ export function MessageContent({
         td: ({ children }: MarkdownContainerProps) => (
             <td className="px-4 py-2 text-sm text-zinc-300 border border-zinc-700">{children}</td>
         ),
-    }), [currentOwner, currentRepo, isStreamingMessage]);
+    }), [currentOwner, currentRepo, isStreamingMessage, fileTree, resolvePath]);
 
     return (
         <div className="w-full [&>*:first-child]:!mt-0">
@@ -150,6 +246,7 @@ export function MessageContent({
                 currentOwner={currentOwner}
                 currentRepo={currentRepo}
                 isStreaming={isStreaming}
+                fileTree={fileTree}
             />
         </div>
     );

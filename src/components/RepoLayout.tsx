@@ -35,9 +35,15 @@ export function RepoLayout({ fileTree, repoName, owner, repo, hiddenFiles = [], 
             setPreviewFile(customEvent.detail);
         };
 
+        const handleRevealFolder = () => {
+            setSidebarOpen(true);
+        };
+
         window.addEventListener("open-file-preview", handleOpenPreview as EventListener);
+        window.addEventListener("reveal-folder", handleRevealFolder);
         return () => {
             window.removeEventListener("open-file-preview", handleOpenPreview as EventListener);
+            window.removeEventListener("reveal-folder", handleRevealFolder);
         };
     }, []);
 

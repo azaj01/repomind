@@ -1055,6 +1055,7 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
                                                     currentOwner={repoContext.owner}
                                                     currentRepo={repoContext.repo}
                                                     isStreaming={loading && isLatestMessage && !msg.scanStatus}
+                                                    fileTree={repoContext.fileTree}
                                                 />
                                             )}
                                             </div>

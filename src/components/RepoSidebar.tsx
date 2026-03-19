@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { File, Folder, FolderOpen, GitBranch, ChevronRight, ChevronDown, X, AlertCircle, Star, GitFork, CircleDot, Calendar } from "lucide-react";
 import { FileNode, GitHubRepo } from "@/lib/github";
 import { cn } from "@/lib/utils";
@@ -73,40 +73,45 @@ function buildTree(files: FileNode[]): TreeNode[] {
 function FileTreeNode({
     node,
     depth,
-    onFileDoubleClick
+    onFileDoubleClick,
+    expandedPaths,
+    onToggle
 }: {
     node: TreeNode;
     depth: number;
     onFileDoubleClick?: (filePath: string) => void;
+    expandedPaths: Set<string>;
+    onToggle: (path: string) => void;
 }) {
-    const [isOpen, setIsOpen] = useState(false);
     const isFolder = node.type === "tree";
+    const isExpanded = expandedPaths.has(node.path);
 
     const handleClick = () => {
         if (isFolder) {
-            setIsOpen(!isOpen);
+            onToggle(node.path);
         } else if (onFileDoubleClick) {
             onFileDoubleClick(node.path);
         }
     };
 
     return (
-        <div>
+        <div id={`sidebar-item-${node.path.replace(/\//g, '-')}`}>
             <div
                 className={cn(
                     "flex items-center gap-1.5 py-1 px-2 text-sm text-zinc-300 hover:text-white hover:bg-white/5 rounded cursor-pointer select-none transition-colors",
-                    depth > 0 && "ml-3"
+                    depth > 0 && "ml-3",
+                    isExpanded && isFolder && "text-white"
                 )}
                 onClick={handleClick}
             >
                 {isFolder && (
                     <span className="text-zinc-600">
-                        {isOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                        {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                     </span>
                 )}
 
                 {isFolder ? (
-                    isOpen ? (
+                    isExpanded ? (
                         <FolderOpen className="w-4 h-4 text-blue-400 shrink-0" />
                     ) : (
                         <Folder className="w-4 h-4 text-blue-400 shrink-0" />
@@ -118,7 +123,7 @@ function FileTreeNode({
                 <span className="truncate">{node.name}</span>
             </div>
 
-            {isOpen && node.children && (
+            {isExpanded && node.children && (
                 <div className="border-l border-white/5 ml-2.5">
                     {node.children.map((child) => (
                         <FileTreeNode
@@ -126,6 +131,8 @@ function FileTreeNode({
                             node={child}
                             depth={depth + 1}
                             onFileDoubleClick={onFileDoubleClick}
+                            expandedPaths={expandedPaths}
+                            onToggle={onToggle}
                         />
                     ))}
                 </div>
@@ -137,6 +144,56 @@ function FileTreeNode({
 export function RepoSidebar({ fileTree, repoName, isOpen, onClose, onFileDoubleClick, hiddenFiles = [], repoData }: RepoSidebarProps) {
     const tree = buildTree(fileTree);
     const [showHiddenFiles, setShowHiddenFiles] = useState(false);
+    const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+
+    const togglePath = (path: string) => {
+        setExpandedPaths(prev => {
+            const next = new Set(prev);
+            if (next.has(path)) {
+                next.delete(path);
+            } else {
+                next.add(path);
+            }
+            return next;
+        });
+    };
+
+    useEffect(() => {
+        const handleRevealFolder = (e: Event) => {
+            const folderPath = (e as CustomEvent<string>).detail;
+            if (!folderPath) return;
+
+            // Expand all parents
+            const parts = folderPath.split('/');
+            const pathsToExpand: string[] = [];
+            let current = '';
+            parts.forEach(part => {
+                current = current ? `${current}/${part}` : part;
+                pathsToExpand.push(current);
+            });
+
+            setExpandedPaths(prev => {
+                const next = new Set(prev);
+                pathsToExpand.forEach(p => next.add(p));
+                return next;
+            });
+
+            // Small delay to ensure the sidebar is open and DOM is updated
+            setTimeout(() => {
+                const elementId = `sidebar-item-${folderPath.replace(/\//g, '-')}`;
+                const element = document.getElementById(elementId);
+                if (element) {
+                    element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    // Visual feedback
+                    element.classList.add('bg-blue-500/10');
+                    setTimeout(() => element.classList.remove('bg-blue-500/10'), 2000);
+                }
+            }, 100);
+        };
+
+        window.addEventListener('reveal-folder', handleRevealFolder);
+        return () => window.removeEventListener('reveal-folder', handleRevealFolder);
+    }, []);
 
     return (
         <>
@@ -202,13 +259,15 @@ export function RepoSidebar({ fileTree, repoName, isOpen, onClose, onFileDoubleC
                     )}
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-2">
+                <div className="flex-1 overflow-y-auto p-2 scroll-smooth">
                     {tree.map((node) => (
                         <FileTreeNode
                             key={node.path}
                             node={node}
                             depth={0}
                             onFileDoubleClick={onFileDoubleClick}
+                            expandedPaths={expandedPaths}
+                            onToggle={togglePath}
                         />
                     ))}
                 </div>
