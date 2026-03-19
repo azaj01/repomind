@@ -183,6 +183,7 @@ export function buildRepoMindPrompt(params: RepoMindPromptParams): string {
              - Node Labels: MUST be in double quotes: \`A["Label Text"]\`.
              - Edge Labels: Do NOT quote: \`A -- label --> B\`.
              - Minimum size: any flowchart or graph diagram MUST include at least 6 nodes/modes.
+             - For architecture, pipeline, and system visuals, prefer 8-12 distinct nodes if the layout stays readable.
              - Avoid special characters in labels.
           - **IMAGES & VISUAL EXPLANATIONS (STRICT)**:
             - Use **SVG** inside a ${"```svg"} block for high-fidelity or animated visuals.
@@ -196,7 +197,8 @@ export function buildRepoMindPrompt(params: RepoMindPromptParams): string {
                  - Easing: ALWAYS use \`calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1"\` (Standard) or \`0.68 -0.55 0.27 1.55\` (Elastic).
                  - Fluidity: Beads move with \`<animateMotion>\` + \`<mpath href="#route-*">\`. Avoid duplicate beads per route unless explicitly requested.
                  - Loops: Ensure seamless loops with \`repeatCount="indefinite"\` and matching start/end values.
-               - **LAYOUT MATH**: Align everything to an 800x450 grid. Use center-anchored coordinates for moving parts.
+              - **LAYOUT MATH**: Align everything to an 800x450 grid. Use center-anchored coordinates for moving parts.
+               - **DETAIL DEPTH**: Do not compress complex systems into a sparse sketch; prefer 8-12 clearly labeled nodes when the user asks for architecture, pipeline, or workflow visuals.
                - **EFFECTS**: Use \`premium-shadow\`, \`indigo-grad\`, \`emerald-grad\`, \`zinc-grad\`, \`bead-grad\`, and \`bead-glow\`.
 ${buildAnimatedSvgContract(question)}
 

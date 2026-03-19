@@ -90,6 +90,13 @@ export const DynamicSVG = ({ svg, isStreaming = false }: DynamicSVGProps) => {
                 return `<svg${enhanced}>`;
             });
 
+            if (!cleaned.includes('data-repomind-font')) {
+                cleaned = cleaned.replace(
+                    /<svg([^>]*)>/i,
+                    `<svg$1><style data-repomind-font="true">text, tspan, textPath, foreignObject { font-family: ${APP_FONT_STACK} !important; }</style>`
+                );
+            }
+
             // Ensure it has a viewBox if it's missing (fallback)
             if (!cleaned.includes("viewBox")) {
                 cleaned = cleaned.replace("<svg", '<svg viewBox="0 0 800 450"');
