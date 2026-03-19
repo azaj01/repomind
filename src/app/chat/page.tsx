@@ -2,6 +2,7 @@ import { ProfileLoader } from "@/components/ProfileLoader";
 import { RepoLoader } from "@/components/RepoLoader";
 import { ArrowLeft, Search } from "lucide-react";
 import Link from "next/link";
+import { normalizeGitHubInput } from "@/lib/utils";
 
 import type { Metadata } from "next";
 
@@ -24,7 +25,8 @@ export default async function ChatPage({
 }: {
     searchParams: Promise<{ q?: string; prompt?: string }>;
 }) {
-    const { q: query, prompt } = await searchParams;
+    const { q: rawQuery, prompt } = await searchParams;
+    const query = rawQuery ? normalizeGitHubInput(rawQuery) : undefined;
 
     if (!query) {
         return (

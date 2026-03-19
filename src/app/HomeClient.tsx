@@ -25,6 +25,7 @@ import type { SearchHistoryItem } from "@/lib/services/history-service";
 import { INVALID_SESSION_ERROR_PARAM } from "@/lib/session-guard";
 import { BlogPost } from "@prisma/client";
 import { CatalogRepoEntry } from "@/lib/repo-catalog";
+import { normalizeGitHubInput } from "@/lib/utils";
 
 type PublicStatsData = {
     totalVisitors: number;
@@ -62,18 +63,19 @@ export default function HomeClient({
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!input.trim()) return;
+        const normalizedInput = normalizeGitHubInput(input);
+        if (!normalizedInput) return;
 
         setLoading(true);
         setError("");
 
         try {
-            const result = await fetchGitHubData(input);
+            const result = await fetchGitHubData(normalizedInput);
 
             if (result.error) {
                 setError(result.error);
             } else {
-                router.push(`/chat?q=${encodeURIComponent(input)}`);
+                router.push(`/chat?q=${encodeURIComponent(normalizedInput)}`);
             }
         } catch {
             setError("Something went wrong. Please try again.");
@@ -144,7 +146,7 @@ export default function HomeClient({
                                 type="text"
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
-                                placeholder="username or username/repo"
+                                placeholder="GitHub URL, username, or repo"
                                 className="flex-1 bg-transparent border-none outline-none text-white px-3 py-2 md:px-4 md:py-3 placeholder-zinc-500 text-sm md:text-base w-full min-w-0"
                             />
                             <button
