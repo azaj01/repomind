@@ -244,8 +244,9 @@ export default function HomeClient({
                 <section id="trending-section" className="relative z-10 w-full bg-black py-24 px-6 border-t border-white/5">
                     <div className="max-w-7xl mx-auto">
                         <div className="mb-12">
-                            <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-4 text-white flex items-center gap-3">
-                                <TrendingUp className="text-blue-400" size={36} /> Explore Trending <span className="bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">Repositories</span>
+                            <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight mb-4 text-white">
+                                <TrendingUp className="inline-block text-blue-400 mb-1 mr-2 md:mr-3" size={32} />
+                                Explore Trending <span className="bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">Repositories</span>
                             </h2>
                             <p className="text-zinc-400 text-lg max-w-2xl">
                                 Explore the projects getting the most heat on GitHub this week. Instantly analyze any of them with RepoMind.
