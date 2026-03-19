@@ -11,7 +11,6 @@ import TrustedByMarquee from "@/components/TrustedByMarquee";
 import InteractiveDemo from "@/components/InteractiveDemo";
 import BentoFeatures from "@/components/BentoFeatures";
 import SecurityBanner from "@/components/SecurityBanner";
-import WallOfLove from "@/components/WallOfLove";
 import { GitHubBadge } from "@/components/GitHubBadge";
 import { CAGBadge } from "@/components/CAGBadge";
 import CAGComparison from "@/components/CAGComparison";
@@ -173,9 +172,6 @@ export default function HomeClient({
                 <SecurityBanner />
             </div>
 
-            <div className="relative z-10 w-full bg-zinc-950 border-t border-zinc-900">
-                <WallOfLove />
-            </div>
 
             {trendingRepos.length > 0 && (
                 <section id="trending-section" className="relative z-10 w-full bg-black py-24 px-6 border-t border-white/5">
@@ -352,11 +348,6 @@ export default function HomeClient({
                             "priceCurrency": "USD",
                         },
                         "description": "RepoMind is a premium AI-powered platform for codebase mastery, enabling developers to analyze, visualize, and chat with any GitHub repository or profile instantly.",
-                        "aggregateRating": {
-                            "@type": "AggregateRating",
-                            "ratingValue": "4.8",
-                            "ratingCount": "120",
-                        },
                     }),
                 }}
             />
