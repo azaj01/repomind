@@ -31,6 +31,15 @@ interface MarkdownContainerProps {
     children?: ReactNode;
 }
 
+function stripEliteSvgBanner(content: string): string {
+    return content
+        .replace(
+            /(?:^|\n)\s*Applying Elite SVG 2\.0 System:\s*\[✓\]\s*Smooth SMIL Splines\s*\[✓\]\s*Precise Bead Math\s*\[✓\]\s*Premium Defs Applied\.?\s*(?:\n|$)/gi,
+            "\n"
+        )
+        .trimStart();
+}
+
 export function MessageContent({
     content,
     messageId,
@@ -39,7 +48,10 @@ export function MessageContent({
     currentRepo,
     isStreaming = false,
 }: MessageContentProps) {
-    const repairedContent = useMemo(() => repairMarkdown(content), [content]);
+    const repairedContent = useMemo(
+        () => repairMarkdown(stripEliteSvgBanner(content)),
+        [content]
+    );
     const isStreamingMessage = isStreaming;
 
     const components = useMemo(() => ({

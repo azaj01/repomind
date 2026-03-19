@@ -10,7 +10,20 @@ import {
 
 describe("validateMermaidSyntax", () => {
     it("validates a correct flowchart", () => {
-        const result = validateMermaidSyntax("flowchart TD\n  A --> B");
+        const result = validateMermaidSyntax(
+            `flowchart TD
+  A["Start"]
+  B["Validate"]
+  C["Plan"]
+  D["Execute"]
+  E["Review"]
+  F["End"]
+  A --> B
+  B --> C
+  C --> D
+  D --> E
+  E --> F`
+        );
         expect(result.valid).toBe(true);
     });
 
@@ -32,6 +45,12 @@ describe("validateMermaidSyntax", () => {
     it("validates a classDiagram", () => {
         const result = validateMermaidSyntax("classDiagram\n  class Animal");
         expect(result.valid).toBe(true);
+    });
+
+    it("rejects undersized flowcharts", () => {
+        const result = validateMermaidSyntax("flowchart TD\n  A --> B\n  B --> C");
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain("at least 6 nodes");
     });
 });
 

@@ -14,8 +14,16 @@ export const templates = {
                 .trim()
         ).filter(c => c.length > 0);
 
-        if (sanitized.length === 0) {
-            sanitized.push('Start', 'Process', 'End');
+        const defaults = ['Start', 'Validate', 'Plan', 'Execute', 'Review', 'End'];
+        for (const label of defaults) {
+            if (sanitized.length >= 6) break;
+            if (!sanitized.includes(label)) {
+                sanitized.push(label);
+            }
+        }
+
+        while (sanitized.length < 6) {
+            sanitized.push(`Step ${sanitized.length + 1}`);
         }
 
         return `graph TD
@@ -31,27 +39,49 @@ ${sanitized.slice(0, -1).map((_, i) => `  N${i} --> N${i + 1}`).join('\n')}`;
         return `graph TB
   subgraph Frontend
     UI["${clean(layers[0] || 'User Interface')}"]
+    Shell["${clean(layers[1] || 'App Shell')}"]
   end
   subgraph Backend
-    API["${clean(layers[1] || 'API Layer')}"]
+    API["${clean(layers[2] || 'API Layer')}"]
+    Worker["${clean(layers[3] || 'Worker Layer')}"]
   end
   subgraph Data
-    DB["${clean(layers[2] || 'Database')}"]
+    Cache["${clean(layers[4] || 'Cache Layer')}"]
+    DB["${clean(layers[5] || 'Database')}"]
   end
-  UI --> API
-  API --> DB`;
+  UI --> Shell
+  Shell --> API
+  API --> Worker
+  Worker --> Cache
+  Cache --> DB`;
     },
 
     /**
      * Component dependency diagram
      */
-    componentDiagram: (components: Array<{ name: string; deps?: string[] }>) => `
+    componentDiagram: (components: Array<{ name: string; deps?: string[] }>) => {
+        const fallbackNames = ['Component A', 'Component B', 'Component C', 'Component D', 'Component E', 'Component F'];
+        const normalized = components.slice(0, 6).map((component, index) => ({
+            name: component.name || fallbackNames[index],
+            deps: component.deps ?? (index < 5 ? [fallbackNames[index + 1]] : []),
+        }));
+
+        while (normalized.length < 6) {
+            const index = normalized.length;
+            normalized.push({
+                name: fallbackNames[index],
+                deps: index < 5 ? [fallbackNames[index + 1]] : [],
+            });
+        }
+
+        return `
 graph LR
-${components.map(c => `  ${c.name.replace(/[^a-zA-Z0-9]/g, '_')}["${c.name}"]`).join('\n')}
-${components.flatMap(c =>
-        (c.deps || []).map(d => `  ${c.name.replace(/[^a-zA-Z0-9]/g, '_')} --> ${d.replace(/[^a-zA-Z0-9]/g, '_')}`)
-    ).join('\n')}
-  `,
+${normalized.map(c => `  ${c.name.replace(/[^a-zA-Z0-9]/g, '_')}["${c.name}"]`).join('\n')}
+${normalized.flatMap(c =>
+            (c.deps || []).map(d => `  ${c.name.replace(/[^a-zA-Z0-9]/g, '_')} --> ${d.replace(/[^a-zA-Z0-9]/g, '_')}`)
+        ).join('\n')}
+  `;
+    },
 
     /**
      * Service architecture diagram
@@ -74,6 +104,33 @@ graph TB
   App2 --> DB
   `,
 };
+
+const MIN_FLOWCHART_NODE_COUNT = 6;
+
+function countMermaidFlowchartNodes(code: string): number {
+    const nodeIds = new Set<string>();
+    const lines = code.split("\n");
+
+    for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith("graph ") || line.startsWith("flowchart ") || line.startsWith("subgraph ") || line === "end") {
+            continue;
+        }
+
+        const explicitNodePattern = /\b([A-Za-z0-9_-]+)\s*(\[\s*"(?:[^"\\]|\\.)*"\s*\]|\(\s*"(?:[^"\\]|\\.)*"\s*\)|\(\(\s*"(?:[^"\\]|\\.)*"\s*\)\)|\{\s*"(?:[^"\\]|\\.)*"\s*\}|\[\(\s*"(?:[^"\\]|\\.)*"\s*\)\]|\{\{\s*"(?:[^"\\]|\\.)*"\s*\}\})/g;
+        for (const match of line.matchAll(explicitNodePattern)) {
+            nodeIds.add(match[1]);
+        }
+
+        const edgePattern = /\b([A-Za-z0-9_-]+)\b\s*(?:-->|-.->|==>|---)\s*(?:\|[^|]*\|\s*)?\b([A-Za-z0-9_-]+)\b/g;
+        for (const match of line.matchAll(edgePattern)) {
+            nodeIds.add(match[1]);
+            nodeIds.add(match[2]);
+        }
+    }
+
+    return nodeIds.size;
+}
 
 /**
  * Enhanced Mermaid validation
@@ -119,6 +176,11 @@ export function validateMermaidSyntax(code: string): { valid: boolean; error?: s
             if (check.test.test(trimmed)) {
                 return { valid: false, error: check.error };
             }
+        }
+
+        const diagramType = extractDiagramType(trimmed);
+        if ((diagramType === "graph" || diagramType === "flowchart") && countMermaidFlowchartNodes(trimmed) < MIN_FLOWCHART_NODE_COUNT) {
+            return { valid: false, error: `Flowchart must contain at least ${MIN_FLOWCHART_NODE_COUNT} nodes.` };
         }
 
         return { valid: true };
@@ -227,7 +289,7 @@ export function extractDiagramType(code: string): string {
  */
 export function getFallbackTemplate(context?: string): string {
     if (!context) {
-        return templates.basicFlow(['Start', 'Process', 'End']);
+        return templates.basicFlow(['Start', 'Validate', 'Plan', 'Execute', 'Review', 'End']);
     }
 
     // Try to infer what kind of diagram to use
@@ -245,12 +307,15 @@ export function getFallbackTemplate(context?: string): string {
         return templates.componentDiagram([
             { name: 'Component A', deps: ['Component B'] },
             { name: 'Component B', deps: ['Component C'] },
-            { name: 'Component C', deps: [] }
+            { name: 'Component C', deps: ['Component D'] },
+            { name: 'Component D', deps: ['Component E'] },
+            { name: 'Component E', deps: ['Component F'] },
+            { name: 'Component F', deps: [] }
         ]);
     }
 
     // Default fallback
-    return templates.basicFlow(['Start', 'Process', 'End']);
+    return templates.basicFlow(['Start', 'Validate', 'Plan', 'Execute', 'Review', 'End']);
 }
 
 /**

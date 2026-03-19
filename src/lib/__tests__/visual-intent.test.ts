@@ -27,6 +27,7 @@ describe("visual-intent", () => {
 
     it("returns complexity targets by query detail", () => {
         expect(getSvgComplexityTarget("simple diagram").tier).toBe("simple");
+        expect(getSvgComplexityTarget("simple diagram").minNodes).toBe(6);
         expect(getSvgComplexityTarget("complex distributed architecture diagram").tier).toBe("complex");
     });
 });

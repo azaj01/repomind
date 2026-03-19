@@ -13,10 +13,13 @@ describe("svg-quality", () => {
   <g class="node" id="node-b"></g>
   <g class="node" id="node-c"></g>
   <g class="node" id="node-d"></g>
+  <g class="node" id="node-e"></g>
+  <g class="node" id="node-f"></g>
   <path class="edge" id="route-a-b" d="M120 120 L260 120" />
   <path class="edge" id="route-b-c" d="M280 120 L420 120" />
   <path class="edge" id="route-c-d" d="M440 120 L580 120" />
-  <path class="edge" id="route-d-a" d="M580 140 L120 140" />
+  <path class="edge" id="route-d-e" d="M580 140 L120 140" />
+  <path class="edge" id="route-e-f" d="M120 180 L260 180" />
   <circle class="bead" r="4">
     <animateMotion dur="2s" repeatCount="indefinite"><mpath href="#route-a-b"/></animateMotion>
   </circle>
@@ -27,7 +30,10 @@ describe("svg-quality", () => {
     <animateMotion dur="2s" repeatCount="indefinite"><mpath href="#route-c-d"/></animateMotion>
   </circle>
   <circle class="bead" r="4">
-    <animateMotion dur="2s" repeatCount="indefinite"><mpath href="#route-d-a"/></animateMotion>
+    <animateMotion dur="2s" repeatCount="indefinite"><mpath href="#route-d-e"/></animateMotion>
+  </circle>
+  <circle class="bead" r="4">
+    <animateMotion dur="2s" repeatCount="indefinite"><mpath href="#route-e-f"/></animateMotion>
   </circle>
   <g class="legend"><text>Legend</text></g>
 </svg>

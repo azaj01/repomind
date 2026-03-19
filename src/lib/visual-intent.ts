@@ -3,6 +3,7 @@ import type { ModelPreference } from "@/lib/ai-client";
 const VISUAL_QUERY_PATTERN = /\b(svg|animated|animation|flowchart|architecture|diagram|pipeline)\b/i;
 const COMPLEX_VISUAL_PATTERN = /\b(complex|detailed|comprehensive|end[- ]to[- ]end|distributed|microservice|event[- ]driven|orchestr|multi[- ]stage|multi[- ]step|production[- ]grade|full[- ]fledged|deep dive)\b/i;
 const SIMPLE_VISUAL_PATTERN = /\b(simple|basic|minimal|quick|overview|high[- ]level|small|tiny)\b/i;
+const MIN_VISUAL_NODE_COUNT = 6;
 
 export interface SvgComplexityTarget {
     tier: "simple" | "standard" | "complex";
@@ -43,7 +44,7 @@ export function getSvgComplexityTarget(query: string): SvgComplexityTarget {
     if (SIMPLE_VISUAL_PATTERN.test(normalized)) {
         return {
             tier: "simple",
-            minNodes: 4,
+            minNodes: MIN_VISUAL_NODE_COUNT,
             minEdges: 4,
             minLanes: 1,
             maxBeadsPerRoute: 1,
@@ -52,7 +53,7 @@ export function getSvgComplexityTarget(query: string): SvgComplexityTarget {
 
     return {
         tier: "standard",
-        minNodes: 6,
+        minNodes: MIN_VISUAL_NODE_COUNT,
         minEdges: 7,
         minLanes: 2,
         maxBeadsPerRoute: 1,

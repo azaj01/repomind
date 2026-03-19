@@ -5,6 +5,7 @@ import { Download, Maximize2, X, ZoomIn, Sparkles } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import html2canvas from "html2canvas-pro";
+import { APP_FONT_STACK } from "@/lib/design-tokens";
 
 interface DynamicSVGProps {
     svg: string;
@@ -69,9 +70,17 @@ export const DynamicSVG = ({ svg, isStreaming = false }: DynamicSVGProps) => {
                 
                 // If it doesn't have an overflow style, add it
                 if (!enhanced.includes("style=")) {
-                    enhanced += ' style="overflow: visible; width: 100%; height: auto; max-height: 70vh;"';
+                    enhanced += ` style="overflow: visible; width: 100%; height: auto; max-height: 70vh; font-family: ${APP_FONT_STACK};"`;
                 } else if (!enhanced.includes("overflow: visible")) {
-                    enhanced = enhanced.replace(/style="([^"]*)"/i, 'style="$1; overflow: visible; width: 100%; height: auto; max-height: 70vh;"');
+                    enhanced = enhanced.replace(
+                        /style="([^"]*)"/i,
+                        `style="$1; overflow: visible; width: 100%; height: auto; max-height: 70vh; font-family: ${APP_FONT_STACK};"`
+                    );
+                } else if (!enhanced.includes("font-family")) {
+                    enhanced = enhanced.replace(
+                        /style="([^"]*)"/i,
+                        `style="$1; font-family: ${APP_FONT_STACK};"`
+                    );
                 }
 
                 // Ensure it's not strictly sized

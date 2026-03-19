@@ -1,4 +1,5 @@
 import mermaid from "mermaid";
+import { APP_FONT_STACK } from "@/lib/design-tokens";
 
 /**
  * Centralized Mermaid initialization
@@ -17,7 +18,7 @@ export const initMermaid = () => {
             lineColor: '#a1a1aa', // zinc-400
             secondaryColor: '#27272a', // zinc-800
             tertiaryColor: '#27272a', // zinc-800
-            fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+            fontFamily: APP_FONT_STACK,
         }
     });
 };

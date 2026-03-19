@@ -7,6 +7,7 @@
  * variants in gemini.ts — eliminating the ~250-line prompt duplication.
  */
 import { getSvgComplexityTarget } from "./visual-intent";
+import { APP_FONT_STACK } from "./design-tokens";
 
 export interface RepoMindPromptParams {
   question: string;
@@ -18,11 +19,12 @@ export interface RepoMindPromptParams {
 
 function buildAnimatedSvgContract(question: string): string {
   const target = getSvgComplexityTarget(question);
+  const minimumNodeCount = Math.max(6, target.minNodes);
 
   return `
             - **ANIMATED SVG HARD CONTRACT (MANDATORY)**:
               - Complexity tier for THIS request: **${target.tier.toUpperCase()}**.
-              - Minimum logical blocks: **${target.minNodes}** elements with \`class="node"\`.
+              - Minimum logical blocks: **${minimumNodeCount}** elements with \`class="node"\`.
               - Minimum connection edges: **${target.minEdges}** \`<path class="edge">\` elements.
               - Minimum lanes/swimlanes: **${target.minLanes}** elements with \`class="lane"\`.
               - Every flow route MUST be a path with \`id="route-*"\`.
@@ -180,6 +182,7 @@ export function buildRepoMindPrompt(params: RepoMindPromptParams): string {
              - Use for: Logic flows, sequence diagrams, ER/Class models.
              - Node Labels: MUST be in double quotes: \`A["Label Text"]\`.
              - Edge Labels: Do NOT quote: \`A -- label --> B\`.
+             - Minimum size: any flowchart or graph diagram MUST include at least 6 nodes/modes.
              - Avoid special characters in labels.
           - **IMAGES & VISUAL EXPLANATIONS (STRICT)**:
             - Use **SVG** inside a ${"```svg"} block for high-fidelity or animated visuals.
@@ -187,7 +190,7 @@ export function buildRepoMindPrompt(params: RepoMindPromptParams): string {
             - **ELITE SVG 2.0 DESIGN SYSTEM (PRODUCTION-GRADE)**:
                - **Aesthetics**: Use \`rx="12"\` for containers, \`rx="6"\` for items. Stroke: \`1.5px\`. 
                - **Color Palette**: Zinc-950 (#09090b) Border, Zinc-900 (#18181b) Surface, Indigo-500 (#6366f1) Primary, Emerald-500 (#10b981) Data, Rose-500 (#f43f5e) Error.
-               - **Typography**: Inter/System font. Clean Zinc-300 (#d4d4d8) labels.
+               - **Typography**: Use the application's font stack (${APP_FONT_STACK}). Clean Zinc-300 (#d4d4d8) labels.
                - **PRECISE BEAD SYSTEM**: Data packets MUST be \`<circle class="bead" r="4" fill="url(#bead-grad)" filter="url(#bead-glow)">...</circle>\`.
                - **ULTRA-FLUID SMIL**: 
                  - Easing: ALWAYS use \`calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1"\` (Standard) or \`0.68 -0.55 0.27 1.55\` (Elastic).
@@ -222,9 +225,9 @@ ${buildAnimatedSvgContract(question)}
               2. "Animate/Flow/Dynamics" -> Elite 2.0 Animated SVG.
               3. "Architecture/Pipeline/System Diagram" -> Prefer Animated SVG (not Mermaid) unless user explicitly asks for Mermaid.
 
-            - **TECHNICAL QUALITY CHECK (PRE-RESPONSE)**:
-              Before outputting an SVG, briefly state (in a hidden thought or pre-response text): 
-              "Applying Elite SVG 2.0 System: [✓] Smooth SMIL Splines [✓] Precise Bead Math [✓] Premium Defs Applied."
+            - **RESPONSE FORMAT**:
+              Output only the final answer and the SVG code block.
+              Do not add commentary, status messages, or preambles before or after the SVG.
 
 
          - **COMBINATIONS**: You can and SHOULD combine elements.
