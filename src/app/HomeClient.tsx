@@ -4,9 +4,9 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Loader2, Star, GitFork, MessageSquare, Globe, TrendingUp } from "lucide-react";
-import { fetchGitHubData, getRecentSearches, getRepoSuggestions } from "./actions";
+import { motion } from "framer-motion";
+import { ArrowRight, Star, GitFork, MessageSquare, Globe, TrendingUp } from "lucide-react";
+import { fetchGitHubData, getRecentSearches } from "./actions";
 import TrustedByMarquee from "@/components/TrustedByMarquee";
 import InteractiveDemo from "@/components/InteractiveDemo";
 import BentoFeatures from "@/components/BentoFeatures";
@@ -26,8 +26,7 @@ import { INVALID_SESSION_ERROR_PARAM } from "@/lib/session-guard";
 import { BlogPost } from "@prisma/client";
 import { CatalogRepoEntry } from "@/lib/repo-catalog";
 import { normalizeGitHubInput } from "@/lib/utils";
-import SuggestionsList from "@/components/SuggestionsList";
-import type { RepoSuggestion } from "@/lib/services/repo-suggestions";
+import RepoSearch from "@/components/RepoSearch";
 
 type PublicStatsData = {
     totalVisitors: number;
@@ -44,7 +43,6 @@ export default function HomeClient({
     trendingRepos?: CatalogRepoEntry[];
     publicStats: PublicStatsData;
 }) {
-    const [input, setInput] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const router = useRouter();
@@ -52,10 +50,6 @@ export default function HomeClient({
     const { data: session } = useSession();
     const [recentSearches, setRecentSearches] = useState<SearchHistoryItem[]>([]);
     const [visibleReposCount, setVisibleReposCount] = useState(6);
-    const [suggestions, setSuggestions] = useState<RepoSuggestion[]>([]);
-    const [showSuggestions, setShowSuggestions] = useState(false);
-    const [selectedIndex, setSelectedIndex] = useState(-1);
-    const [isFetchingSuggestions, setIsFetchingSuggestions] = useState(false);
     const hasInvalidSessionError = searchParams.get("error") === INVALID_SESSION_ERROR_PARAM;
 
     const visibleRepos = trendingRepos.slice(0, visibleReposCount);
@@ -67,15 +61,12 @@ export default function HomeClient({
         }
     }, [session]);
 
-    const handleSubmit = async (e?: React.FormEvent, overriddenInput?: string) => {
-        if (e) e.preventDefault();
-        const finalInput = overriddenInput || input;
-        const normalizedInput = normalizeGitHubInput(finalInput);
+    const handleSearch = async (query: string) => {
+        const normalizedInput = normalizeGitHubInput(query);
         if (!normalizedInput) return;
 
         setLoading(true);
         setError("");
-        setShowSuggestions(false);
 
         try {
             const result = await fetchGitHubData(normalizedInput);
@@ -90,77 +81,6 @@ export default function HomeClient({
         } finally {
             setLoading(false);
         }
-    };
-
-    useEffect(() => {
-        let isCancelled = false;
-        
-        const fetchSuggestions = async () => {
-            if (input.length < 2) {
-                setSuggestions([]);
-                setShowSuggestions(false);
-                return;
-            }
-
-            setIsFetchingSuggestions(true);
-            try {
-                const results = await getRepoSuggestions(input);
-                if (!isCancelled) {
-                    setSuggestions(results);
-                    setShowSuggestions(results.length > 0);
-                }
-            } catch (err) {
-                if (!isCancelled) {
-                    console.error("Failed to fetch suggestions:", err);
-                }
-            } finally {
-                if (!isCancelled) {
-                    setIsFetchingSuggestions(false);
-                }
-            }
-        };
-
-        const timer = setTimeout(() => {
-            if (!loading) {
-                fetchSuggestions();
-            }
-        }, 300);
-
-        return () => {
-            isCancelled = true;
-            clearTimeout(timer);
-        };
-    }, [input, loading]);
-
-    const handleInputChange = (val: string) => {
-        setInput(val);
-        setSelectedIndex(-1);
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (!showSuggestions || suggestions.length === 0) return;
-
-        if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setSelectedIndex((prev) => (prev < suggestions.length - 1 ? prev + 1 : prev));
-        } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev));
-        } else if (e.key === "Enter" && selectedIndex >= 0) {
-            e.preventDefault();
-            const selected = suggestions[selectedIndex];
-            const suggestionInput = `${selected.owner}/${selected.repo}`;
-            setInput(suggestionInput);
-            handleSubmit(undefined, suggestionInput);
-        } else if (e.key === "Escape") {
-            setShowSuggestions(false);
-        }
-    };
-
-    const handleSuggestionSelect = (selected: RepoSuggestion) => {
-        const suggestionInput = `${selected.owner}/${selected.repo}`;
-        setInput(suggestionInput);
-        handleSubmit(undefined, suggestionInput);
     };
 
     return (
@@ -219,37 +139,13 @@ export default function HomeClient({
                         </div>
                     )}
 
-                    <form onSubmit={handleSubmit} className="w-full max-w-md relative group">
-                        <div className="conic-border-container flex items-center bg-zinc-900 p-1 rounded-lg">
-                            <input
-                                type="text"
-                                value={input}
-                                onChange={(e) => handleInputChange(e.target.value)}
-                                onKeyDown={handleKeyDown}
-                                onFocus={() => input.length >= 2 && suggestions.length > 0 && setShowSuggestions(true)}
-                                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                                placeholder="GitHub URL, username, or repo"
-                                className="flex-1 bg-transparent border-none outline-none text-white px-3 py-2 md:px-4 md:py-3 placeholder-zinc-500 text-sm md:text-base w-full min-w-0"
-                            />
-                            <button
-                                type="submit"
-                                disabled={loading}
-                                className="bg-white text-black p-2 md:p-3 rounded-md hover:bg-zinc-200 transition-colors disabled:opacity-50 shrink-0"
-                            >
-                                {loading || isFetchingSuggestions ? <Loader2 className="w-4 h-4 md:w-5 md:h-5 animate-spin" /> : <ArrowRight className="w-4 h-4 md:w-5 md:h-5" />}
-                            </button>
-                        </div>
-                        <AnimatePresence>
-                            {showSuggestions && (
-                                <SuggestionsList
-                                    suggestions={suggestions}
-                                    onSelect={handleSuggestionSelect}
-                                    isVisible={showSuggestions}
-                                    selectedIndex={selectedIndex}
-                                />
-                            )}
-                        </AnimatePresence>
-                    </form>
+                    <RepoSearch 
+                        onSearchSubmit={handleSearch}
+                        loading={loading}
+                        trendingRepos={trendingRepos}
+                        recentSearches={recentSearches}
+                        isSessionActive={!!session}
+                    />
 
                     {error && (
                         <motion.p
@@ -262,59 +158,6 @@ export default function HomeClient({
                     )}
 
                     <PublicStats stats={publicStats} />
-
-                    <div className="mt-6 md:mt-10 flex flex-col items-center gap-4 md:gap-6 w-full">
-                        <div className="flex flex-wrap justify-center items-center gap-2 md:gap-4 text-[10px] sm:text-xs md:text-sm text-zinc-500">
-                            {session && recentSearches.length > 0 ? (
-                                <>
-                                    <span>Recent:</span>
-                                    {recentSearches.slice(0, 3).map((search, i) => (
-                                        <span key={search.query} className={`${i >= 2 ? 'hidden sm:flex' : 'flex'} items-center gap-2 md:gap-4`}>
-                                            <button
-                                                onClick={() => setInput(search.query)}
-                                                className="hover:text-white transition-colors truncate max-w-[120px] md:max-w-none"
-                                            >
-                                                {search.query}
-                                            </button>
-                                            {i < Math.min(recentSearches.length, 3) - 1 && <span className={`${i >= 1 ? 'hidden sm:inline' : 'inline'}`}>•</span>}
-                                        </span>
-                                    ))}
-                                </>
-                            ) : (
-                                <>
-                                    <span>Try:</span>
-                                    {trendingRepos.length > 0 ? (
-                                        trendingRepos.slice(0, 3).map((repo, i) => (
-                                            <span key={`${repo.owner}/${repo.repo}`} className={`${i === 2 ? 'hidden sm:flex' : 'flex'} items-center gap-2`}>
-                                                <button 
-                                                    onClick={() => setInput(`${repo.owner}/${repo.repo}`)} 
-                                                    className="hover:text-white transition-colors truncate max-w-[120px]"
-                                                >
-                                                    {repo.repo}
-                                                </button>
-                                                {i < 2 && <span className={`${i === 1 ? 'hidden sm:inline' : 'inline'}`}>•</span>}
-                                            </span>
-                                        ))
-                                    ) : (
-                                        <>
-                                            <button onClick={() => setInput("torvalds")} className="hover:text-white transition-colors">torvalds</button>
-                                            <span className="inline">•</span>
-                                            <button onClick={() => setInput("facebook/react")} className="hover:text-white transition-colors">facebook/react</button>
-                                            <span className="hidden sm:inline">•</span>
-                                            <button onClick={() => setInput("vercel/next.js")} className="hidden md:inline hover:text-white transition-colors">vercel/next.js</button>
-                                        </>
-                                    )}
-                                </>
-                            )}
-                        </div>
-
-                        <Link 
-                            href="/trending"
-                            className="flex items-center gap-1.5 px-3 py-1 md:py-1.5 rounded-full bg-zinc-900/50 border border-white/5 hover:border-blue-500/30 text-blue-400 hover:text-blue-300 transition-all text-[10px] md:text-xs font-semibold animate-soft-pulse hover:animate-none"
-                        >
-                            <TrendingUp size={12} className="md:w-3.5 md:h-3.5" /> Explore Trending Repositories
-                        </Link>
-                    </div>
                 </motion.div>
             </section>
 

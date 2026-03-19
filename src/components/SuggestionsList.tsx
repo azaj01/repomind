@@ -41,7 +41,7 @@ export default function SuggestionsList({
         >
             <div 
                 ref={listRef}
-                className="max-h-[210px] overflow-y-auto custom-scrollbar p-2 space-y-1"
+                className="max-h-[210px] overflow-y-auto custom-scrollbar p-2 space-y-1 scroll-pt-2 scroll-pb-2"
             >
                 {suggestions.map((suggestion, index) => (
                     <button
