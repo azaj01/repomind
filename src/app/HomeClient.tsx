@@ -243,12 +243,12 @@ export default function HomeClient({
             {trendingRepos.length > 0 && (
                 <section id="trending-section" className="relative z-10 w-full bg-black py-24 px-6 border-t border-white/5">
                     <div className="max-w-7xl mx-auto">
-                        <div className="mb-12">
+                        <div className="mb-12 text-center">
                             <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight mb-4 text-white">
                                 <TrendingUp className="inline-block text-blue-400 mb-1 mr-2 md:mr-3" size={32} />
                                 Explore Trending <span className="bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">Repositories</span>
                             </h2>
-                            <p className="text-zinc-400 text-lg max-w-2xl">
+                            <p className="text-zinc-400 text-lg max-w-2xl mx-auto">
                                 Explore the projects getting the most heat on GitHub this week. Instantly analyze any of them with RepoMind.
                             </p>
                         </div>
@@ -341,12 +341,12 @@ export default function HomeClient({
             {initialPosts.length > 0 && (
                 <section className="relative z-10 w-full bg-zinc-950 py-24 px-6 border-t border-white/5">
                     <div className="max-w-7xl mx-auto">
-                        <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
+                        <div className="flex flex-col items-center text-center mb-12 gap-6">
                             <div>
                                 <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">
                                     Engineering <span className="bg-gradient-to-r from-purple-400 to-blue-500 bg-clip-text text-transparent">Insights</span>
                                 </h2>
-                                <p className="text-zinc-400 text-lg max-w-2xl">
+                                <p className="text-zinc-400 text-lg max-w-2xl mx-auto">
                                     Latest updates from the lab on AI-driven code intelligence and security.
                                 </p>
                             </div>
