@@ -111,46 +111,51 @@ describe("answerWithContextStream", () => {
         expect(chunks).toContain("Interim reasoning...");
     });
 
-    it("uses explicit follow-up history and canonical function-response payload when a tool call is finalized", async () => {
+    it("reuses the same chat session for tool follow-up so thought signatures stay intact", async () => {
         getRecentRepoCommitsSnapshotMock.mockResolvedValue({
             success: true,
             data: {
                 commits: [{ sha: "abc123", message: "feat: test", date: "2026-03-17T00:00:00Z" }],
                 freshness: { label: "just now" },
-            }
+            },
         });
 
-        const phaseOneSendMessageStreamMock = vi.fn().mockResolvedValue({
-            stream: toAsyncStream([
-                {
+        const sendMessageStreamMock = vi.fn()
+            .mockResolvedValueOnce({
+                stream: toAsyncStream([
+                    {
+                        functionCalls: () => [{ name: "fetch_recent_commits", args: { limit: 1 } }],
+                        candidates: [{ content: { parts: [] } }],
+                    },
+                ]),
+                response: Promise.resolve({
                     functionCalls: () => [{ name: "fetch_recent_commits", args: { limit: 1 } }],
-                    candidates: [{ content: { parts: [] } }],
-                },
-            ]),
-            response: Promise.resolve({
-                functionCalls: () => [{ name: "fetch_recent_commits", args: { limit: 1 } }],
-            }),
-        });
-
-        const phaseTwoSendMessageStreamMock = vi.fn().mockResolvedValue({
-            stream: toAsyncStream([
-                {
-                    candidates: [{ content: { parts: [{ text: "Final answer" }] } }],
-                },
-            ]),
-            response: Promise.resolve({
-                functionCalls: () => [],
-            }),
-        });
-
-        const startChatMock = vi
-            .fn()
-            .mockReturnValueOnce({
-                sendMessageStream: phaseOneSendMessageStreamMock,
+                    candidates: [{
+                        content: {
+                            parts: [
+                                {
+                                    functionCall: { name: "fetch_recent_commits", args: { limit: 1 } },
+                                    thoughtSignature: "sig-123",
+                                },
+                            ],
+                        },
+                    }],
+                }),
             })
-            .mockReturnValueOnce({
-                sendMessageStream: phaseTwoSendMessageStreamMock,
+            .mockResolvedValueOnce({
+                stream: toAsyncStream([
+                    {
+                        candidates: [{ content: { parts: [{ text: "Final answer" }] } }],
+                    },
+                ]),
+                response: Promise.resolve({
+                    functionCalls: () => [],
+                }),
             });
+
+        const startChatMock = vi.fn().mockReturnValue({
+            sendMessageStream: sendMessageStreamMock,
+        });
 
         getGenerativeModelMock.mockReturnValue({
             startChat: startChatMock,
@@ -165,18 +170,9 @@ describe("answerWithContextStream", () => {
             chunks.push(chunk);
         }
 
-        expect(startChatMock).toHaveBeenCalledTimes(2);
-        expect(startChatMock).toHaveBeenNthCalledWith(2, {
-            history: [
-                { role: "user", parts: [{ text: expect.stringContaining("prompt") }] },
-                {
-                    role: "model",
-                    parts: [{ functionCall: { name: "fetch_recent_commits", args: { limit: 1 } } }],
-                },
-            ],
-        });
-
-        expect(phaseTwoSendMessageStreamMock).toHaveBeenCalledWith([
+        expect(startChatMock).toHaveBeenCalledTimes(1);
+        expect(sendMessageStreamMock).toHaveBeenCalledTimes(2);
+        expect(sendMessageStreamMock).toHaveBeenNthCalledWith(2, [
             {
                 functionResponse: {
                     name: "fetch_recent_commits",

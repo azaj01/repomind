@@ -45,7 +45,7 @@ export default function SuggestionsList({
             >
                 {suggestions.map((suggestion, index) => (
                     <button
-                        key={`${suggestion.owner}/${suggestion.repo}`}
+                        key={`${suggestion.source}:${suggestion.owner}/${suggestion.repo}`}
                         ref={(el) => { itemRefs.current[index] = el; }}
                         onClick={() => onSelect(suggestion)}
                         onMouseDown={(e) => e.preventDefault()} // Prevent blur before click

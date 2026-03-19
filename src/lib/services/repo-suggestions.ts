@@ -13,6 +13,26 @@ export interface RepoSuggestion {
 
 const SEARCH_CACHE_TTL = 3600; // 1 hour
 
+function repoSuggestionKey(suggestion: RepoSuggestion): string {
+    return `${suggestion.owner.toLowerCase()}/${suggestion.repo.toLowerCase()}`;
+}
+
+function dedupeRepoSuggestions(suggestions: RepoSuggestion[]): RepoSuggestion[] {
+    const seen = new Set<string>();
+    const deduped: RepoSuggestion[] = [];
+
+    for (const suggestion of suggestions) {
+        const key = repoSuggestionKey(suggestion);
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        deduped.push(suggestion);
+    }
+
+    return deduped;
+}
+
 /**
  * Get repository suggestions based on a query string.
  * Logic:
@@ -39,7 +59,7 @@ export async function getRepoSuggestions(query: string): Promise<RepoSuggestion[
                     : userRepos;
 
                 if (filtered.length > 0) {
-                    return filtered
+                    const userMatches = filtered
                         .sort((a, b) => b.stargazers_count - a.stargazers_count)
                         .slice(0, 10)
                         .map(repo => ({
@@ -49,6 +69,8 @@ export async function getRepoSuggestions(query: string): Promise<RepoSuggestion[
                             description: repo.description,
                             source: 'user' as const
                         }));
+
+                    return dedupeRepoSuggestions(userMatches).slice(0, 10);
                 }
             } catch (error) {
                 console.error(`Failed to fetch suggested repos for user ${username}:`, error);
@@ -83,7 +105,7 @@ export async function getRepoSuggestions(query: string): Promise<RepoSuggestion[
     try {
         const cacheKey = `suggestions:github:${trimmed.toLowerCase()}`;
         const cached = await kv.get<RepoSuggestion[]>(cacheKey);
-        if (cached) return [...localMatches, ...cached].slice(0, 10);
+        if (cached) return dedupeRepoSuggestions([...localMatches, ...cached]).slice(0, 10);
 
         // Actual GitHub Search
         const { data } = await (octokit as any).rest.search.repos({
@@ -102,10 +124,10 @@ export async function getRepoSuggestions(query: string): Promise<RepoSuggestion[
         }));
 
         await kv.set(cacheKey, githubMatches, { ex: SEARCH_CACHE_TTL });
-        return [...localMatches, ...githubMatches].slice(0, 10);
+        return dedupeRepoSuggestions([...localMatches, ...githubMatches]).slice(0, 10);
     } catch (error) {
         console.error("GitHub search fallback failed:", error);
     }
 
-    return localMatches;
+    return dedupeRepoSuggestions(localMatches);
 }

@@ -15,7 +15,7 @@ import {
   getUserRepos,
   getUserReposByAge,
 } from "./github";
-import type { Content, GenerationConfig } from "@google/generative-ai";
+import type { GenerationConfig } from "@google/generative-ai";
 
 type JsonObject = Record<string, unknown>;
 type GeminiTool = Record<string, unknown>;
@@ -46,15 +46,6 @@ function getStringArray(value: unknown): string[] {
 
 function normalizeFunctionName(name: unknown): string {
   return typeof name === "string" && name.trim().length > 0 ? name : "unknown_tool";
-}
-
-function buildModelFunctionCallParts(calls: FunctionCallShape[]) {
-  return calls.map((call) => ({
-    functionCall: {
-      name: normalizeFunctionName(call.name),
-      args: asObject(call.args),
-    },
-  }));
 }
 
 function buildFunctionResponseParts(
@@ -346,19 +337,8 @@ export async function answerWithContext(
   if (funcs && funcs.length > 0) {
     const calls = funcs as unknown as FunctionCallShape[];
     const responses = await Promise.all(calls.map(c => resolveToolCall(c, repoDetails)));
-    const modelFunctionCallParts = buildModelFunctionCallParts(calls);
     const toolResponseParts = buildFunctionResponseParts(calls, responses);
-    const followupHistory: Content[] = [
-      { role: "user", parts: [{ text: prompt }] },
-      { role: "model", parts: modelFunctionCallParts },
-    ];
-
-    // Use a fresh chat with explicit function-call history to keep provider turn-order strictness stable.
-    const followupChat = model.startChat({
-      history: followupHistory,
-    });
-
-    result = await followupChat.sendMessage(toolResponseParts);
+    result = await chat.sendMessage(toolResponseParts);
   }
 
   return result.response.text();
@@ -486,17 +466,8 @@ export async function* answerWithContextStream(
     console.log(`[answerWithContextStream] Sending Phase 2 (tool response) stream...`);
 
     try {
-      const modelFunctionCallParts = buildModelFunctionCallParts(calls);
       const toolResponseParts = buildFunctionResponseParts(calls, responses);
-      const followupHistory: Content[] = [
-        { role: "user", parts: [{ text: prompt }] },
-        { role: "model", parts: modelFunctionCallParts },
-      ];
-      const followupChat = model.startChat({
-        history: followupHistory,
-      });
-
-      const streamResult = await followupChat.sendMessageStream(toolResponseParts);
+      const streamResult = await chat.sendMessageStream(toolResponseParts);
 
       for await (const chunk of streamResult.stream) {
         const parts = ((chunk as unknown as StreamChunkShape).candidates?.[0]?.content?.parts ?? []);
