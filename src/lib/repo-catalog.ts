@@ -63,7 +63,6 @@ function toRepoKey(owner: string, repo: string): string {
 }
 
 function buildCatalogData(repos: CatalogRepoEntry[]): CatalogData {
-  console.log(`[Catalog] Building catalog data from ${repos.length} input repos...`);
   const deduped: CatalogRepoEntry[] = [];
   const seenRepoKeys = new Set<string>();
 
@@ -77,8 +76,6 @@ function buildCatalogData(repos: CatalogRepoEntry[]): CatalogData {
     seenRepoKeys.add(key);
     deduped.push(normalized);
   }
-
-  console.log(`[Catalog] Total deduped repos: ${deduped.length}`);
 
   const curatedRepos = deduped.slice(0, REPO_LIMIT);
   const curatedRepoKeys = curatedRepos.map((repo) => toRepoKey(repo.owner, repo.repo));
@@ -109,14 +106,10 @@ function buildCatalogData(repos: CatalogRepoEntry[]): CatalogData {
   // Topic Strategy: 1500 Trending + 500 Stable
   const topicsByCount = Object.entries(topicBuckets)
     .sort((a, b) => b[1].length - a[1].length);
-  
-  console.log(`[Catalog] Top 10 topics by repo count:`, topicsByCount.slice(0, 10).map(([t, rs]) => `${t} (${rs.length})`));
 
   const eligibleTopics = topicsByCount
     .filter(([, reposForTopic]) => reposForTopic.length >= TOPIC_MIN_REPO_COUNT)
     .map(([topic]) => topic);
-  
-  console.log(`[Catalog] Found ${eligibleTopics.length} eligible topics (>=${TOPIC_MIN_REPO_COUNT} repos).`);
 
   const stableTopics = [...eligibleTopics]
     .sort((a, b) => topicFrequency[b].allTime - topicFrequency[a].allTime)
@@ -139,9 +132,7 @@ function buildCatalogData(repos: CatalogRepoEntry[]): CatalogData {
 
 const getCatalogDataInternal = async (): Promise<CatalogData> => {
     try {
-      console.log(`[Catalog] NODE_ENV: ${process.env.NODE_ENV}`);
       const dataPath = path.join(process.cwd(), "public", "data", "top-repos.json");
-      console.log(`[Catalog] Loading data from: ${dataPath}`);
       if (!fs.existsSync(dataPath)) {
         console.warn("[Catalog] Data file not found.");
         return buildCatalogData([]);
@@ -150,7 +141,6 @@ const getCatalogDataInternal = async (): Promise<CatalogData> => {
       const fileContent = await fs.promises.readFile(dataPath, "utf8");
       const parsed = JSON.parse(fileContent) as unknown;
       const repos = Array.isArray(parsed) ? parsed.filter(isCatalogRepoEntry) : [];
-      console.log(`[Catalog] Parsed ${repos.length} valid repo entries.`);
 
       return buildCatalogData(repos);
     } catch (error) {
