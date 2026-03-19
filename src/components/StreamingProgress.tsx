@@ -8,10 +8,10 @@ interface StreamingProgressProps {
 
 export function StreamingProgress({ message, progress }: StreamingProgressProps) {
     return (
-        <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
-                <span className="text-sm text-zinc-400">{message}</span>
+        <div className="flex flex-col gap-2 w-full max-w-full overflow-hidden">
+            <div className="flex items-center gap-2 min-w-0">
+                <Loader2 className="w-4 h-4 animate-spin text-purple-400 shrink-0" />
+                <span className="text-sm text-zinc-400 truncate flex-1 min-w-0">{message}</span>
             </div>
 
             {/* Progress bar */}

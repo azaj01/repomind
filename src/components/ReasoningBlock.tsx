@@ -75,7 +75,7 @@ export function ReasoningBlock({ steps, isStreaming }: ReasoningBlockProps) {
                 onClick={() => hasRealThoughts && setIsExpanded(v => !v)}
                 disabled={!hasRealThoughts}
                 className={cn(
-                    "flex items-center gap-2 mb-1.5 group outline-none max-w-full text-left min-h-10",
+                    "flex items-center gap-2 mb-1.5 group outline-none max-w-full text-left min-h-10 min-w-0",
                     !hasRealThoughts && "cursor-default"
                 )}
             >
@@ -135,7 +135,7 @@ export function ReasoningBlock({ steps, isStreaming }: ReasoningBlockProps) {
                                     <div
                                         key={idx}
                                         className={cn(
-                                            "text-xs leading-relaxed",
+                                            "text-xs leading-relaxed break-words min-w-0",
                                             isCurrent && isStreaming
                                                 ? "text-zinc-300"
                                                 : "text-zinc-500"
