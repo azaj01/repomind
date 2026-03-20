@@ -20,7 +20,6 @@ export const metadata: Metadata = createSeoMetadata({
         "ai code review tool",
     ],
     canonical: "/",
-    ogImage: buildOgImageUrl("marketing", { variant: "home" }),
     ogTitle: "RepoMind",
     ogDescription: "Chat with GitHub repositories and developer profiles, generate architecture flowcharts, and run security analysis.",
 });

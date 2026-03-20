@@ -68,7 +68,7 @@ export const metadata: Metadata = {
     siteName: "RepoMind",
     images: [
       {
-        url: buildOgImageUrl("marketing", { variant: "home" }),
+        url: "/assets/landing_page.png",
         width: 1200,
         height: 630,
         alt: "RepoMind landing page preview",
@@ -81,7 +81,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "RepoMind",
     description: "Chat with GitHub repositories and developer profiles, generate architecture flowcharts, and run security analysis with RepoMind.",
-    images: [buildOgImageUrl("marketing", { variant: "home" })],
+    images: ["/assets/landing_page.png"],
     creator: "@repomind",
   },
   robots: {

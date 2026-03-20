@@ -5,7 +5,7 @@ export type OgCardVariant = "home" | "repo" | "profile" | "report" | "blog" | "t
 export type ChatIntent = "architecture" | "security" | "explain" | "general";
 
 const BRAND_NAME = "RepoMind";
-const DEFAULT_OG_IMAGE = "/api/og?type=marketing&variant=home";
+const DEFAULT_OG_IMAGE_PATH = "/assets/landing_page.png";
 
 export function normalizeMetaText(value: string | null | undefined): string {
     return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
@@ -61,6 +61,11 @@ type SeoMetadataInput = {
     keywords?: string[];
     ogType?: "website" | "article";
     ogImage?: string;
+    ogSpec?: {
+        type: OgCardVariant;
+        variant?: string;
+        params?: Record<string, string | number | boolean | null | undefined>;
+    };
     ogTitle?: string;
     ogDescription?: string;
     twitterImage?: string;
@@ -73,7 +78,19 @@ type SeoMetadataInput = {
 export function createSeoMetadata(input: SeoMetadataInput): Metadata {
     const title = normalizeMetaText(input.title);
     const description = truncateMetaText(input.description, 180);
-    const ogImage = input.ogImage ?? DEFAULT_OG_IMAGE;
+    
+    let ogImage = input.ogImage;
+    if (!ogImage && input.ogSpec) {
+        ogImage = buildOgImageUrl(input.ogSpec.type, {
+            variant: input.ogSpec.variant,
+            ...input.ogSpec.params,
+        });
+    }
+    
+    if (!ogImage) {
+        ogImage = buildOgImageUrl("marketing", { variant: "home" });
+    }
+
     const ogTitle = normalizeMetaText(input.ogTitle) || title;
     const ogDescription = truncateMetaText(input.ogDescription ?? description, 200);
     const twitterImage = input.twitterImage ?? ogImage;

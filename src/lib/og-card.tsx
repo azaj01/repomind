@@ -17,81 +17,82 @@ export interface OgCardSpec {
     avatar?: string;
     avatarLabel?: string;
     footer?: string;
+    layout?: "split" | "centered";
 }
 
 const DEFAULT_FOOTER = "Agentic CAG for GitHub repositories and developer profiles.";
 
 const MARKETING_PRESETS: Record<string, Omit<OgCardSpec, "asset" | "assetAlt" | "accent" | "footer"> & { asset: string; accent: string }> = {
     home: {
-        eyebrow: "Homepage",
-        title: "Chat with any GitHub repo or profile",
-        description: "Instant architecture flowcharts, repository chat, developer profile analysis, and security scans.",
+        eyebrow: "RepoMind",
+        title: "AI-Powered Code Intelligence | RepoMind",
+        description: "Understand complex codebases instantly with Agentic CAG. Chat with any GitHub repository, generate architecture flowcharts, and run deep security scans.",
         asset: "/assets/landing_page.png",
         accent: "#8b5cf6",
-        chips: ["Repo chat", "Profile intel", "Security scans"],
+        chips: ["Chat", "Analyze", "Secure"],
         stats: [
-            { label: "Mode", value: "Agentic CAG" },
-            { label: "Output", value: "Flowcharts" },
+            { label: "Tech", value: "Agentic CAG" },
+            { label: "UI", value: "Flowcharts" },
         ],
     },
     blog: {
-        eyebrow: "Insights",
+        eyebrow: "Engineering",
         title: "RepoMind Engineering Notes",
-        description: "Deep dives into Agentic CAG, AI code analysis, and product strategy.",
-        asset: "/assets/repomind_capabilities.png",
+        description: "Deep dives into Agentic CAG, AI-driven code analysis, and high-context security research from the RepoMind team.",
+        asset: "/media/blog_og_preview.png",
         accent: "#22c55e",
-        chips: ["Engineering", "Security", "Product"],
+        chips: ["Engineering", "Security", "AI"],
         stats: [
-            { label: "Reading", value: "Guides" },
+            { label: "Insights", value: "Deep Dive" },
             { label: "Focus", value: "Practical" },
         ],
     },
     solutions: {
         eyebrow: "Solutions",
-        title: "Pick the right RepoMind workflow",
-        description: "Repository analysis, AI code review, and security scanning in one product.",
+        title: "Scalable Repository Intelligence | RepoMind",
+        description: "Pick the right RepoMind workflow for your team: deep repository analysis, context-aware code reviews, or automated security scans.",
         asset: "/assets/dashboard_overview.png",
         accent: "#38bdf8",
         chips: ["Analysis", "Review", "Security"],
         stats: [
-            { label: "Paths", value: "3" },
-            { label: "Coverage", value: "Full repo" },
+            { label: "Signal", value: "Maximum" },
+            { label: "Set up", value: "None" },
         ],
     },
     compare: {
         eyebrow: "Compare",
-        title: "RepoMind versus old workflows",
-        description: "See why high-context analysis beats snippet-first tooling for real repositories.",
+        title: "The Next Gen of Code Analysis | RepoMind",
+        description: "See why our Agentic CAG architecture outperforms traditional RAG for large-scale source code understanding and navigation.",
         asset: "/assets/architecture_example.png",
         accent: "#a855f7",
-        chips: ["CAG", "RAG", "Code review"],
+        chips: ["CAG vs RAG", "Full Context", "Zero Snippets"],
         stats: [
-            { label: "Signal", value: "Higher" },
-            { label: "Setup", value: "None" },
+            { label: "Depth", value: "Infinite" },
+            { label: "Speed", value: "Instant" },
         ],
     },
     explore: {
         eyebrow: "Explore",
-        title: "SEO topic clusters and guide ideas",
-        description: "Browse the public content map for RepoMind's repository analysis and security pages.",
+        title: "Discover Repositories | RepoMind",
+        description: "Explore curated topic clusters and thousands of GitHub repositories with deep, AI-powered architectural insights.",
         asset: "/assets/architecture_example.png",
         accent: "#14b8a6",
-        chips: ["Topic pages", "Guides", "Comparisons"],
+        chips: ["Topic Hubs", "Curated Repo", "Search"],
         stats: [
-            { label: "Clusters", value: "Live" },
-            { label: "Intent", value: "Search" },
+            { label: "Discovery", value: "Enabled" },
+            { label: "Intelligence", value: "High" },
         ],
     },
     trending: {
         eyebrow: "Trending",
-        title: "The hottest GitHub repositories this week",
-        description: "Explore the projects getting attention now and chat with them instantly.",
+        title: "Trending Repositories | RepoMind",
+        description: "Analyze the hottest GitHub repositories in real-time. Understand the code behind the trends with instant repository chat.",
         asset: "/assets/dashboard_starred_repos.png",
         accent: "#60a5fa",
-        chips: ["Weekly", "Popular", "Repo chat"],
+        chips: ["Weekly", "AI Insights", "Chat Now"],
         stats: [
-            { label: "Freshness", value: "Weekly" },
-            { label: "Focus", value: "Trending" },
+            { label: "Freshness", value: "Live" },
+            { label: "Focus", value: "Popularity" },
         ],
     },
     "github-repository-analysis": {
@@ -120,38 +121,38 @@ const MARKETING_PRESETS: Record<string, Omit<OgCardSpec, "asset" | "assetAlt" | 
     },
     "security-scanner": {
         eyebrow: "Security",
-        title: "Find and fix vulnerabilities faster",
-        description: "Actionable findings, severity context, and a path straight into Repo Chat remediation.",
+        title: "Deep Security Repository Scanning | RepoMind",
+        description: "Find and fix vulnerabilities with Agentic CAG analysis. Actionable findings, severity context, and repo-wide risk assessments.",
         asset: "/assets/security_report.png",
         accent: "#ef4444",
-        chips: ["Findings", "Triage", "Remediation"],
+        chips: ["Vulns", "Audit", "Fixes"],
         stats: [
-            { label: "Signal", value: "Actionable" },
-            { label: "Outcome", value: "Fixes" },
+            { label: "Scope", value: "Full-repo" },
+            { label: "Outcome", value: "Secure" },
         ],
     },
     about: {
-        eyebrow: "About",
-        title: "Why RepoMind exists",
-        description: "We help developers understand codebases faster with AI that respects source context.",
+        eyebrow: "Mission",
+        title: "The Mission Behind RepoMind",
+        description: "We help developers navigate unfamiliar codebases faster with context-intelligent AI that truly understands entire repositories.",
         asset: "/assets/landing_page.png",
         accent: "#14b8a6",
-        chips: ["Mission", "Clarity", "Context"],
+        chips: ["Values", "Technology", "Our Story"],
         stats: [
-            { label: "Focus", value: "Teams" },
-            { label: "Goal", value: "Clarity" },
+            { label: "Transparency", value: "High" },
+            { label: "Architecture", value: "CAG" },
         ],
     },
     faq: {
-        eyebrow: "FAQ",
-        title: "Questions about RepoMind",
-        description: "Answers about repository chat, security scanning, and analysis workflows.",
+        eyebrow: "Help Center",
+        title: "Frequently Asked Questions | RepoMind",
+        description: "Detailed answers about RepoMind for GitHub repository chat, AI code intelligence, and automated security scans.",
         asset: "/assets/repomind_capabilities.png",
         accent: "#38bdf8",
-        chips: ["Help", "How it works", "Limits"],
+        chips: ["Documentation", "Usage", "Limits"],
         stats: [
-            { label: "Support", value: "Self-serve" },
-            { label: "Docs", value: "Live" },
+            { label: "Guidance", value: "Expert" },
+            { label: "Access", value: "Self-serve" },
         ],
     },
     privacy: {
@@ -194,7 +195,7 @@ const MARKETING_PRESETS: Record<string, Omit<OgCardSpec, "asset" | "assetAlt" | 
 
 const MARKETING_ASSET_FALLBACKS: Record<string, string> = {
     home: "/assets/landing_page.png",
-    blog: "/assets/repomind_capabilities.png",
+    blog: "/media/blog_og_preview.png",
     solutions: "/assets/dashboard_overview.png",
     compare: "/assets/architecture_example.png",
     explore: "/assets/architecture_example.png",
@@ -283,7 +284,7 @@ function repoSpec(params: URLSearchParams, baseUrl: string): OgCardSpec {
         eyebrow: mode === "general" ? "Repository Chat" : `${chatIntentLabel(mode)} Repo Chat`,
         title: truncateMetaText(`${owner}/${repo}`, 90),
         description: mode === "general" ? description : `${chatIntentDescription(mode)} ${description}`,
-        asset: assetUrl(baseUrl, params.get("asset"), "/assets/repo_profile.png"),
+        asset: assetUrl(baseUrl, params.get("asset"), "/media/repo_og_preview.png"),
         assetAlt: `${owner}/${repo} repository preview`,
         accent,
         chips,
@@ -291,6 +292,7 @@ function repoSpec(params: URLSearchParams, baseUrl: string): OgCardSpec {
         avatar: makeOwnerAvatar(baseUrl, owner),
         avatarLabel: owner,
         footer: DEFAULT_FOOTER,
+        layout: "centered",
     };
 }
 
@@ -326,6 +328,7 @@ function profileSpec(params: URLSearchParams, baseUrl: string): OgCardSpec {
         avatar: makeProfileAvatar(baseUrl, username),
         avatarLabel: username,
         footer: DEFAULT_FOOTER,
+        layout: "centered",
     };
 }
 
@@ -344,7 +347,7 @@ function reportSpec(params: URLSearchParams, baseUrl: string): OgCardSpec {
     const accent = normalizeAccent(params.get("accent"), critical > 0 ? "#ef4444" : "#22c55e");
 
     return {
-        eyebrow: shared ? "Shared Security Report" : "Security Report",
+        eyebrow: "RepoMind Security Report",
         title: truncateMetaText(`${owner}/${repo}`, 90),
         description: buildReportSummaryDescription({
             critical,
@@ -371,6 +374,7 @@ function reportSpec(params: URLSearchParams, baseUrl: string): OgCardSpec {
         avatar: makeOwnerAvatar(baseUrl, owner),
         avatarLabel: owner,
         footer: DEFAULT_FOOTER,
+        layout: "centered",
     };
 }
 
@@ -386,7 +390,7 @@ function blogSpec(params: URLSearchParams, baseUrl: string): OgCardSpec {
         eyebrow: "Blog",
         title: truncateMetaText(title, 90),
         description,
-        asset: assetUrl(baseUrl, params.get("image"), "/assets/repomind_capabilities.png"),
+        asset: assetUrl(baseUrl, params.get("image"), "/media/blog_og_preview.png"),
         assetAlt: `${title} cover image`,
         accent,
         chips: [
@@ -399,6 +403,7 @@ function blogSpec(params: URLSearchParams, baseUrl: string): OgCardSpec {
             { label: "Lens", value: "Engineering" },
         ],
         footer: DEFAULT_FOOTER,
+        layout: "centered",
     };
 }
 
@@ -465,387 +470,212 @@ export function resolveOgCardSpec(params: URLSearchParams, baseUrl: string): OgC
     return marketingSpec("home", baseUrl);
 }
 
-function statToneBorder(index: number, accent: string): string {
-    return index % 2 === 0 ? accent : "rgba(255,255,255,0.08)";
-}
-
 export function OgCard({ spec }: { spec: OgCardSpec }) {
-    const titleLength = spec.title.length;
-    const titleFontSize = titleLength > 90 ? 56 : titleLength > 70 ? 60 : 68;
-    const descriptionFontSize = spec.description.length > 150 ? 28 : 30;
+    const logoUrl = spec.avatar || new URL(
+        "/1080x1080.png",
+        "https://repomind.in"
+    ).toString();
 
+    const titleLength = spec.title.length;
+    const isBrandOnly = spec.title === "RepoMind";
+    const accentColor = spec.accent || "#3182ce"; // Default blue
+    
+    const isSplit = spec.layout === "split";
+    
     return (
         <div
             style={{
                 height: "100%",
                 width: "100%",
                 display: "flex",
-                flexDirection: "column",
-                justifyContent: "space-between",
-                backgroundColor: "#09090b",
-                backgroundImage:
-                    "radial-gradient(circle at 20% 20%, rgba(139, 92, 246, 0.28), transparent 26%), radial-gradient(circle at 80% 18%, rgba(59, 130, 246, 0.22), transparent 24%), linear-gradient(135deg, #09090b 0%, #111827 52%, #020617 100%)",
+                flexDirection: isSplit ? "row" : "column",
+                alignItems: "center",
+                justifyContent: isSplit ? "space-between" : "center",
+                backgroundColor: "#000",
                 color: "#fff",
-                padding: "48px 56px",
-                fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+                padding: isSplit ? "0 80px" : "60px 80px",
+                fontFamily: "Montserrat, sans-serif",
                 position: "relative",
-                overflow: "hidden",
+                overflow: "hidden"
             }}
         >
-            <div
-                style={{
-                    position: "absolute",
-                    inset: 0,
-                    backgroundImage:
-                        "linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)",
-                    backgroundSize: "84px 84px",
-                    opacity: 0.4,
-                    pointerEvents: "none",
-                }}
-            />
+            {/* Landing Page Background - Subtle Grid Pattern */}
+            <div style={{
+                position: "absolute",
+                inset: 0,
+                backgroundImage: "radial-gradient(rgba(255,255,255,0.12) 1px, transparent 1px)",
+                backgroundSize: "40px 40px",
+                opacity: 0.4
+            }} />
 
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", position: "relative", zIndex: 2 }}>
-                <div
-                    style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "12px",
-                        padding: "10px 14px",
-                        borderRadius: "999px",
-                        border: `1px solid ${spec.accent}`,
-                        backgroundColor: "rgba(9, 9, 11, 0.7)",
-                        backdropFilter: "blur(10px)",
-                        boxShadow: "0 18px 50px rgba(0, 0, 0, 0.28)",
-                    }}
-                >
-                    <div
-                        style={{
-                            width: "28px",
-                            height: "28px",
-                            borderRadius: "10px",
-                            background: `linear-gradient(135deg, ${spec.accent}, rgba(255,255,255,0.92))`,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            color: "#09090b",
-                            fontWeight: 800,
-                            fontSize: "14px",
-                        }}
-                    >
-                        RM
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column" }}>
-                        <div style={{ fontSize: "18px", fontWeight: 700, letterSpacing: "-0.02em" }}>RepoMind</div>
-                        <div style={{ fontSize: "11px", color: "#a1a1aa", textTransform: "uppercase", letterSpacing: "0.18em" }}>Agentic CAG</div>
-                    </div>
-                </div>
+            {/* Intense Purple Glow Top Left */}
+            <div style={{ 
+                position: "absolute", 
+                top: "-20%", 
+                left: "-10%", 
+                width: "1000px", 
+                height: "1000px", 
+                borderRadius: "500px", 
+                background: "radial-gradient(circle, rgba(147, 51, 234, 0.45), transparent 70%)",
+            }} />
 
-                <div
-                    style={{
-                        padding: "10px 14px",
-                        borderRadius: "999px",
-                        border: "1px solid rgba(255,255,255,0.12)",
-                        backgroundColor: "rgba(255,255,255,0.04)",
-                        color: "#d4d4d8",
-                        fontSize: "13px",
-                        fontWeight: 600,
-                        letterSpacing: "0.06em",
-                        textTransform: "uppercase",
-                    }}
-                >
-                    {spec.eyebrow}
-                </div>
-            </div>
+            {/* Intense Blue Glow Bottom Right */}
+            <div style={{ 
+                position: "absolute", 
+                bottom: "-20%", 
+                right: "-10%", 
+                width: "1000px", 
+                height: "1000px", 
+                borderRadius: "500px", 
+                background: "radial-gradient(circle, rgba(59, 130, 246, 0.3), transparent 70%)",
+            }} />
 
-            <div
-                style={{
-                    display: "grid",
-                    gridTemplateColumns: "1.2fr 0.9fr",
-                    gap: "36px",
-                    alignItems: "center",
-                    position: "relative",
-                    zIndex: 2,
-                    flex: 1,
-                    minHeight: 0,
-                }}
-            >
-                <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-                    <div>
-                        <div
-                            style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: "10px",
-                                padding: "8px 12px",
-                                borderRadius: "999px",
-                                border: `1px solid ${spec.accent}`,
-                                color: spec.accent,
-                                backgroundColor: "rgba(255,255,255,0.03)",
-                                fontSize: "12px",
-                                fontWeight: 700,
-                                letterSpacing: "0.18em",
-                                textTransform: "uppercase",
-                                marginBottom: "18px",
-                            }}
-                        >
-                            {spec.eyebrow}
-                        </div>
-                        <div
-                            style={{
-                                fontSize: `${titleFontSize}px`,
-                                lineHeight: 1.02,
-                                letterSpacing: "-0.05em",
-                                fontWeight: 800,
-                                maxWidth: "780px",
-                                overflowWrap: "break-word",
-                                wordBreak: "normal",
-                                whiteSpace: "normal",
-                                textShadow: "0 18px 40px rgba(0, 0, 0, 0.38)",
-                            }}
-                        >
-                            {spec.title}
-                        </div>
-                    </div>
-
-                    <div
-                        style={{
-                            maxWidth: "780px",
-                            fontSize: `${descriptionFontSize}px`,
-                            lineHeight: 1.35,
-                            color: "#d4d4d8",
-                            overflowWrap: "break-word",
-                            wordBreak: "normal",
-                            whiteSpace: "normal",
-                        }}
-                    >
-                        {spec.description}
-                    </div>
-
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
-                        {spec.chips.map((chip) => (
-                            <div
-                                key={chip}
-                                style={{
-                                    padding: "10px 14px",
-                                    borderRadius: "999px",
-                                    border: `1px solid ${spec.accent}`,
-                                    backgroundColor: "rgba(255,255,255,0.04)",
-                                    color: "#fff",
-                                    fontSize: "14px",
-                                    fontWeight: 600,
-                                    boxShadow: `0 0 0 1px rgba(255,255,255,0.02) inset`,
-                                }}
-                            >
-                                {chip}
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                <div
-                    style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "16px",
-                        alignSelf: "stretch",
-                    }}
-                >
-                    <div
-                        style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "14px",
-                            padding: "14px 16px",
-                            borderRadius: "24px",
-                            border: `1px solid ${spec.accent}`,
-                            backgroundColor: "rgba(255,255,255,0.04)",
-                            boxShadow: "0 24px 70px rgba(0, 0, 0, 0.24)",
-                        }}
-                    >
-                        <div
-                            style={{
-                                width: "56px",
-                                height: "56px",
-                                borderRadius: "18px",
-                                overflow: "hidden",
-                                border: "1px solid rgba(255,255,255,0.08)",
-                                flexShrink: 0,
-                                backgroundColor: "rgba(255,255,255,0.04)",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                            }}
-                        >
-                            {spec.avatar ? (
-                                <img
-                                    src={spec.avatar}
-                                    alt={spec.avatarLabel ?? spec.assetAlt}
-                                    width={56}
-                                    height={56}
-                                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                                />
-                            ) : (
-                                <div style={{ color: spec.accent, fontWeight: 800, fontSize: "20px" }}>RM</div>
-                            )}
-                        </div>
-
-                        <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-                            <div style={{ fontSize: "20px", fontWeight: 800, lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                {spec.title}
-                            </div>
-                            <div style={{ fontSize: "12px", color: "#a1a1aa", textTransform: "uppercase", letterSpacing: "0.14em" }}>
-                                {spec.eyebrow}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div
-                        style={{
-                            position: "relative",
-                            flex: 1,
-                            borderRadius: "28px",
-                            overflow: "hidden",
-                            border: `1px solid ${spec.accent}`,
-                            background:
-                                "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01))",
-                            boxShadow: "0 28px 90px rgba(0, 0, 0, 0.36)",
-                            minHeight: 0,
-                        }}
-                    >
-                        <div
-                            style={{
-                                position: "absolute",
-                                inset: 0,
-                                background: `radial-gradient(circle at 20% 20%, ${spec.accent}33, transparent 35%), radial-gradient(circle at 80% 0%, rgba(255,255,255,0.12), transparent 30%)`,
-                                pointerEvents: "none",
-                            }}
-                        />
-                        <div
-                            style={{
-                                position: "absolute",
-                                top: "16px",
-                                right: "16px",
-                                zIndex: 2,
-                                display: "flex",
-                                gap: "8px",
-                            }}
-                        >
-                            {spec.stats.slice(0, 2).map((stat, index) => (
-                                <div
-                                    key={`${stat.label}-${stat.value}`}
-                                    style={{
-                                        padding: "10px 12px",
-                                        minWidth: "92px",
-                                        borderRadius: "18px",
-                                        border: `1px solid ${statToneBorder(index, spec.accent)}`,
-                                        backgroundColor: "rgba(9, 9, 11, 0.72)",
-                                        backdropFilter: "blur(12px)",
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        gap: "4px",
-                                    }}
-                                >
-                                    <div style={{ fontSize: "10px", color: "#a1a1aa", textTransform: "uppercase", letterSpacing: "0.16em" }}>
-                                        {stat.label}
-                                    </div>
-                                    <div style={{ fontSize: "18px", fontWeight: 800, color: "#fff", lineHeight: 1 }}>
-                                        {stat.value}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        <div
-                            style={{
-                                width: "100%",
-                                height: "100%",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                padding: "18px",
-                            }}
-                        >
-                            <img
-                                src={spec.asset}
-                                alt={spec.assetAlt}
-                                width={520}
-                                height={420}
-                                style={{
-                                    width: "100%",
-                                    height: "100%",
-                                    objectFit: "cover",
-                                    borderRadius: "20px",
-                                    border: "1px solid rgba(255,255,255,0.08)",
-                                    boxShadow: "0 18px 60px rgba(0, 0, 0, 0.28)",
-                                }}
-                            />
-                        </div>
-                    </div>
-
-                    <div
-                        style={{
-                            display: "flex",
-                            flexWrap: "wrap",
-                            gap: "10px",
-                        }}
-                    >
-                        {spec.stats.map((stat) => (
-                            <div
-                                key={`${stat.label}-${stat.value}-footer`}
-                                style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "10px",
-                                    padding: "10px 14px",
-                                    borderRadius: "999px",
-                                    border: `1px solid rgba(255,255,255,0.12)`,
-                                    backgroundColor: "rgba(255,255,255,0.04)",
-                                    color: "#fff",
-                                    fontSize: "13px",
-                                    fontWeight: 600,
-                                }}
-                            >
-                                <span style={{ color: spec.accent, textTransform: "uppercase", letterSpacing: "0.14em", fontSize: "10px" }}>
-                                    {stat.label}
-                                </span>
-                                <span>{stat.value}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </div>
-
-            <div
-                style={{
+            {/* Content Wrapper */}
+            <div style={{ 
+                display: "flex", 
+                flexDirection: "column", 
+                alignItems: isSplit ? "flex-start" : "center", 
+                textAlign: isSplit ? "left" : "center", 
+                width: isSplit ? "550px" : "100%",
+            }}>
+                
+                {/* Logo with Gradient Ring */}
+                <div style={{ 
+                    width: isSplit ? "80px" : "128px", 
+                    height: isSplit ? "80px" : "128px", 
+                    borderRadius: "999px",
+                    padding: "3px",
+                    marginBottom: isSplit ? "20px" : "28px",
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "space-between",
-                    position: "relative",
-                    zIndex: 2,
-                    marginTop: "12px",
-                    paddingTop: "18px",
-                    borderTop: "1px solid rgba(255,255,255,0.08)",
-                }}
-            >
-                <div style={{ fontSize: "14px", color: "#a1a1aa", maxWidth: "70%" }}>
-                    {spec.footer ?? DEFAULT_FOOTER}
+                    justifyContent: "center",
+                    background: "linear-gradient(135deg, #9333ea, #3b82f6, #9333ea)",
+                    boxShadow: "0 0 40px rgba(139, 92, 246, 0.4)"
+                }}>
+                    <div style={{ 
+                        width: "100%", 
+                        height: "100%", 
+                        borderRadius: "999px", 
+                        backgroundColor: "#000", 
+                        display: "flex", 
+                        alignItems: "center", 
+                        justifyContent: "center", 
+                        overflow: "hidden",
+                        padding: "4px"
+                    }}>
+                        <img src={logoUrl} width={isSplit ? 70 : 120} height={isSplit ? 70 : 120} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    </div>
                 </div>
-                <div
-                    style={{
-                        padding: "10px 14px",
-                        borderRadius: "999px",
-                        backgroundColor: "rgba(255,255,255,0.05)",
-                        border: `1px solid ${spec.accent}`,
-                        color: "#fff",
-                        fontSize: "12px",
-                        fontWeight: 700,
-                        letterSpacing: "0.14em",
+
+                {/* Eyebrow Label (Blog, Report, etc.) */}
+                {!isBrandOnly && (
+                    <div style={{ 
+                        fontSize: isSplit ? "18px" : "20px", 
+                        fontWeight: 700, 
+                        color: accentColor, 
+                        letterSpacing: "0.15em", 
                         textTransform: "uppercase",
-                    }}
-                >
-                    {spec.eyebrow}
+                        marginBottom: "16px",
+                        opacity: 0.9
+                    }}>
+                        {spec.eyebrow}
+                    </div>
+                )}
+
+                {/* Main Content Title (Page Specific) - Refined H2 Style */}
+                <div style={{ display: "flex", alignItems: "center", gap: "20px", position: "relative", marginBottom: "24px" }}>
+                    <div style={{ 
+                        fontSize: isBrandOnly ? "110px" : (isSplit ? (titleLength > 40 ? "32px" : "48px") : (titleLength > 15 ? (titleLength > 25 ? "32px" : "36px") : "48px")),
+                        fontWeight: 700, 
+                        letterSpacing: "-0.04em", 
+                        margin: 0,
+                        padding: 0,
+                        lineHeight: 1.2,
+                        backgroundImage: "linear-gradient(to bottom, #ffffff, rgba(255, 255, 255, 0.6))",
+                        backgroundClip: "text",
+                        color: "transparent",
+                        textAlign: isSplit ? "left" : "center",
+                        maxWidth: isSplit ? "550px" : "900px"
+                    }}>
+                        {spec.title}
+                    </div>
                 </div>
+
+                {/* Agentic CAG Badge Section */}
+                <div style={{ 
+                    display: "flex", 
+                    alignItems: "center", 
+                    gap: "10px", 
+                    padding: "8px 20px", 
+                    backgroundColor: "rgba(59, 130, 246, 0.08)", 
+                    border: "1px solid rgba(59, 130, 246, 0.2)", 
+                    borderRadius: "999px",
+                    marginBottom: "24px"
+                }}>
+                    <span style={{ fontSize: "14px", fontWeight: 500, color: "rgba(255, 255, 255, 0.8)", display: "flex", alignItems: "center" }}>
+                        Powered by 
+                        <span style={{ 
+                            marginLeft: "6px",
+                            fontWeight: 700, 
+                            backgroundImage: "linear-gradient(to right, #60a5fa, #c084fc)", 
+                            backgroundClip: "text", 
+                            color: "transparent" 
+                        }}>Agentic CAG Architecture</span>
+                    </span>
+                </div>
+
+                {/* Page Description - Limited height to avoid overlap */}
+                <p style={{ 
+                    marginTop: "8px",
+                    fontSize: isSplit ? "20px" : "24px", 
+                    color: "rgba(255, 255, 255, 0.6)", 
+                    fontWeight: 500,
+                    lineHeight: 1.4,
+                    maxWidth: isSplit ? "500px" : "850px",
+                    display: "-webkit-box",
+                    WebkitLineClamp: isSplit ? 3 : 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden"
+                }}>
+                    {spec.description}
+                </p>
+
             </div>
+
+            {/* Side Image for Split Layout */}
+            {isSplit && spec.asset && (
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '480px',
+                    height: '420px',
+                    position: 'relative'
+                }}>
+                    {/* Glowing background for image */}
+                    <div style={{
+                        position: 'absolute',
+                        top: '-20px',
+                        bottom: '-20px',
+                        left: '-20px',
+                        right: '-20px',
+                        background: `radial-gradient(circle, ${accentColor}33, transparent 70%)`,
+                    }} />
+                    
+                    <img 
+                        src={spec.asset} 
+                        style={{ 
+                            width: '100%', 
+                            height: '100%', 
+                            objectFit: 'cover', 
+                            borderRadius: '24px', 
+                            border: `1px solid ${accentColor}44`,
+                            boxShadow: `0 20px 50px rgba(0,0,0,0.5), 0 0 20px ${accentColor}22`
+                        }} 
+                    />
+                </div>
+            )}
+
         </div>
     );
 }

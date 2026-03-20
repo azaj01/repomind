@@ -44,7 +44,6 @@ export async function generateMetadata({
             title: "Chat",
             description: "Paste a GitHub repository or developer profile to analyze it with RepoMind.",
             canonical: "/chat",
-            ogImage: buildOgImageUrl("marketing", { variant: "home" }),
             ogTitle: "RepoMind chat",
             ogDescription: "Chat with GitHub repositories and developer profiles using Agentic CAG.",
         });
