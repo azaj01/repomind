@@ -1,6 +1,7 @@
 import { getAllPosts } from "@/lib/services/blog-service";
 import Link from "next/link";
-import { PlusCircle, Edit3, Trash2, Eye, Calendar, User, Tag } from "lucide-react";
+import { PlusCircle, Edit3, Eye } from "lucide-react";
+import { DeletePostButton } from "@/components/admin/DeletePostButton";
 
 export default async function BlogAdminPage() {
   const posts = await getAllPosts();
@@ -87,12 +88,7 @@ export default async function BlogAdminPage() {
                       >
                         <Edit3 size={16} />
                       </Link>
-                      <button 
-                        className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-400/5 rounded-lg transition-all"
-                        title="Delete"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      <DeletePostButton id={post.id} title={post.title} />
                     </div>
                   </td>
                 </tr>

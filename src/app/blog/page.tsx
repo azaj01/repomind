@@ -6,6 +6,8 @@ import { ArrowRight, Calendar } from "lucide-react";
 import Footer from "@/components/Footer";
 import { BlogPost } from "@prisma/client";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Insights - RepoMind Engineering & Security Blog",
   description: "Deep dives into Agentic CAG, AI-driven code analysis, and high-speed security scanning on GitHub.",

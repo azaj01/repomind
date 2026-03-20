@@ -5,6 +5,8 @@ import { getHomepagePosts } from "@/lib/services/blog-service";
 import { getCuratedRepos } from "@/lib/repo-catalog";
 import { getPublicStats } from "@/lib/analytics";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
     title: "Chat with Any GitHub Repo & Visualize Architecture | RepoMind",
     description:

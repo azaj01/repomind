@@ -117,9 +117,12 @@ export function EnhancedMarkdown({ content, components, currentOwner, currentRep
             const { src, alt, ...rest } = props;
             if (!src) return null;
             return (
-                <span className="block my-6 rounded-xl overflow-hidden border border-white/10">
-                    <img src={src} alt={alt || ""} {...rest} className="w-full h-auto object-cover" />
-                </span>
+                <img 
+                    src={src} 
+                    alt={alt || ""} 
+                    {...rest} 
+                    className="w-full h-auto block my-8 rounded-2xl border border-white/[0.08] shadow-2xl" 
+                />
             );
         },
         code(props: any) {

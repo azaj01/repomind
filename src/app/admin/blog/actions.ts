@@ -26,8 +26,5 @@ export async function deletePostAction(id: string) {
   await checkAdmin();
 
   await deletePostFromDb(id);
-
   revalidatePath("/admin/blog");
-
-  redirect("/admin/blog");
 }

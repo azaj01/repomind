@@ -128,13 +128,11 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
         </div>
 
         {/* Hero Image */}
-        <div className="relative aspect-video rounded-3xl overflow-hidden mb-16 border border-white/5 shadow-2xl">
-            <Image 
+        <div className="relative rounded-3xl overflow-hidden mb-16 border border-white/5 shadow-2xl bg-zinc-900/50">
+            <img 
                 src={post.image} 
                 alt={post.title}
-                fill
-                className="object-cover"
-                priority
+                className="w-full h-auto block"
             />
         </div>
 
@@ -142,6 +140,38 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
         <div className="prose prose-invert prose-purple max-w-none">
             <EnhancedMarkdown content={post.content} />
         </div>
+
+        {/* Dynamic JSON-LD for SEO */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "BlogPosting",
+              "headline": post.title,
+              "description": post.excerpt,
+              "image": post.image,
+              "author": {
+                "@type": "Person",
+                "name": post.author,
+              },
+              "publisher": {
+                "@type": "Organization",
+                "name": "RepoMind",
+                "logo": {
+                  "@type": "ImageObject",
+                  "url": "https://repomind.in/logo.png"
+                }
+              },
+              "datePublished": (post.publishedAt || post.createdAt).toISOString(),
+              "dateModified": post.updatedAt.toISOString(),
+              "mainEntityOfPage": {
+                "@type": "WebPage",
+                "@id": `https://repomind.in/blog/${post.slug}`
+              }
+            })
+          }}
+        />
 
         {/* CTA */}
         <div className="mt-20 pt-12 border-t border-white/5 text-center">

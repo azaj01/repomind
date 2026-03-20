@@ -105,7 +105,7 @@ export default function BlogEditor({ initialPost }: BlogEditorProps) {
     if (file) await uploadImage(file);
   };
 
-  const uploadImage = async (file: File) => {
+  const uploadImage = async (file: File, target: "cover" | "content" = "cover") => {
     if (!file.type.startsWith('image/')) {
       alert('Please upload an image file');
       return;
@@ -123,12 +123,27 @@ export default function BlogEditor({ initialPost }: BlogEditorProps) {
       }
 
       const blob = await response.json();
-      setPost(prev => ({ ...prev, image: blob.url }));
+      
+      if (target === "cover") {
+        setPost(prev => ({ ...prev, image: blob.url }));
+      } else {
+        // For inline images, insert into markdown
+        handleInsertMarkdown(`![image](${blob.url})`, "");
+      }
     } catch (error) {
       console.error("Upload failed:", error);
       alert("Failed to upload image. Please check your connection and try again.");
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleContentFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      await uploadImage(file, "content");
+      // Clear value to allow same file re-upload
+      e.target.value = "";
     }
   };
 
@@ -213,12 +228,31 @@ export default function BlogEditor({ initialPost }: BlogEditorProps) {
                   <button type="button" onClick={() => handleInsertMarkdown("> ")} className="hover:text-white transition-colors px-1 text-sm" title="Blockquote">"</button>
                   <div className="w-px h-4 bg-white/10 mx-1" />
                   <button type="button" onClick={() => handleInsertMarkdown("[", "](url)")} className="hover:text-white transition-colors px-1 text-sm" title="Link">🔗</button>
-                  <button type="button" onClick={() => handleInsertMarkdown("![alt](", ")")} className="hover:text-white transition-colors text-sm" title="Image"><ImageIcon size={13} className="mx-1" /></button>
+                  <button 
+                    type="button" 
+                    onClick={() => document.getElementById('content-image-upload')?.click()} 
+                    disabled={isUploading}
+                    className="hover:text-white transition-colors text-sm disabled:opacity-50" 
+                    title="Upload & Insert Image"
+                  >
+                    {isUploading ? (
+                      <div className="w-3 h-3 border border-purple-500 border-t-transparent rounded-full animate-spin mx-1" />
+                    ) : (
+                      <ImageIcon size={13} className="mx-1" />
+                    )}
+                  </button>
                   <div className="w-px h-4 bg-white/10 mx-1" />
                   <button type="button" onClick={() => handleInsertMarkdown("```mermaid\n", "\n```")} className="hover:text-white transition-colors px-1 text-xs font-mono" title="Mermaid Flowchart">mermaid</button>
                   <button type="button" onClick={() => handleInsertMarkdown("```\n", "\n```")} className="hover:text-white transition-colors px-1 text-xs font-mono" title="Code Block">{"</>"}</button>
                 </div>
               </div>
+              <input
+                id="content-image-upload"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleContentFileChange}
+              />
               <textarea
                 id="content-textarea"
                 name="content"
