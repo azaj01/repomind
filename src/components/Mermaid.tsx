@@ -138,6 +138,50 @@ function resetAnimatedSvgStyles(svgElement: SVGSVGElement): void {
     });
 }
 
+function runMermaidEntranceAnimations(svgElement: SVGSVGElement): Animation[] {
+    const runningAnimations: Animation[] = [];
+
+    // Animate edge paths (drawing effect)
+    const paths = svgElement.querySelectorAll<SVGPathElement>("path.edgePath path, path.flowchart-link, .sequence-diagram path");
+    paths.forEach((path, i) => {
+        try {
+            const length = path.getTotalLength();
+            if (length < 5) return;
+            const stagger = Math.min(i * 20, 240);
+            const animation = path.animate([
+                { strokeDasharray: `${length}`, strokeDashoffset: length },
+                { strokeDasharray: `${length}`, strokeDashoffset: 0 }
+            ], {
+                duration: 800 + (length / 2),
+                delay: stagger,
+                fill: "none",
+                easing: "ease-out"
+            });
+            runningAnimations.push(animation);
+        } catch {
+            // Ignore paths that don't support getTotalLength
+        }
+    });
+
+    // Animate nodes
+    const nodes = svgElement.querySelectorAll<SVGElement>(".node, .actor, .state, .class-name");
+    nodes.forEach((node, i) => {
+        const stagger = Math.min(i * 18, 180);
+        const animation = node.animate([
+            { opacity: 0 },
+            { opacity: 1 }
+        ], {
+            duration: 420,
+            delay: stagger,
+            fill: "none",
+            easing: "ease-out"
+        });
+        runningAnimations.push(animation);
+    });
+
+    return runningAnimations;
+}
+
 
 export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
     const [svg, setSvg] = useState<string>("");
@@ -146,6 +190,9 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
     const [isFixing, setIsFixing] = useState(false);
     const diagramRef = useRef<HTMLDivElement>(null);
     const modalRef = useRef<HTMLDivElement>(null);
+    const lastAnimatedSvgRef = useRef("");
+    const streamAnimationPlayedRef = useRef(false);
+    const prevStreamingRef = useRef(isStreaming);
     const isGenerating = isFixing || isStreaming;
     // During streaming, we don't want to show the full-screen blurring overlay because it makes it
     // look like the UI is blocked. Only show it if we are fixing the diagram or if we have no SVG at all
@@ -278,6 +325,13 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
         };
     }, [chart, id, isStreaming]);
 
+    useEffect(() => {
+        if (isStreaming && !prevStreamingRef.current) {
+            streamAnimationPlayedRef.current = false;
+        }
+        prevStreamingRef.current = isStreaming;
+    }, [isStreaming]);
+
     const handleRetry = async () => {
         if (!chart) return;
         setError(null);
@@ -332,54 +386,50 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
             applyResponsiveSvgSizing(svgElement);
             resetAnimatedSvgStyles(svgElement);
 
-            // ③ Skip entrance animations if still generating to avoid setting
-            //    opacity:0 prematurely. Animations only run on the final stable state.
-            if (isGenerating) return;
+            const shouldAnimate =
+                isStreaming
+                    ? !streamAnimationPlayedRef.current && lastAnimatedSvgRef.current !== svg
+                    : lastAnimatedSvgRef.current !== svg;
 
-            // Animate edge paths (drawing effect)
-            const paths = svgElement.querySelectorAll<SVGPathElement>("path.edgePath path, path.flowchart-link, .sequence-diagram path");
-            paths.forEach((path, i) => {
-                try {
-                    const length = path.getTotalLength();
-                    if (length < 5) return;
-                    const stagger = Math.min(i * 20, 240);
-                    const animation = path.animate([
-                        { strokeDasharray: `${length}`, strokeDashoffset: length },
-                        { strokeDasharray: `${length}`, strokeDashoffset: 0 }
-                    ], {
-                        duration: 800 + (length / 2),
-                        delay: stagger,
-                        fill: "none",
-                        easing: "ease-out"
-                    });
-                    runningAnimations.push(animation);
-                } catch {
-                    // Ignore paths that don't support getTotalLength
-                }
-            });
+            if (!shouldAnimate) {
+                lastAnimatedSvgRef.current = svg;
+                return;
+            }
 
-            // Animate nodes
-            const nodes = svgElement.querySelectorAll<SVGElement>(".node, .actor, .state, .class-name");
-            nodes.forEach((node, i) => {
-                const stagger = Math.min(i * 18, 180);
-                const animation = node.animate([
-                    { opacity: 0 },
-                    { opacity: 1 }
-                ], {
-                    duration: 420,
-                    delay: stagger,
-                    fill: "none",
-                    easing: "ease-out"
-                });
-                runningAnimations.push(animation);
-            });
+            runningAnimations.push(...runMermaidEntranceAnimations(svgElement));
+
+            if (isStreaming) {
+                streamAnimationPlayedRef.current = true;
+            }
+            lastAnimatedSvgRef.current = svg;
         });
 
         return () => {
             cancelAnimationFrame(raf);
             runningAnimations.forEach((animation) => animation.cancel());
         };
-    }, [svg, isGenerating]);
+    }, [svg, isGenerating, isStreaming]);
+
+    useEffect(() => {
+        if (!isModalOpen || !modalRef.current) return;
+
+        let runningAnimations: Animation[] = [];
+        const timer = setTimeout(() => {
+            const container = modalRef.current;
+            if (!container) return;
+            const svgElement = container.querySelector("svg");
+            if (!svgElement) return;
+
+            applyResponsiveSvgSizing(svgElement);
+            resetAnimatedSvgStyles(svgElement);
+            runningAnimations = runMermaidEntranceAnimations(svgElement);
+        }, 300);
+
+        return () => {
+            clearTimeout(timer);
+            runningAnimations.forEach((animation) => animation.cancel());
+        };
+    }, [isModalOpen, svg]);
 
     const exportToPNG = async (e?: React.MouseEvent) => {
         e?.stopPropagation(); // Prevent modal opening if clicking export button

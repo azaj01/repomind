@@ -90,7 +90,7 @@ export function MessageContent({
 
     const components = useMemo(() => ({
         code: ({ className, children, inline, ...props }: MarkdownCodeProps) => {
-            const match = /language-(\w+)/.exec(className ?? "");
+            const match = /language-([\w-]+)/.exec(className ?? "");
             const isMermaid = match?.[1] === "mermaid";
             const isMermaidJson = match?.[1] === "mermaid-json";
 
@@ -113,16 +113,28 @@ export function MessageContent({
             }
 
             if (isMermaidJson) {
+                const jsonContent = String(children).replace(/\n$/, "");
                 try {
-                    const jsonContent = String(children).replace(/\n$/, "");
                     const chart = generateMermaidFromJSON(JSON.parse(jsonContent));
                     return <Mermaid chart={chart} isStreaming={isStreamingMessage} />;
                 } catch {
+                    if (isStreamingMessage) {
+                        return (
+                            <div className="flex items-center gap-2 p-4 bg-zinc-900/50 rounded-lg border border-white/10">
+                                <Loader2 className="w-4 h-4 animate-spin text-zinc-400" />
+                                <span className="text-zinc-400 text-sm">Generating diagram...</span>
+                            </div>
+                        );
+                    }
+
                     return (
-                        <div className="flex items-center gap-2 p-4 bg-zinc-900/50 rounded-lg border border-white/10">
-                            <Loader2 className="w-4 h-4 animate-spin text-zinc-400" />
-                            <span className="text-zinc-400 text-sm">Generating diagram...</span>
-                        </div>
+                        <CodeBlock
+                            language="json"
+                            value={jsonContent}
+                            components={components}
+                            owner={currentOwner}
+                            repo={currentRepo}
+                        />
                     );
                 }
             }

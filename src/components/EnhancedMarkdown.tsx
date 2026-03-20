@@ -12,6 +12,7 @@ import { SmartLink } from "./SmartLink";
 import { Mermaid } from "./Mermaid";
 import { DynamicSVG } from "./DynamicSVG";
 import { FileIcon, FolderIcon } from "./FileIcon";
+import { generateMermaidFromJSON } from "@/lib/diagram-utils";
 
 interface ParsedContent {
     type: "markdown" | "repo-card" | "developer-card";
@@ -123,8 +124,9 @@ export function EnhancedMarkdown({ content, components, currentOwner, currentRep
         },
         code(props: any) {
             const { children, className, node, ...rest } = props;
-            const match = /language-(\w+)/.exec(className || "");
+            const match = /language-([\w-]+)/.exec(className || "");
             const isMermaid = match && match[1] === "mermaid";
+            const isMermaidJson = match && match[1] === "mermaid-json";
             const childrenStr = String(children).replace(/\n$/, "");
             
             if (isMermaid) {
@@ -143,6 +145,24 @@ export function EnhancedMarkdown({ content, components, currentOwner, currentRep
                         isStreaming={isStreaming} 
                     />
                 );
+            }
+
+            if (isMermaidJson) {
+                try {
+                    const chart = generateMermaidFromJSON(JSON.parse(childrenStr));
+                    return (
+                        <Mermaid
+                            chart={chart}
+                            isStreaming={isStreaming}
+                        />
+                    );
+                } catch {
+                    return (
+                        <pre className="my-4 overflow-x-auto rounded-lg border border-white/10 bg-zinc-900/60 p-4 text-xs text-zinc-300 whitespace-pre-wrap">
+                            {childrenStr}
+                        </pre>
+                    );
+                }
             }
 
             // Detect if this is likely a file or folder path

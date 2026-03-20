@@ -1,6 +1,5 @@
 import type { ModelPreference } from "@/lib/ai-client";
 
-const VISUAL_QUERY_PATTERN = /\b(svg|animated|animation|flowchart|architecture|diagram|pipeline)\b/i;
 const COMPLEX_VISUAL_PATTERN = /\b(complex|detailed|comprehensive|end[- ]to[- ]end|distributed|microservice|event[- ]driven|orchestr|multi[- ]stage|multi[- ]step|production[- ]grade|full[- ]fledged|deep dive)\b/i;
 const SIMPLE_VISUAL_PATTERN = /\b(simple|basic|minimal|quick|overview|high[- ]level|small|tiny)\b/i;
 const MIN_VISUAL_NODE_COUNT = 6;
@@ -52,7 +51,7 @@ export function normalizeModelPreference(value: unknown): ModelPreference {
 }
 
 export function isVisualDiagramIntentQuery(query: string): boolean {
-    return VISUAL_QUERY_PATTERN.test(query || "");
+    return getVisualDiagramProfile(query).family !== "default";
 }
 
 export function getVisualDiagramProfile(query: string): VisualDiagramProfile {
@@ -83,7 +82,7 @@ export function getVisualDiagramProfile(query: string): VisualDiagramProfile {
     if (/\b(comparison|tradeoff|versus|vs\.?|pros|cons|matrix|options|evaluate)\b/i.test(normalized)) {
         return {
             family: "comparison",
-            preferredFormat: "svg",
+            preferredFormat: "mermaid",
             preferredNodeRange: [10, 16],
             animationFocus: "Column-by-column reveal and subtle emphasis on the recommended option.",
             layoutFocus: "Use side-by-side panes, badges, and comparison markers.",
@@ -93,7 +92,7 @@ export function getVisualDiagramProfile(query: string): VisualDiagramProfile {
     if (/\b(data flow|data-flow|analytics|sankey|stream|event|telemetry|metrics|dashboard)\b/i.test(normalized)) {
         return {
             family: "data-flow",
-            preferredFormat: "svg",
+            preferredFormat: "mermaid",
             preferredMermaidDiagram: "flowchart",
             preferredNodeRange: [15, 20],
             animationFocus: "One primary stream bead plus supporting sink/source pulses.",
@@ -104,7 +103,7 @@ export function getVisualDiagramProfile(query: string): VisualDiagramProfile {
     if (/\b(journey|ux|user flow|onboarding|funnel|experience|screen|journey map|customer)\b/i.test(normalized)) {
         return {
             family: "journey",
-            preferredFormat: "svg",
+            preferredFormat: "mermaid",
             preferredMermaidDiagram: "flowchart",
             preferredNodeRange: [15, 20],
             animationFocus: "Step-by-step reveal with a guided path and decision highlights.",
@@ -115,7 +114,7 @@ export function getVisualDiagramProfile(query: string): VisualDiagramProfile {
     if (/\b(pipeline|workflow|process|flow|build|deploy|ci|cd|etl|task|job)\b/i.test(normalized)) {
         return {
             family: "pipeline",
-            preferredFormat: "svg",
+            preferredFormat: "mermaid",
             preferredMermaidDiagram: "flowchart",
             preferredNodeRange: [15, 20],
             animationFocus: "Primary route bead, stage pulses, and branch emphasis.",
@@ -126,7 +125,7 @@ export function getVisualDiagramProfile(query: string): VisualDiagramProfile {
     if (/\b(architecture|system|service|services|microservice|component|module|layer|layers|infrastructure|platform)\b/i.test(normalized)) {
         return {
             family: "architecture",
-            preferredFormat: "svg",
+            preferredFormat: "mermaid",
             preferredMermaidDiagram: "flowchart",
             preferredNodeRange: [15, 20],
             animationFocus: "Service pulses, connector tracing, and cross-layer focus.",
@@ -136,7 +135,7 @@ export function getVisualDiagramProfile(query: string): VisualDiagramProfile {
 
     return {
         family: "default",
-        preferredFormat: "svg",
+        preferredFormat: "mermaid",
         preferredMermaidDiagram: "flowchart",
         preferredNodeRange: [12, 18],
         animationFocus: "Subtle route tracing and node reveal.",

@@ -7,7 +7,6 @@
  * variants in gemini.ts — eliminating the ~250-line prompt duplication.
  */
 import { getSvgComplexityTarget, getVisualDiagramProfile } from "./visual-intent";
-import { APP_FONT_STACK } from "./design-tokens";
 
 export interface RepoMindPromptParams {
   question: string;
@@ -17,7 +16,11 @@ export interface RepoMindPromptParams {
   historyText: string;
 }
 
-function buildAnimatedSvgContract(question: string): string {
+function shouldIncludeVisualContract(question: string): boolean {
+  return getVisualDiagramProfile(question).family !== "default";
+}
+
+function buildVisualContract(question: string): string {
   const target = getSvgComplexityTarget(question);
   const profile = getVisualDiagramProfile(question);
   const minimumNodeCount = Math.max(6, target.minNodes);
@@ -27,26 +30,45 @@ function buildAnimatedSvgContract(question: string): string {
   return `
             - **VISUAL ROUTING (MANDATORY)**:
               - Preferred family: **${profile.family}**.
-              - Preferred rendering format: **${profile.preferredFormat.toUpperCase()}**${profile.preferredMermaidDiagram ? ` (${profile.preferredMermaidDiagram})` : ""}.
-              - Animation style: ${profile.animationFocus}
+              - Preferred output format: **MERMAID-JSON**.
+              - Preferred topology: **${profile.preferredMermaidDiagram ?? "flowchart"}**.
               - Layout style: ${profile.layoutFocus}
+              - Emphasis: ${profile.animationFocus}
 
-            - **ANIMATED SVG HARD CONTRACT (MANDATORY)**:
+            - **MERMAID-JSON HARD CONTRACT (MANDATORY)**:
               - Complexity tier for THIS request: **${target.tier.toUpperCase()}**.
-              - Minimum logical blocks: **${minimumNodeCount}** elements with \`class="node"\`.
+              - Minimum logical blocks: **${minimumNodeCount}** nodes.
               - Preferred detail range: **${preferredMinNodes}-${preferredMaxNodes}** visible nodes when the layout is readable.
               - Hard maximum logical blocks: **${target.maxNodes}**.
-              - Minimum connection edges: **${target.minEdges}** \`<path class="edge">\` elements.
-              - Minimum lanes/swimlanes: **${target.minLanes}** elements with \`class="lane"\`.
-              - Every eligible route MUST be a path with \`id="route-*"\`.
-              - Every eligible route MUST carry at least one bead by default.
-              - Use one bead per route as the baseline.
-              - Extra beads are allowed only on especially long or important routes when they improve readability.
-              - Every bead MUST be \`<circle class="bead"...>\` with nested \`<animateMotion>\` and \`<mpath href="#route-*">\`.
-              - Maximum beads per route: **${target.maxBeadsPerRoute}**.
-              - Include a visible diagram title (\`class="title"\`) and a legend (\`class="legend"\`).
-              - Route geometry rule: paths must connect at node ports and stay outside node interiors. Do not run paths through block bodies.
+              - Minimum connection edges: **${target.minEdges}** relationships.
+              - Use a single \`\`\`mermaid-json\`\`\` block when a visual is clearly helpful.
+              - Do not emit raw Mermaid or SVG unless explicitly requested.
+              - Keep labels concise and relationships explicit.
+              - Use markdown tables instead of diagrams when a table communicates the answer more clearly.
+              - Prefer the family-specific layout cues in the question and avoid generic flowchart repetition.
   `;
+}
+
+function buildResponseStructureRules(question: string): string {
+  if (shouldIncludeVisualContract(question)) {
+    return `
+            - **VISUAL DECISION LOGIC**:
+              1. If the query does not clearly benefit from a visual, answer in text only.
+              2. If a visual helps, use a single \`\`\`mermaid-json\`\`\` block.
+              3. Use markdown tables for comparisons, tradeoffs, and structured summaries when they are clearer than prose or diagrams.
+
+            - **RESPONSE FORMAT**:
+              Output only the final answer and, if needed, a markdown table or a single \`\`\`mermaid-json\`\`\` block.
+              Do not add commentary, status messages, or preambles.
+`;
+  }
+
+  return `
+            - **RESPONSE FORMAT**:
+              Output only the final answer.
+              Prefer markdown tables for comparisons and structured summaries when they are clearer than prose.
+              Do not add commentary, status messages, or preambles.
+`;
 }
 
 /**
@@ -55,6 +77,8 @@ function buildAnimatedSvgContract(question: string): string {
  */
 export function buildRepoMindPrompt(params: RepoMindPromptParams): string {
   const { question, context, repoDetails, historyText } = params;
+  const visualContract = shouldIncludeVisualContract(question) ? buildVisualContract(question) : "";
+  const responseStructureRules = buildResponseStructureRules(question);
 
   return `
     You are a specialized coding assistant called "RepoMind".
@@ -80,6 +104,7 @@ export function buildRepoMindPrompt(params: RepoMindPromptParams): string {
           - **Verify**: Always verify claims in the README against the actual source files provided in the context.
           - **Flag Discrepancies**: If you find a conflict, explicitly state: "The README says X, but the code actually does Y."
         - **CONTEXT AWARENESS**: You know exactly which repository you are analyzing. If the user asks "how do I download this?", provide the specific \`git clone\` command for THIS repository.
+        - **VISUAL DISCIPLINE**: If a diagram is not clearly helpful, answer in text only. Prefer markdown tables for comparisons and structured summaries.
         - **WEB SEARCH & REAL-TIME DATA (CRITICAL)**:
           - If external/latest information is required, use the **WEB SEARCH SNAPSHOT** context (if present) and combine it with repository evidence.
           - If no web snapshot is present, continue with repository/profile context and clearly mention that external facts were limited.
@@ -189,76 +214,13 @@ export function buildRepoMindPrompt(params: RepoMindPromptParams): string {
          - **GENERATING FILES**: If the user asks to "write", "create", "improve", or "fix" a file (e.g., "Write a better README", "Create a test file"), you **MUST** provide the **FULL CONTENT** of that file inside a markdown code block.
            - *Example*: "Here is the improved README:\\n\\n\`\`\`markdown\\n# Title\\n...\\n\`\`\`"
            - **DO NOT** just describe what to do. **DO IT**.
-         
-         - **FLOWCHARTS & DIAGRAMS (STRICT)**: 
-           - Use standard **Mermaid** syntax inside a ${"```mermaid"} block.
-           - All Mermaid diagrams now feature **automatic entrance animations** (path drawing & node scaling).
-           - **RULES**:
-             - Use for: Logic flows, sequence diagrams, ER/Class models.
-             - Node Labels: MUST be in double quotes: \`A["Label Text"]\`.
-             - Edge Labels: Do NOT quote: \`A -- label --> B\`.
-             - Minimum size: any flowchart or graph diagram MUST include at least 6 nodes/modes.
-             - For architecture, pipeline, workflow, data-flow, and journey visuals, prefer 15-20 distinct nodes if the layout stays readable.
-             - For state, timeline, comparison, data-flow, and journey visuals, use the family-specific structure and avoid generic flowchart repetition.
-             - Avoid special characters in labels.
-          - **IMAGES & VISUAL EXPLANATIONS (STRICT)**:
-            - Use **SVG** inside a ${"```svg"} block for high-fidelity or animated visuals.
-            - All SVG blocks now feature **premium drawing animations** and **full-screen preview**.
-            - **ELITE SVG 2.0 DESIGN SYSTEM (PRODUCTION-GRADE)**:
-               - **Aesthetics**: Use \`rx="12"\` for containers, \`rx="6"\` for items. Stroke: \`1.5px\`. 
-               - **Color Palette**: Zinc-950 (#09090b) Border, Zinc-900 (#18181b) Surface, Indigo-500 (#6366f1) Primary, Emerald-500 (#10b981) Data, Rose-500 (#f43f5e) Error.
-               - **Typography**: Use the application's font stack (${APP_FONT_STACK}). Clean Zinc-300 (#d4d4d8) labels.
-               - **PRECISE BEAD SYSTEM**: Data packets MUST be \`<circle class="bead" r="4" fill="url(#bead-grad)" filter="url(#bead-glow)">...</circle>\`.
-               - **ULTRA-FLUID SMIL**: 
-                 - Easing: ALWAYS use \`calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1"\` (Standard) or \`0.68 -0.55 0.27 1.55\` (Elastic).
-                 - Fluidity: Beads move with \`<animateMotion>\` + \`<mpath href="#route-*">\`. Avoid duplicate beads per route unless explicitly requested.
-                 - Loops: Ensure seamless loops with \`repeatCount="indefinite"\` and matching start/end values.
-              - **LAYOUT MATH**: Align everything to an 800x450 grid. Use center-anchored coordinates for moving parts.
-               - **DETAIL DEPTH**: Do not compress complex systems into a sparse sketch; prefer 15-20 clearly labeled nodes when the user asks for architecture, pipeline, workflow, data-flow, or journey visuals. Use up to 50 nodes when needed for clarity.
-               - **VISUAL FAMILY RULES**:
-                 - **Architecture/System**: stacked layers, service clusters, cross-layer routes, and a prominent title/legend.
-                 - **Pipeline/Workflow**: ordered stages, branch points, loop-backs, and a single strongest motion path.
-                 - **State/Lifecycle**: explicit state names, guarded transitions, active-state glow, and terminal states.
-                 - **Timeline/History**: chronological progression with dates, milestones, and event markers.
-                 - **Comparison/Tradeoff**: side-by-side panels, scores, pros/cons, and recommendation cues.
-                 - **Data Flow/Analytics**: source-to-sink flow, weighted routes, metrics, and data sinks.
-                 - **Journey/UX Flow**: screen-by-screen path, decision branches, and outcome cards.
-               - **EFFECTS**: Use \`premium-shadow\`, \`indigo-grad\`, \`emerald-grad\`, \`zinc-grad\`, \`bead-grad\`, and \`bead-glow\`.
-${buildAnimatedSvgContract(question)}
-
-            - **SVG STRUCTURE TEMPLATE**:
-              \`\`\`svg
-              <svg viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg">
-                <!-- Defs are injected automatically by the engine; you don't need to repeat them unless custom -->
-                <rect x="0" y="0" width="800" height="450" rx="16" fill="#18181b" stroke="#27272a" stroke-width="1"/>
-                <g class="lane lane-1"></g>
-                <g class="lane lane-2"></g>
-                <g class="node" id="node-a"></g>
-                <g class="node" id="node-b"></g>
-                <path class="edge" id="route-a-b" d="..." />
-                <circle class="bead" r="4" fill="url(#bead-grad)" filter="url(#bead-glow)">
-                  <animateMotion dur="2.8s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1;0.4 0 0.2 1">
-                    <mpath href="#route-a-b"/>
-                  </animateMotion>
-                </circle>
-                <text class="title" x="400" y="34" text-anchor="middle">...</text>
-                <g class="legend"></g>
-              </svg>
-              \`\`\`
-
-            - **VISUAL DECISION LOGIC**:
-              1. "Draw/Picture/Image" -> Static production SVG.
-              2. "Animate/Flow/Dynamics" -> Elite 2.0 Animated SVG.
-              3. "Architecture/Pipeline/System Diagram" -> Prefer Animated SVG (not Mermaid) unless user explicitly asks for Mermaid.
-
-            - **RESPONSE FORMAT**:
-              Output only the final answer and the SVG code block.
-              Do not add commentary, status messages, or preambles before or after the SVG.
+${visualContract}
+${responseStructureRules}
 
 
-         - **COMBINATIONS**: You can and SHOULD combine elements.
-           - *Example*: "Here is the architecture (Mermaid) and the updated config (Code Block)."
-           - *Example*: "Here is the project info (Repo Card) and the installation script (Code Block)."
+          - **COMBINATIONS**: You can and SHOULD combine elements.
+            - *Example*: "Here is the architecture diagram and the updated config (Code Block)."
+            - *Example*: "Here is the project info (Repo Card) and the installation script (Code Block)."
 
     CONTEXT FROM REPOSITORY:
     ${context}

@@ -45,7 +45,9 @@ export const DynamicSVG = ({ svg, isStreaming = false }: DynamicSVGProps) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
     const modalRef = useRef<HTMLDivElement>(null);
-    const [hasAnimated, setHasAnimated] = useState(false);
+    const lastAnimatedSvgRef = useRef("");
+    const streamAnimationPlayedRef = useRef(false);
+    const prevStreamingRef = useRef(isStreaming);
 
     // Clean up the SVG string - sometimes LLMs add markdown noise
     const cleanSvg = useMemo(() => {
@@ -187,17 +189,30 @@ export const DynamicSVG = ({ svg, isStreaming = false }: DynamicSVGProps) => {
     };
 
     useEffect(() => {
-        if (!containerRef.current || isStreaming || hasAnimated) return;
-        animateSvg(containerRef.current);
-        setHasAnimated(true);
-    }, [cleanSvg, isStreaming, hasAnimated]);
-
-    // Reset hasAnimated if the SVG content changes significantly after being idle
-    useEffect(() => {
-        if (!isStreaming) {
-            setHasAnimated(false);
+        if (isStreaming && !prevStreamingRef.current) {
+            streamAnimationPlayedRef.current = false;
         }
-    }, [svg]);
+        prevStreamingRef.current = isStreaming;
+    }, [isStreaming]);
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container || !cleanSvg.includes("<svg")) return;
+
+        const shouldAnimate =
+            isStreaming
+                ? !streamAnimationPlayedRef.current && lastAnimatedSvgRef.current !== cleanSvg
+                : lastAnimatedSvgRef.current !== cleanSvg;
+
+        if (shouldAnimate) {
+            animateSvg(container);
+            if (isStreaming) {
+                streamAnimationPlayedRef.current = true;
+            }
+        }
+
+        lastAnimatedSvgRef.current = cleanSvg;
+    }, [cleanSvg, isStreaming]);
 
     // Animate when modal opens
     useEffect(() => {

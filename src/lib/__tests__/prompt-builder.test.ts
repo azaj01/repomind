@@ -50,15 +50,24 @@ describe("buildRepoMindPrompt", () => {
         expect(result).toContain("RepoMind");
     });
 
-    it("pushes dense svg diagrams toward 15-20 nodes and a 50-node cap", () => {
+    it("keeps non-visual prompts text-first", () => {
+        const result = buildRepoMindPrompt(baseParams);
+
+        expect(result).toContain("Prefer markdown tables for comparisons and structured summaries.");
+        expect(result).not.toContain("mermaid-json");
+        expect(result).not.toContain("SVG");
+    });
+
+    it("uses a mermaid-json contract for clear visual requests", () => {
         const result = buildRepoMindPrompt({
             ...baseParams,
-            question: "Create a detailed architecture SVG for this repo",
+            question: "Create a detailed architecture diagram for this repo",
         });
 
+        expect(result).toContain("mermaid-json");
         expect(result).toContain("15-20");
         expect(result).toContain("50");
-        expect(result).toContain("one bead per route");
+        expect(result).toContain("markdown tables instead of diagrams");
     });
 
     it("keeps the static prompt template free of emoji characters", () => {
