@@ -1,17 +1,21 @@
 import Link from "next/link";
 import Image from "next/image";
-import { Metadata } from "next";
 import { getPublishedPosts } from "@/lib/services/blog-service";
 import { ArrowRight, Calendar } from "lucide-react";
 import Footer from "@/components/Footer";
 import { BlogPost } from "@prisma/client";
+import { buildOgImageUrl, createSeoMetadata } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Insights - RepoMind Engineering & Security Blog",
+export const metadata = createSeoMetadata({
+  title: "Insights",
   description: "Deep dives into Agentic CAG, AI-driven code analysis, and high-speed security scanning on GitHub.",
-};
+  canonical: "/blog",
+  ogImage: buildOgImageUrl("marketing", { variant: "blog" }),
+  ogTitle: "RepoMind Insights",
+  ogDescription: "Engineering notes, security writeups, and product thinking from RepoMind.",
+});
 
 export default async function BlogIndex() {
   const posts: BlogPost[] = await getPublishedPosts();
@@ -52,7 +56,7 @@ export default async function BlogIndex() {
             </div>
             <h2 className="text-3xl font-bold mb-4">Insights Coming Soon</h2>
             <p className="text-zinc-400 max-w-md mx-auto italic">
-              We're currently deep in the lab building the future of code intelligence. Check back soon for our first deep dives and engineering updates.
+              We&apos;re currently deep in the lab building the future of code intelligence. Check back soon for our first deep dives and engineering updates.
             </p>
           </div>
         ) : (
@@ -85,7 +89,7 @@ export default async function BlogIndex() {
                             {featuredPost.title}
                           </h2>
                           <p className="text-zinc-400 mb-6 line-clamp-3 italic">
-                            "{featuredPost.excerpt}"
+                            &ldquo;{featuredPost.excerpt}&rdquo;
                           </p>
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">

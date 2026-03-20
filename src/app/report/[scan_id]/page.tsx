@@ -8,67 +8,99 @@ import { canAccessPrivateReport } from '@/lib/services/report-access';
 import { buildReportViewData } from '@/lib/services/report-service';
 import { ReportExpiredState } from '@/app/report/components/ReportExpiredState';
 import { ReportContent } from './ReportContent';
+import { buildOgImageUrl, buildReportSummaryDescription, createSeoMetadata, estimateSecurityHealthScore } from '@/lib/seo';
 
 export async function generateMetadata({ params }: { params: Promise<{ scan_id: string }> }): Promise<Metadata> {
     const resolvedParams = await params;
     const scanResult = await getScanResultWithStatus(resolvedParams.scan_id);
 
     if (scanResult.status === "not_found") {
-        return {
-            title: 'Report Not Found - RepoMind'
-        };
+        return createSeoMetadata({
+            title: "Report Not Found",
+            description: "This security report could not be found.",
+            canonical: `/report/${resolvedParams.scan_id}`,
+            ogImage: buildOgImageUrl("marketing", {
+                variant: "security-scanner",
+                title: "Report Not Found",
+                description: "This security report could not be found.",
+            }),
+            ogTitle: "Report Not Found",
+            ogDescription: "This security report could not be found.",
+            noIndex: true,
+        });
     }
     const scan = scanResult.scan;
 
     const session = await auth();
     if (!canAccessPrivateReport(session, scan)) {
-        return {
-            title: "Private Security Report - RepoMind",
+        const metadata = createSeoMetadata({
+            title: "Private Security Report",
             description: "Sign in to view this security report.",
-            robots: {
-                index: false,
-                follow: false,
-            },
-        };
+            canonical: `/report/${resolvedParams.scan_id}`,
+            ogImage: buildOgImageUrl("marketing", {
+                variant: "security-scanner",
+                title: "Private Security Report",
+                description: "Sign in to view this security report.",
+            }),
+            ogTitle: "Private Security Report",
+            ogDescription: "Sign in to view this security report.",
+            noIndex: true,
+        });
+        return metadata;
     }
 
     if (scanResult.status === "expired") {
-        return {
-            title: "Report Expired - RepoMind",
+        return createSeoMetadata({
+            title: "Report Expired",
             description: "This scan report has expired. Run a new scan to regenerate it.",
-            robots: {
-                index: false,
-                follow: false,
-            },
-        };
+            canonical: `/report/${resolvedParams.scan_id}`,
+            ogImage: buildOgImageUrl("marketing", {
+                variant: "security-scanner",
+                title: "Report Expired",
+                description: "This scan report has expired. Run a new scan to regenerate it.",
+            }),
+            ogTitle: "Report Expired",
+            ogDescription: "This scan report has expired. Run a new scan to regenerate it.",
+            noIndex: true,
+        });
     }
 
     const { owner, repo, summary } = scan;
-    const desc = `${summary.critical} Critical, ${summary.high} High, ${summary.medium} Medium issues found. Review the full RepoMind security report and remediate all findings in one Repo Chat flow.`;
+    const health = estimateSecurityHealthScore({
+        critical: summary.critical,
+        high: summary.high,
+        medium: summary.medium,
+        low: summary.low,
+    });
+    const desc = buildReportSummaryDescription({
+        critical: summary.critical,
+        high: summary.high,
+        medium: summary.medium,
+        low: summary.low,
+        score: health.score,
+        grade: health.grade,
+    });
 
-    return {
-        title: `Security Scan: ${owner}/${repo} - RepoMind`,
+    return createSeoMetadata({
+        title: `Security Report: ${owner}/${repo}`,
         description: desc,
-        openGraph: {
-            title: `RepoMind Security Scan: ${owner}/${repo}`,
-            description: desc,
-            type: 'website',
-            images: [
-                {
-                    url: '/no-bg-repomind.png', // Ideally this would be a dynamically generated OG image endpoint
-                    width: 1200,
-                    height: 630,
-                    alt: 'Security Scan Summary',
-                }
-            ]
-        },
-        twitter: {
-            card: 'summary_large_image',
-            title: `RepoMind Security Scan: ${owner}/${repo}`,
-            description: desc,
-            images: ['/no-bg-repomind.png'],
-        }
-    };
+        canonical: `/report/${resolvedParams.scan_id}`,
+        ogImage: buildOgImageUrl("report", {
+            owner,
+            repo,
+            critical: summary.critical,
+            high: summary.high,
+            medium: summary.medium,
+            low: summary.low,
+            health: health.score,
+            grade: health.grade,
+            depth: scan.depth,
+        }),
+        ogTitle: `Security Report: ${owner}/${repo}`,
+        ogDescription: desc,
+        ogType: "website",
+        noIndex: true,
+    });
 }
 
 export default async function PrivateReportPage({ params }: { params: Promise<{ scan_id: string }> }) {

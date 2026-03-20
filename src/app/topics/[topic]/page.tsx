@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, ArrowRight, Star, FileCode } from 'lucide-react';
 import { getReposForTopic, isIndexableTopic } from '@/lib/repo-catalog';
+import { buildOgImageUrl, createSeoMetadata, truncateMetaText } from '@/lib/seo';
 
 interface Props {
     params: Promise<{
@@ -18,17 +19,23 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const displayTopic = topicSlug.replace(/-/g, ' ');
     const capitalizedTopic = displayTopic.charAt(0).toUpperCase() + displayTopic.slice(1);
     const indexable = await isIndexableTopic(topicSlug);
+    const repos = await getReposForTopic(topicSlug);
+    const topRepo = repos[0];
+    const totalStars = repos.reduce((sum, repo) => sum + repo.stars, 0);
 
-    return {
-        title: `Best Open Source ${capitalizedTopic} Repositories - RepoMind`,
+    return createSeoMetadata({
+        title: `Best Open Source ${capitalizedTopic} Repositories`,
         description: `Discover and analyze the top open-source GitHub repositories for ${displayTopic}. Deep architecture and code analysis powered by RepoMind.`,
-        openGraph: {
-            title: `Top ${capitalizedTopic} Repositories`,
-            description: `Explore the best open-source projects using ${displayTopic}.`
-        },
-        alternates: {
-            canonical: `/topics/${topic}`,
-        },
+        canonical: `/topics/${topic}`,
+        ogImage: buildOgImageUrl("topic", {
+            topic: displayTopic,
+            description: truncateMetaText(`Explore the best open-source projects using ${displayTopic}.`, 170),
+            repos: repos.length,
+            stars: totalStars,
+            topRepo: topRepo ? `${topRepo.owner}/${topRepo.repo}` : undefined,
+        }),
+        ogTitle: `Top ${capitalizedTopic} repositories`,
+        ogDescription: `Explore the best open-source projects using ${displayTopic}.`,
         robots: indexable
             ? { index: true, follow: true }
             : {
@@ -39,7 +46,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
                     follow: true,
                 },
             },
-    };
+    });
 }
 
 export default async function TopicPage({ params }: Props) {

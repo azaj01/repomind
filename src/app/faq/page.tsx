@@ -1,12 +1,14 @@
 import { Metadata } from "next";
+import { buildOgImageUrl, createSeoMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-    title: "FAQ - Codebase Analysis & Visual Architecture",
+export const metadata: Metadata = createSeoMetadata({
+    title: "FAQ",
     description: "Frequently asked questions about RepoMind's Agentic CAG, GitHub repository analysis, architecture visualization, and security scanning.",
-    alternates: {
-        canonical: "/faq",
-    },
-};
+    canonical: "/faq",
+    ogImage: buildOgImageUrl("marketing", { variant: "faq" }),
+    ogTitle: "RepoMind FAQ",
+    ogDescription: "Frequently asked questions about RepoMind's repository analysis and security scanning.",
+});
 
 const faqs = [
     {

@@ -1,14 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { buildOgImageUrl, createSeoMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Compare RepoMind With Alternative Workflows | RepoMind",
+export const metadata: Metadata = createSeoMetadata({
+  title: "Compare",
   description:
     "Compare RepoMind workflows for architecture analysis, AI code review, and security scanning to find the best fit for your team.",
-  alternates: {
-    canonical: "/compare",
-  },
-};
+  canonical: "/compare",
+  ogImage: buildOgImageUrl("marketing", { variant: "compare" }),
+  ogTitle: "Compare RepoMind workflows",
+  ogDescription: "See why high-context analysis beats snippet-first tooling for real repositories.",
+});
 
 const compareTracks = [
   {

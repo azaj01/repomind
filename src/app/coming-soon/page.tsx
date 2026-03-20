@@ -1,17 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-
-export const metadata: Metadata = {
-  title: "Coming Soon | RepoMind",
-  description: "This RepoMind page is under active development and will be available soon.",
-  alternates: {
-    canonical: "/coming-soon",
-  },
-  robots: {
-    index: false,
-    follow: false,
-  },
-};
+import { buildOgImageUrl, createSeoMetadata, truncateMetaText } from "@/lib/seo";
 
 function formatFeatureLabel(raw?: string): string {
   if (!raw) return "This feature";
@@ -20,6 +9,41 @@ function formatFeatureLabel(raw?: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<{ feature?: string; slug?: string }>;
+}): Promise<Metadata> {
+  const { feature, slug } = await searchParams;
+  const label = formatFeatureLabel(feature ?? slug);
+  const title = label === "This feature" ? "Coming Soon" : `${label} Coming Soon`;
+  const description = truncateMetaText(
+    label === "This feature"
+      ? "This RepoMind page is under active development and will be available soon."
+      : `${label} is on the roadmap. RepoMind is actively building this experience.`,
+    180,
+  );
+
+  return createSeoMetadata({
+    title,
+    description,
+    canonical: feature
+      ? `/coming-soon?feature=${encodeURIComponent(feature)}`
+      : slug
+        ? `/coming-soon?slug=${encodeURIComponent(slug)}`
+        : "/coming-soon",
+    ogImage: buildOgImageUrl("marketing", {
+      variant: "coming-soon",
+      title,
+      description,
+      footer: "Roadmap",
+    }),
+    ogTitle: title,
+    ogDescription: description,
+    noIndex: true,
+  });
 }
 
 export default async function ComingSoonPage({

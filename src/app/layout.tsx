@@ -5,6 +5,7 @@ import "./globals.css";
 import JsonLd from "./components/json-ld";
 import { Providers } from "@/components/Providers";
 import { getCanonicalSiteUrl } from "@/lib/site-url";
+import { buildOgImageUrl } from "@/lib/seo";
 
 const montserrat = Montserrat({
   variable: "--font-montserrat",
@@ -26,10 +27,10 @@ export const metadata: Metadata = {
   metadataBase: new URL(canonicalSiteUrl),
   applicationName: "RepoMind",
   title: {
-    default: "RepoMind - Stop reading it! Start talking to it!",
+    default: "RepoMind",
     template: "%s | RepoMind",
   },
-  description: "Agentic CAG-powered analysis for GitHub repositories and developer profiles. Chat with your codebase, generate visual flowcharts, uncover deep insights, detect vulnerabilities, and accelerate development with AI-driven repository intelligence.",
+  description: "Chat with GitHub repositories and developer profiles, generate architecture flowcharts, and run security analysis with RepoMind.",
   keywords: [
     "agentic AI",
     "compositional agentic generation",
@@ -61,16 +62,16 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
   },
   openGraph: {
-    title: "RepoMind - Stop reading it! Start talking to it!",
-    description: "Agentic CAG-powered analysis for GitHub repositories. Chat with your codebase, generate visual flowcharts, uncover deep insights, and accelerate development with AI-driven repository intelligence.",
+    title: "RepoMind",
+    description: "Chat with GitHub repositories and developer profiles, generate architecture flowcharts, and run security analysis with RepoMind.",
     url: canonicalSiteUrl,
     siteName: "RepoMind",
     images: [
       {
-        url: "/no-bg-repomind.png",
+        url: buildOgImageUrl("marketing", { variant: "home" }),
         width: 1200,
         height: 630,
-        alt: "RepoMind AI - GitHub Repository Visualizer and Chat",
+        alt: "RepoMind landing page preview",
       },
     ],
     locale: "en_US",
@@ -78,9 +79,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "RepoMind - Stop reading it! Start talking to it!",
-    description: "Agentic CAG-powered analysis for GitHub repositories. Chat with your codebase, generate visual flowcharts, uncover deep insights, and accelerate development.",
-    images: ["/no-bg-repomind.png"],
+    title: "RepoMind",
+    description: "Chat with GitHub repositories and developer profiles, generate architecture flowcharts, and run security analysis with RepoMind.",
+    images: [buildOgImageUrl("marketing", { variant: "home" })],
     creator: "@repomind",
   },
   robots: {

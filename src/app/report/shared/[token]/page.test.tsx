@@ -5,6 +5,7 @@ import { ReportContent } from "@/app/report/[scan_id]/ReportContent";
 const {
     authMock,
     resolveScanFromShareTokenMock,
+    peekScanFromShareTokenMock,
     getScanResultWithStatusMock,
     getPreviousScanMock,
     buildReportViewDataMock,
@@ -12,6 +13,7 @@ const {
 } = vi.hoisted(() => ({
     authMock: vi.fn(),
     resolveScanFromShareTokenMock: vi.fn(),
+    peekScanFromShareTokenMock: vi.fn(),
     getScanResultWithStatusMock: vi.fn(),
     getPreviousScanMock: vi.fn(),
     buildReportViewDataMock: vi.fn(),
@@ -20,6 +22,7 @@ const {
 
 vi.mock("@/lib/services/scan-share-links", () => ({
     resolveScanFromShareToken: resolveScanFromShareTokenMock,
+    peekScanFromShareToken: peekScanFromShareTokenMock,
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -39,7 +42,7 @@ vi.mock("@/lib/analytics", () => ({
     trackReportConversionEvent: trackReportConversionEventMock,
 }));
 
-import SharedReportByTokenPage from "@/app/report/shared/[token]/page";
+import SharedReportByTokenPage, { generateMetadata } from "@/app/report/shared/[token]/page";
 
 const scan = {
     id: "scan_1",
@@ -56,12 +59,47 @@ const scan = {
 describe("shared report page token resolution", () => {
     beforeEach(() => {
         resolveScanFromShareTokenMock.mockReset();
+        peekScanFromShareTokenMock.mockReset();
         getScanResultWithStatusMock.mockReset();
         getPreviousScanMock.mockReset();
         buildReportViewDataMock.mockReset();
         trackReportConversionEventMock.mockReset();
         authMock.mockReset();
         authMock.mockResolvedValue(null);
+    });
+
+    it("returns branded noindex metadata for invalid share links", async () => {
+        peekScanFromShareTokenMock.mockResolvedValue({ status: "invalid" });
+
+        const metadata = await generateMetadata({
+            params: Promise.resolve({ token: "bad-token" }),
+        });
+
+        expect(metadata.title).toBe("Invalid Share Link");
+        expect(metadata.robots?.index).toBe(false);
+        expect(metadata.openGraph?.images?.[0]?.url).toContain("type=marketing");
+        expect(metadata.openGraph?.images?.[0]?.url).toContain("variant=security-scanner");
+    });
+
+    it("builds detailed metadata for valid shared reports", async () => {
+        peekScanFromShareTokenMock.mockResolvedValue({
+            status: "ok",
+            linkId: "link_1",
+            scanId: "scan_1",
+            expiresAt: new Date(Date.now() + 60_000),
+        });
+        getScanResultWithStatusMock.mockResolvedValue({ status: "ok", scan });
+
+        const metadata = await generateMetadata({
+            params: Promise.resolve({ token: "valid-token" }),
+        });
+
+        expect(metadata.title).toBe("Shared Security Report: acme/widget");
+        expect(metadata.robots?.index).toBe(false);
+        expect(metadata.openGraph?.images?.[0]?.url).toContain("type=report");
+        expect(metadata.openGraph?.images?.[0]?.url).toContain("owner=acme");
+        expect(metadata.openGraph?.images?.[0]?.url).toContain("repo=widget");
+        expect(metadata.openGraph?.images?.[0]?.url).toContain("shared=true");
     });
 
     it("tracks invalid link events", async () => {

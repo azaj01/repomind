@@ -1,14 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { buildOgImageUrl, createSeoMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Repository Security Scanner for GitHub | RepoMind",
+export const metadata: Metadata = createSeoMetadata({
+  title: "Security Scanner",
   description:
     "Scan GitHub repositories for vulnerabilities with RepoMind. Get actionable findings and prioritize code security faster.",
-  alternates: {
-    canonical: "/security-scanner",
-  },
-};
+  canonical: "/security-scanner",
+  ogImage: buildOgImageUrl("marketing", { variant: "security-scanner" }),
+  ogTitle: "Repository security scanner",
+  ogDescription: "Find and fix vulnerabilities faster with actionable findings and context.",
+});
 
 export default function SecurityScannerPage() {
   return (

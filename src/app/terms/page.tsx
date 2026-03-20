@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
+import { buildOgImageUrl, createSeoMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Terms of Service | RepoMind",
-  description: "Terms of service for RepoMind.",
-  alternates: {
-    canonical: "/terms",
-  },
-};
+export const metadata: Metadata = createSeoMetadata({
+  title: "Terms of Service",
+  description: "Terms of service for using RepoMind responsibly and in compliance with applicable laws and platform policies.",
+  canonical: "/terms",
+  ogImage: buildOgImageUrl("marketing", { variant: "terms" }),
+  ogTitle: "Terms of Service",
+  ogDescription: "Terms of service for using RepoMind responsibly and in compliance with applicable laws and platform policies.",
+});
 
 export default function TermsPage() {
   return (

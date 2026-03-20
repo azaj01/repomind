@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
+import { buildOgImageUrl, createSeoMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Privacy Policy | RepoMind",
-  description: "Privacy policy for RepoMind.",
-  alternates: {
-    canonical: "/privacy",
-  },
-};
+export const metadata: Metadata = createSeoMetadata({
+  title: "Privacy Policy",
+  description: "How RepoMind handles account data, usage analytics, authentication, and scan-related information.",
+  canonical: "/privacy",
+  ogImage: buildOgImageUrl("marketing", { variant: "privacy" }),
+  ogTitle: "Privacy Policy",
+  ogDescription: "How RepoMind handles account data, usage analytics, authentication, and scan-related information.",
+});
 
 export default function PrivacyPage() {
   return (

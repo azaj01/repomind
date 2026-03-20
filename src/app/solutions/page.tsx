@@ -1,14 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { buildOgImageUrl, createSeoMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "RepoMind Solutions for Repository Analysis | RepoMind",
+export const metadata: Metadata = createSeoMetadata({
+  title: "Solutions",
   description:
     "Explore RepoMind solutions for repository analysis, architecture understanding, AI code review, and security scanning.",
-  alternates: {
-    canonical: "/solutions",
-  },
-};
+  canonical: "/solutions",
+  ogImage: buildOgImageUrl("marketing", { variant: "solutions" }),
+  ogTitle: "RepoMind Solutions",
+  ogDescription: "Choose a focused workflow for repository analysis, AI code review, or security scanning.",
+});
 
 const solutionCards = [
   {

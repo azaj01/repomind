@@ -103,7 +103,7 @@ export async function createScanShareLink(params: {
     };
 }
 
-export async function resolveScanFromShareToken(token: string): Promise<ScanShareResolution> {
+async function resolveScanFromShareTokenInternal(token: string, recordAccess: boolean): Promise<ScanShareResolution> {
     if (!isPlausibleToken(token)) {
         return { status: "invalid" };
     }
@@ -141,13 +141,15 @@ export async function resolveScanFromShareToken(token: string): Promise<ScanShar
         return { status: "expired" };
     }
 
-    await prisma.repoScanShareLink.update({
-        where: { id: link.id },
-        data: {
-            accessCount: { increment: 1 },
-            lastAccessedAt: new Date(),
-        },
-    });
+    if (recordAccess) {
+        await prisma.repoScanShareLink.update({
+            where: { id: link.id },
+            data: {
+                accessCount: { increment: 1 },
+                lastAccessedAt: new Date(),
+            },
+        });
+    }
 
     return {
         status: "ok",
@@ -155,6 +157,14 @@ export async function resolveScanFromShareToken(token: string): Promise<ScanShar
         scanId: link.scanId,
         expiresAt: link.expiresAt,
     };
+}
+
+export async function resolveScanFromShareToken(token: string): Promise<ScanShareResolution> {
+    return resolveScanFromShareTokenInternal(token, true);
+}
+
+export async function peekScanFromShareToken(token: string): Promise<ScanShareResolution> {
+    return resolveScanFromShareTokenInternal(token, false);
 }
 
 export async function getScanShareLinkById(linkId: string) {

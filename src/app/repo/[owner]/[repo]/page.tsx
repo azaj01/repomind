@@ -10,6 +10,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { CopyBadge } from '@/components/CopyBadge';
 import { normalizeReadmeForPreview } from './repo-page-utils';
+import { buildOgImageUrl, createSeoMetadata, truncateMetaText } from '@/lib/seo';
 
 interface Props {
     params: Promise<{
@@ -125,34 +126,58 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const knownUnavailable = valid ? await getCachedRepoUnavailable(owner, repo) : false;
     const shouldIndex = curated && !knownUnavailable;
 
-    return {
-        title: `${owner}/${repo} - RepoMind`,
-        description: `Analyze ${owner}/${repo} architecture, code quality, and security with RepoMind Agentic CAG.`,
-        openGraph: {
-            title: `${owner}/${repo} - RepoMind Analysis`,
-            description: `Deep AI analysis for ${owner}/${repo}.`,
-            images: [`/api/og?owner=${owner}&repo=${repo}`],
-        },
-        twitter: {
-            card: 'summary_large_image',
-            title: `${owner}/${repo} Architecture Analysis`,
-            description: `Deep AI analysis for ${owner}/${repo}.`,
-            images: [`/api/og?owner=${owner}&repo=${repo}`],
-        },
-        alternates: {
+    if (!valid) {
+        return createSeoMetadata({
+            title: `${owner}/${repo}`,
+            description: `Analyze ${owner}/${repo} architecture, code quality, and security with RepoMind Agentic CAG.`,
             canonical: `/repo/${owner}/${repo}`,
-        },
-        robots: shouldIndex
-            ? { index: true, follow: true }
-            : {
-                index: false,
-                follow: true,
-                googleBot: {
+            ogImage: buildOgImageUrl("repo", { owner, repo }),
+            ogTitle: `${owner}/${repo}`,
+            ogDescription: `Analyze ${owner}/${repo} architecture, code quality, and security with RepoMind Agentic CAG.`,
+            noIndex: true,
+        });
+    }
+
+    try {
+        const repoData = await getRepo(owner, repo);
+        return createSeoMetadata({
+            title: `${owner}/${repo}`,
+            description: `Analyze ${owner}/${repo} architecture, code quality, and security with RepoMind Agentic CAG.`,
+            canonical: `/repo/${owner}/${repo}`,
+            ogImage: buildOgImageUrl("repo", {
+                owner,
+                repo,
+                description: repoData.description,
+                stars: repoData.stargazers_count,
+                forks: repoData.forks_count,
+                language: repoData.language,
+            }),
+            ogTitle: `${owner}/${repo}`,
+            ogDescription: repoData.description
+                ? truncateMetaText(repoData.description, 160)
+                : `Analyze ${owner}/${repo} architecture, code quality, and security with RepoMind Agentic CAG.`,
+            robots: shouldIndex
+                ? { index: true, follow: true }
+                : {
                     index: false,
                     follow: true,
+                    googleBot: {
+                        index: false,
+                        follow: true,
+                    },
                 },
-            },
-    };
+        });
+    } catch {
+        return createSeoMetadata({
+            title: `${owner}/${repo}`,
+            description: `Analyze ${owner}/${repo} architecture, code quality, and security with RepoMind Agentic CAG.`,
+            canonical: `/repo/${owner}/${repo}`,
+            ogImage: buildOgImageUrl("repo", { owner, repo }),
+            ogTitle: `${owner}/${repo}`,
+            ogDescription: `Analyze ${owner}/${repo} architecture, code quality, and security with RepoMind Agentic CAG.`,
+            noIndex: true,
+        });
+    }
 }
 
 export default async function RepoPage({ params }: Props) {

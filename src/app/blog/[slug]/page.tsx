@@ -1,12 +1,12 @@
 import { getPublishedPostBySlug, getPublishedPosts } from "@/lib/services/blog-service";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import { ArrowLeft, Clock, Share2 } from "lucide-react";
 import Footer from "@/components/Footer";
 import { EnhancedMarkdown } from "@/components/EnhancedMarkdown";
 import { BlogPost } from "@prisma/client";
 import { Metadata } from "next";
+import { buildOgImageUrl, createSeoMetadata, truncateMetaText } from "@/lib/seo";
 
 // Generates static params for all blog posts
 export async function generateStaticParams() {
@@ -21,47 +21,58 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const post = await getPublishedPostBySlug(slug);
 
   if (!post) {
-    return {
+    return createSeoMetadata({
       title: "Post Not Found",
-      robots: {
-        index: false,
-        follow: false,
-      },
-    };
+      description: "This blog post could not be found.",
+      canonical: "/blog",
+      ogImage: buildOgImageUrl("marketing", { variant: "blog" }),
+      ogTitle: "Post Not Found",
+      ogDescription: "This blog post could not be found.",
+      noIndex: true,
+    });
   }
 
   const canonicalPath = `/blog/${post.slug}`;
   const publishedTime = (post.publishedAt ?? post.createdAt).toISOString();
 
-  return {
+  const description = truncateMetaText(post.excerpt, 180);
+  const keywords = typeof post.keywords === "string"
+    ? post.keywords
+        .split(",")
+        .map((keyword) => keyword.trim())
+        .filter(Boolean)
+    : undefined;
+
+  const metadata = createSeoMetadata({
     title: post.title,
-    description: post.excerpt,
-    keywords: post.keywords ?? undefined,
-    alternates: {
-      canonical: canonicalPath,
-    },
-    openGraph: {
+    description,
+    keywords,
+    canonical: canonicalPath,
+    ogImage: buildOgImageUrl("blog", {
       title: post.title,
-      description: post.excerpt,
-      type: "article",
-      url: canonicalPath,
-      images: [
-        {
-          url: post.image,
-          alt: post.title,
-        },
-      ],
-      publishedTime,
-      modifiedTime: post.updatedAt.toISOString(),
-      authors: [post.author],
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: post.title,
-      description: post.excerpt,
-      images: [post.image],
-    },
+      description,
+      category: post.category,
+      image: post.image,
+      author: post.author,
+    }),
+    ogTitle: post.title,
+    ogDescription: description,
+    ogType: "article",
+    twitterImage: post.image,
+    twitterTitle: post.title,
+    twitterDescription: description,
+  });
+
+  metadata.openGraph = {
+    ...metadata.openGraph,
+    type: "article",
+    url: canonicalPath,
+    publishedTime,
+    modifiedTime: post.updatedAt.toISOString(),
+    authors: [post.author],
   };
+
+  return metadata;
 }
 
 export default async function BlogPostPage({ params }: { params: Promise<{ slug: string }> }) {

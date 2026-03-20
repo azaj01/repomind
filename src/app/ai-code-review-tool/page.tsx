@@ -1,14 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { buildOgImageUrl, createSeoMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "AI Code Review Tool for GitHub Repos | RepoMind",
+export const metadata: Metadata = createSeoMetadata({
+  title: "AI Code Review Tool",
   description:
     "RepoMind is an AI code review tool that helps developers inspect repository logic, review changes, and catch issues faster.",
-  alternates: {
-    canonical: "/ai-code-review-tool",
-  },
-};
+  canonical: "/ai-code-review-tool",
+  ogImage: buildOgImageUrl("marketing", { variant: "ai-code-review-tool" }),
+  ogTitle: "AI code review with full context",
+  ogDescription: "Review implementation quality with repository-wide context, not isolated snippets.",
+});
 
 export default function AICodeReviewToolPage() {
   return (

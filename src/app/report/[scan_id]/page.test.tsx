@@ -87,7 +87,24 @@ describe("private report page access", () => {
         canAccessPrivateReportMock.mockReturnValue(false);
 
         const metadata = await generateMetadata({ params: Promise.resolve({ scan_id: "scan_1" }) });
-        expect(metadata.title).toBe("Private Security Report - RepoMind");
+        expect(metadata.title).toBe("Private Security Report");
+        expect(metadata.robots?.index).toBe(false);
+        expect(metadata.openGraph?.images?.[0]?.url).toContain("type=marketing");
+        expect(metadata.openGraph?.images?.[0]?.url).toContain("variant=security-scanner");
+    });
+
+    it("builds detailed metadata for authorized scans", async () => {
+        getScanResultWithStatusMock.mockResolvedValue({ status: "ok", scan });
+        authMock.mockResolvedValue({ user: { id: "user_1" } });
+        canAccessPrivateReportMock.mockReturnValue(true);
+
+        const metadata = await generateMetadata({ params: Promise.resolve({ scan_id: "scan_1" }) });
+        expect(metadata.title).toBe("Security Report: acme/widget");
+        expect(metadata.description).toContain("1 critical, 0 high, 0 medium, 0 low");
+        expect(metadata.robots?.index).toBe(false);
+        expect(metadata.openGraph?.images?.[0]?.url).toContain("type=report");
+        expect(metadata.openGraph?.images?.[0]?.url).toContain("owner=acme");
+        expect(metadata.openGraph?.images?.[0]?.url).toContain("repo=widget");
     });
 
     it("calls notFound when unauthorized", async () => {

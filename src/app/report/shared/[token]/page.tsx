@@ -2,15 +2,32 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { getPreviousScan, getScanResultWithStatus } from "@/lib/services/scan-storage";
-import { resolveScanFromShareToken } from "@/lib/services/scan-share-links";
+import { peekScanFromShareToken, resolveScanFromShareToken } from "@/lib/services/scan-share-links";
 import { buildReportViewData } from "@/lib/services/report-service";
 import { trackReportConversionEvent } from "@/lib/analytics";
 import { ReportContent } from "@/app/report/[scan_id]/ReportContent";
 import { ReportExpiredState } from "@/app/report/components/ReportExpiredState";
+import { buildOgImageUrl, buildReportSummaryDescription, createSeoMetadata, estimateSecurityHealthScore } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
 
 type SharedLinkFailureReason = "invalid" | "expired" | "revoked";
+
+function buildSharedLinkFailureMetadata(title: string, description: string, token: string): Metadata {
+    return createSeoMetadata({
+        title,
+        description,
+        canonical: `/report/shared/${token}`,
+        ogImage: buildOgImageUrl("marketing", {
+            variant: "security-scanner",
+            title,
+            description,
+        }),
+        ogTitle: title,
+        ogDescription: description,
+        noIndex: true,
+    });
+}
 
 function SharedLinkFailureState({ reason }: { reason: SharedLinkFailureReason }) {
     const messages: Record<SharedLinkFailureReason, { title: string; body: string }> = {
@@ -49,15 +66,83 @@ function SharedLinkFailureState({ reason }: { reason: SharedLinkFailureReason })
     );
 }
 
-export async function generateMetadata(): Promise<Metadata> {
-    return {
-        title: "REPOMIND SECURITY REPORT",
-        description: "Private security report shared through an expiring signed URL.",
-        robots: {
-            index: false,
-            follow: false,
-        },
-    };
+export async function generateMetadata({
+    params,
+}: {
+    params: Promise<{ token: string }>;
+}): Promise<Metadata> {
+    const { token } = await params;
+    const resolution = await peekScanFromShareToken(token);
+
+    if (resolution.status !== "ok") {
+        if (resolution.status === "invalid") {
+            return buildSharedLinkFailureMetadata(
+                "Invalid Share Link",
+                "This report link is not valid. Ask the report owner to generate a fresh signed link.",
+                token,
+            );
+        }
+
+        if (resolution.status === "expired") {
+            return buildSharedLinkFailureMetadata(
+                "Report Expired",
+                "This report is no longer available. Run a new scan to generate a fresh report.",
+                token,
+            );
+        }
+
+        return buildSharedLinkFailureMetadata(
+            "Share Link Revoked",
+            "The report owner revoked this link. Request a new signed link if access is still needed.",
+            token,
+        );
+    }
+
+    const scanResult = await getScanResultWithStatus(resolution.scanId);
+    if (scanResult.status === "not_found") {
+        return buildSharedLinkFailureMetadata(
+            "Invalid Share Link",
+            "This report link is not valid. Ask the report owner to generate a fresh signed link.",
+            token,
+        );
+    }
+
+    const scan = scanResult.scan;
+    const health = estimateSecurityHealthScore({
+        critical: scan.summary.critical,
+        high: scan.summary.high,
+        medium: scan.summary.medium,
+        low: scan.summary.low,
+    });
+    const description = buildReportSummaryDescription({
+        critical: scan.summary.critical,
+        high: scan.summary.high,
+        medium: scan.summary.medium,
+        low: scan.summary.low,
+        score: health.score,
+        grade: health.grade,
+    });
+
+    return createSeoMetadata({
+        title: `Shared Security Report: ${scan.owner}/${scan.repo}`,
+        description,
+        canonical: `/report/shared/${token}`,
+        ogImage: buildOgImageUrl("report", {
+            owner: scan.owner,
+            repo: scan.repo,
+            critical: scan.summary.critical,
+            high: scan.summary.high,
+            medium: scan.summary.medium,
+            low: scan.summary.low,
+            health: health.score,
+            grade: health.grade,
+            depth: scan.depth,
+            shared: "true",
+        }),
+        ogTitle: `Shared Security Report: ${scan.owner}/${scan.repo}`,
+        ogDescription: description,
+        noIndex: true,
+    });
 }
 
 export default async function SharedReportByTokenPage({

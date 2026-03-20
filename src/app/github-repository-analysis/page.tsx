@@ -1,14 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { buildOgImageUrl, createSeoMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "GitHub Repository Analysis Tool | RepoMind",
+export const metadata: Metadata = createSeoMetadata({
+  title: "GitHub Repository Analysis",
   description:
     "Run full GitHub repository analysis with RepoMind. Understand architecture, code behavior, and repository risk before deep manual review.",
-  alternates: {
-    canonical: "/github-repository-analysis",
-  },
-};
+  canonical: "/github-repository-analysis",
+  ogImage: buildOgImageUrl("marketing", { variant: "github-repository-analysis" }),
+  ogTitle: "GitHub repository analysis",
+  ogDescription: "Understand unfamiliar repositories faster before integrating or contributing.",
+});
 
 export default function GitHubRepositoryAnalysisPage() {
   return (

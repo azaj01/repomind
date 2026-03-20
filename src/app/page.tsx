@@ -4,25 +4,26 @@ import HomeClient from "./HomeClient";
 import { getHomepagePosts } from "@/lib/services/blog-service";
 import { getCuratedRepos } from "@/lib/repo-catalog";
 import { getPublicStats } from "@/lib/analytics";
+import { buildOgImageUrl, createSeoMetadata } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-    title: "Chat with Any GitHub Repo & Visualize Architecture | RepoMind",
+export const metadata: Metadata = createSeoMetadata({
+    title: "Chat with any GitHub repo",
     description:
-        "Stop reading code. Use RepoMind's Agentic AI to chat directly with any GitHub repository or developer profile. Instantly generate architecture flowcharts, understand complex codebases, and run security scans without cloning.",
+        "Use RepoMind to chat with GitHub repositories and developer profiles, visualize architecture, and run security analysis with Agentic CAG.",
     keywords: [
-        "code analyzer",
-        "security scanner",
-        "repo analyzer",
-        "github code analyzer",
+        "github repo chat",
+        "developer profile analysis",
+        "architecture flowcharts",
         "repository security scanner",
         "ai code review tool",
     ],
-    alternates: {
-        canonical: "/",
-    },
-};
+    canonical: "/",
+    ogImage: buildOgImageUrl("marketing", { variant: "home" }),
+    ogTitle: "RepoMind",
+    ogDescription: "Chat with GitHub repositories and developer profiles, generate architecture flowcharts, and run security analysis.",
+});
 
 export default async function Home() {
     const [latestPosts, trendingRepos, publicStats] = await Promise.all([
