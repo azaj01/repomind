@@ -9,7 +9,7 @@ import { buildOgImageUrl, createSeoMetadata } from "@/lib/seo";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = createSeoMetadata({
-    title: "Chat with any GitHub repo",
+    title: "AI-Powered Code Intelligence",
     description:
         "Use RepoMind to chat with GitHub repositories and developer profiles, visualize architecture, and run security analysis with Agentic CAG.",
     keywords: [
@@ -20,7 +20,7 @@ export const metadata: Metadata = createSeoMetadata({
         "ai code review tool",
     ],
     canonical: "/",
-    ogTitle: "RepoMind",
+    ogTitle: "AI-Powered Code Intelligence | RepoMind",
     ogDescription: "Chat with GitHub repositories and developer profiles, generate architecture flowcharts, and run security analysis.",
 });
 

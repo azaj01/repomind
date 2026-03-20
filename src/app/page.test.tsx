@@ -8,9 +8,10 @@ import { metadata } from "./page";
 
 describe("home page metadata", () => {
     it("uses the landing page hero art and branded copy", () => {
-        expect(metadata.title).toBe("Chat with any GitHub repo");
+        expect(metadata.title).toBe("AI-Powered Code Intelligence");
         expect(metadata.description).toContain("GitHub repositories and developer profiles");
-        expect(metadata.openGraph?.title).toBe("RepoMind");
+        expect(metadata.openGraph?.title).toBe("AI-Powered Code Intelligence | RepoMind");
+        expect(metadata.twitter?.title).toBe("AI-Powered Code Intelligence | RepoMind");
         expect(metadata.openGraph?.images?.[0]?.url).toContain("type=marketing");
         expect(metadata.openGraph?.images?.[0]?.url).toContain("variant=home");
         expect(metadata.twitter?.images?.[0]).toContain("type=marketing");
