@@ -25,7 +25,7 @@ const socialLinks = [
     { name: "LinkedIn", icon: Linkedin },
 ];
 
-const footerLinks = {
+export const footerLinks = {
     explore: [
         { name: "Solutions", href: "/solutions" },
         { name: "Compare", href: "/compare" },
@@ -39,9 +39,9 @@ const footerLinks = {
         { name: "Terms", href: "/terms" },
     ],
     product: [
-        { name: "Repository Analysis", href: "/coming-soon?feature=repository-analysis" },
-        { name: "AI Code Review Tool", href: "/coming-soon?feature=ai-code-review-tool" },
-        { name: "Security Scanner", href: "/coming-soon?feature=security-scanner" },
+        { name: "Repository Analysis", href: "/github-repository-analysis" },
+        { name: "AI Code Review Tool", href: "/ai-code-review-tool" },
+        { name: "Security Scanner", href: "/security-scanner" },
     ]
 };
 

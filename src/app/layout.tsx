@@ -5,7 +5,6 @@ import "./globals.css";
 import JsonLd from "./components/json-ld";
 import { Providers } from "@/components/Providers";
 import { getCanonicalSiteUrl } from "@/lib/site-url";
-import { buildOgImageUrl } from "@/lib/seo";
 
 const montserrat = Montserrat({
   variable: "--font-montserrat",
@@ -30,21 +29,16 @@ export const metadata: Metadata = {
     default: "RepoMind",
     template: "%s | RepoMind",
   },
-  description: "Chat with GitHub repositories and developer profiles, generate architecture flowcharts, and run security analysis with RepoMind.",
+  description: "Analyze GitHub repositories with full-context AI for architecture understanding, code review, and security scanning.",
   keywords: [
-    "agentic AI",
-    "compositional agentic generation",
-    "github repo visualizer",
-    "codebase analysis",
-    "ai code assistant",
-    "repository flowcharts",
+    "github repository analysis",
+    "github code analyzer",
+    "ai code review tool",
+    "repository security scanner",
+    "repository risk analysis",
+    "architecture analysis",
     "code intelligence",
-    "github repo chat",
-    "repository chat",
-    "code understanding",
     "developer tools",
-    "static analysis",
-    "vulnerability detection",
   ],
   icons: {
     icon: [
@@ -63,7 +57,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "RepoMind",
-    description: "Chat with GitHub repositories and developer profiles, generate architecture flowcharts, and run security analysis with RepoMind.",
+    description: "Analyze GitHub repositories with full-context AI for architecture understanding, code review, and security scanning.",
     url: canonicalSiteUrl,
     siteName: "RepoMind",
     images: [
@@ -80,7 +74,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "RepoMind",
-    description: "Chat with GitHub repositories and developer profiles, generate architecture flowcharts, and run security analysis with RepoMind.",
+    description: "Analyze GitHub repositories with full-context AI for architecture understanding, code review, and security scanning.",
     images: ["/assets/landing_page.png"],
     creator: "@repomind",
   },

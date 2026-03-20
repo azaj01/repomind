@@ -9,19 +9,20 @@ import { buildOgImageUrl, createSeoMetadata } from "@/lib/seo";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = createSeoMetadata({
-    title: "AI-Powered Code Intelligence",
+    title: "GitHub Repository Analysis, AI Code Review & Security Scanning",
     description:
-        "Use RepoMind to chat with GitHub repositories and developer profiles, visualize architecture, and run security analysis with Agentic CAG.",
+        "Analyze GitHub repositories with full-context AI. Use RepoMind for architecture understanding, AI code review, and repository security scanning.",
     keywords: [
-        "github repo chat",
-        "developer profile analysis",
-        "architecture flowcharts",
-        "repository security scanner",
+        "github repository analysis",
         "ai code review tool",
+        "repository security scanner",
+        "github code analyzer",
+        "repository risk analysis",
     ],
     canonical: "/",
-    ogTitle: "AI-Powered Code Intelligence | RepoMind",
-    ogDescription: "Chat with GitHub repositories and developer profiles, generate architecture flowcharts, and run security analysis.",
+    ogImage: buildOgImageUrl("marketing", { variant: "home" }),
+    ogTitle: "GitHub Repository Analysis, AI Code Review & Security Scanning | RepoMind",
+    ogDescription: "Understand architecture, review code with context, and prioritize repository security risks faster.",
 });
 
 export default async function Home() {

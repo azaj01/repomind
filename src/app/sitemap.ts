@@ -72,6 +72,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
             priority: 0.5,
         },
         {
+            url: `${baseUrl}/faq`,
+            lastModified: getFileModDate("src/app/faq/page.tsx"),
+            changeFrequency: "monthly",
+            priority: 0.7,
+        },
+        {
             url: `${baseUrl}/privacy`,
             lastModified: getFileModDate("src/app/privacy/page.tsx"),
             changeFrequency: "yearly",
@@ -100,6 +106,54 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
             lastModified: getFileModDate("src/app/ai-code-review-tool/page.tsx"),
             changeFrequency: "weekly",
             priority: 0.85,
+        },
+        {
+            url: `${baseUrl}/github-code-analyzer`,
+            lastModified: getFileModDate("src/app/github-code-analyzer/page.tsx"),
+            changeFrequency: "weekly",
+            priority: 0.8,
+        },
+        {
+            url: `${baseUrl}/typescript-code-analyzer`,
+            lastModified: getFileModDate("src/app/typescript-code-analyzer/page.tsx"),
+            changeFrequency: "weekly",
+            priority: 0.8,
+        },
+        {
+            url: `${baseUrl}/nodejs-security-scanner`,
+            lastModified: getFileModDate("src/app/nodejs-security-scanner/page.tsx"),
+            changeFrequency: "weekly",
+            priority: 0.8,
+        },
+        {
+            url: `${baseUrl}/open-source-security-scanner`,
+            lastModified: getFileModDate("src/app/open-source-security-scanner/page.tsx"),
+            changeFrequency: "weekly",
+            priority: 0.8,
+        },
+        {
+            url: `${baseUrl}/repository-risk-analysis`,
+            lastModified: getFileModDate("src/app/repository-risk-analysis/page.tsx"),
+            changeFrequency: "weekly",
+            priority: 0.8,
+        },
+        {
+            url: `${baseUrl}/static-analysis-vs-repomind`,
+            lastModified: getFileModDate("src/app/static-analysis-vs-repomind/page.tsx"),
+            changeFrequency: "weekly",
+            priority: 0.75,
+        },
+        {
+            url: `${baseUrl}/repomind-vs-sonarqube`,
+            lastModified: getFileModDate("src/app/repomind-vs-sonarqube/page.tsx"),
+            changeFrequency: "weekly",
+            priority: 0.75,
+        },
+        {
+            url: `${baseUrl}/repomind-vs-snyk`,
+            lastModified: getFileModDate("src/app/repomind-vs-snyk/page.tsx"),
+            changeFrequency: "weekly",
+            priority: 0.75,
         },
         ...blogPosts.map((post) => ({
             url: `${baseUrl}/blog/${post.slug}`,

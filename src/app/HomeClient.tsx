@@ -20,18 +20,39 @@ import { InstallPWA } from "@/components/InstallPWA";
 import PublicStats from "@/components/PublicStats";
 import AuthButton from "@/components/AuthButton";
 import Footer from "@/components/Footer";
+import JsonLdScript from "@/components/JsonLdScript";
+import SeoVisual from "@/components/seo/SeoVisual";
 import type { SearchHistoryItem } from "@/lib/services/history-service";
 import { INVALID_SESSION_ERROR_PARAM } from "@/lib/session-guard";
 import { BlogPost } from "@prisma/client";
 import { CatalogRepoEntry } from "@/lib/repo-catalog";
 import { normalizeGitHubInput } from "@/lib/utils";
 import RepoSearch from "@/components/RepoSearch";
+import { buildFaqStructuredData, buildSoftwareApplicationStructuredData } from "@/lib/structured-data";
 
 type PublicStatsData = {
     totalVisitors: number;
     totalQueries: number;
     totalScans: number;
 };
+
+const HOMEPAGE_FAQ = [
+    {
+        question: "What does RepoMind help me do?",
+        answer:
+            "RepoMind helps you analyze GitHub repositories with full-context AI so you can understand architecture, review code, and prioritize security risks faster.",
+    },
+    {
+        question: "How is Agentic CAG different from snippet-only analysis?",
+        answer:
+            "Agentic CAG selects and loads full relevant files to preserve system-level context, rather than relying only on disconnected snippets.",
+    },
+    {
+        question: "Can I use RepoMind for open-source due diligence?",
+        answer:
+            "Yes. RepoMind is designed for fast repository understanding before adoption, contribution, migration, or security review.",
+    },
+];
 
 export default function HomeClient({
     initialPosts = [],
@@ -53,6 +74,19 @@ export default function HomeClient({
 
     const visibleRepos = trendingRepos.slice(0, visibleReposCount);
     const hasMoreRepos = visibleReposCount < trendingRepos.length;
+    const softwareSchema = buildSoftwareApplicationStructuredData({
+        name: "RepoMind",
+        description:
+            "RepoMind helps developers analyze GitHub repositories for architecture understanding, AI code review, and security scanning.",
+        path: "/",
+        featureList: [
+            "GitHub repository analysis",
+            "Architecture mapping",
+            "AI code review workflow",
+            "Repository security scanning",
+        ],
+    });
+    const faqSchema = buildFaqStructuredData(HOMEPAGE_FAQ);
 
     useEffect(() => {
         if (session) {
@@ -115,22 +149,34 @@ export default function HomeClient({
                         />
                     </div>
 
-                    <h1 className="text-4xl sm:text-5xl md:text-7xl font-bold tracking-tight mb-2 md:mb-6 bg-clip-text text-transparent bg-gradient-to-b from-white to-white/60 relative w-fit mx-auto">
-                        RepoMind
-                        <div className="hidden md:block absolute -right-20 -top-4">
-                            <WhatsNewBadge />
-                        </div>
+                    <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight mb-4 bg-clip-text text-transparent bg-gradient-to-b from-white to-white/70 relative">
+                        GitHub Repository Analysis,
+                        <br />
+                        AI Code Review, and Security Scanning
                     </h1>
-                    <div className="mb-6 md:hidden">
+                    <div className="mb-6">
                         <WhatsNewBadge />
                     </div>
 
                     <CAGBadge />
 
-                    <p className="text-base sm:text-lg md:text-xl text-zinc-400 mb-8 max-w-lg mx-auto">
-                        Understand any codebase in seconds. Deep dive into repositories,
-                        explore profiles, run deep security scans and much more.
+                    <p className="text-base sm:text-lg md:text-xl text-zinc-300 mb-5 max-w-2xl mx-auto">
+                        Understand unfamiliar repositories faster with context-aware AI.
+                        Move from URL to architecture clarity, code review insights, and actionable risk triage.
                     </p>
+                    <p className="text-sm md:text-base text-zinc-500 mb-8 max-w-xl mx-auto">
+                        Powered by <strong className="text-zinc-300">Agentic CAG</strong>, RepoMind preserves full-file context for reliable repository analysis.
+                    </p>
+
+                    <div className="w-full max-w-4xl mb-10">
+                        <SeoVisual
+                            variant="hero-flow"
+                            ariaLabel="RepoMind hero flow from repository URL to architecture, review, and security output"
+                            sizeMode="wide"
+                            animate
+                            priority="high"
+                        />
+                    </div>
 
                     {hasInvalidSessionError && (
                         <div className="w-full max-w-md mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
@@ -171,6 +217,152 @@ export default function HomeClient({
                 <BentoFeatures />
                 <SecurityBanner />
             </div>
+
+            <section className="relative z-10 w-full bg-black py-24 px-6 border-t border-white/5">
+                <div className="max-w-7xl mx-auto">
+                    <div className="text-center mb-12">
+                        <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">How RepoMind Works</h2>
+                        <p className="text-zinc-400 text-lg max-w-3xl mx-auto">
+                            Intent-first workflows for repository analysis, architecture clarity, code review, and security prioritization.
+                        </p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
+                            <h3 className="font-semibold mb-2">1. Start with a URL</h3>
+                            <p className="text-zinc-400 text-sm">Paste a GitHub repository URL and select your goal.</p>
+                        </article>
+                        <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
+                            <h3 className="font-semibold mb-2">2. Build context</h3>
+                            <p className="text-zinc-400 text-sm">Agentic CAG gathers full-file context needed for reliable understanding.</p>
+                        </article>
+                        <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
+                            <h3 className="font-semibold mb-2">3. Analyze deeply</h3>
+                            <p className="text-zinc-400 text-sm">Map architecture, review implementation, and identify risk hotspots.</p>
+                        </article>
+                        <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
+                            <h3 className="font-semibold mb-2">4. Take action</h3>
+                            <p className="text-zinc-400 text-sm">Get outputs you can use immediately in engineering and security workflows.</p>
+                        </article>
+                    </div>
+                </div>
+            </section>
+
+            <section className="relative z-10 w-full bg-zinc-950 py-24 px-6 border-t border-white/5">
+                <div className="max-w-7xl mx-auto">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
+                        <div>
+                            <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-5">Use Cases That Drive Decisions</h2>
+                            <p className="text-zinc-400 text-lg mb-8">
+                                RepoMind helps teams reduce uncertainty before adoption, release, and remediation decisions.
+                            </p>
+                            <div className="space-y-4">
+                                <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
+                                    <h3 className="text-xl font-semibold mb-2">Repository Due Diligence</h3>
+                                    <p className="text-zinc-400">Evaluate unfamiliar repositories before adopting dependencies or onboarding teams.</p>
+                                </article>
+                                <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
+                                    <h3 className="text-xl font-semibold mb-2">Context-Aware Code Review</h3>
+                                    <p className="text-zinc-400">Review implementation quality with repository context, not isolated snippets.</p>
+                                </article>
+                                <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
+                                    <h3 className="text-xl font-semibold mb-2">Security Prioritization</h3>
+                                    <p className="text-zinc-400">Surface actionable risk signals and triage findings with engineering context.</p>
+                                </article>
+                            </div>
+                        </div>
+                        <div className="space-y-6">
+                            <SeoVisual
+                                variant="analysis-workflow"
+                                ariaLabel="Repository analysis workflow visualization"
+                                sizeMode="wide"
+                                animate
+                                priority="low"
+                            />
+                            <SeoVisual
+                                variant="trust-signal"
+                                ariaLabel="Trust and reliability visualization"
+                                sizeMode="wide"
+                                animate
+                                priority="low"
+                            />
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section className="relative z-10 w-full bg-black py-24 px-6 border-t border-white/5">
+                <div className="max-w-6xl mx-auto">
+                    <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6 text-center">Output Examples</h2>
+                    <p className="text-zinc-400 text-lg mb-10 text-center max-w-3xl mx-auto">
+                        Use RepoMind to generate architecture maps, code-review insights, and security recommendations that teams can act on quickly.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                        <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
+                            <h3 className="text-lg font-semibold mb-3">Architecture Snapshot</h3>
+                            <p className="text-zinc-400 text-sm mb-4">Clear system-level understanding for onboarding and due diligence.</p>
+                            <Link href="/github-repository-analysis" className="text-cyan-300 text-sm hover:text-cyan-200 transition-colors">
+                                See repository analysis workflow
+                            </Link>
+                        </article>
+                        <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
+                            <h3 className="text-lg font-semibold mb-3">Code Review Insights</h3>
+                            <p className="text-zinc-400 text-sm mb-4">Context-aware findings on logic, dependencies, and potential blind spots.</p>
+                            <Link href="/ai-code-review-tool" className="text-cyan-300 text-sm hover:text-cyan-200 transition-colors">
+                                Explore AI code review
+                            </Link>
+                        </article>
+                        <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
+                            <h3 className="text-lg font-semibold mb-3">Security Triage Brief</h3>
+                            <p className="text-zinc-400 text-sm mb-4">Severity framing and remediation direction for faster action.</p>
+                            <Link href="/security-scanner" className="text-cyan-300 text-sm hover:text-cyan-200 transition-colors">
+                                Explore security scanner
+                            </Link>
+                        </article>
+                    </div>
+                </div>
+            </section>
+
+            <section className="relative z-10 w-full bg-zinc-950 py-24 px-6 border-t border-white/5">
+                <div className="max-w-5xl mx-auto">
+                    <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">Why Full-File Context Matters</h2>
+                    <p className="text-zinc-300 text-lg leading-relaxed mb-6">
+                        Snippet-only approaches can lose architecture relationships and control-flow context. RepoMind uses Agentic CAG to preserve the connections that matter for real engineering decisions.
+                    </p>
+                    <p className="text-zinc-400 leading-relaxed mb-8">
+                        This context-first approach improves the quality of repository understanding, code review feedback, and security prioritization.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <SeoVisual
+                            variant="comparison-grid"
+                            ariaLabel="Comparison of context-aware analysis and snippet-only workflows"
+                            sizeMode="compact"
+                            animate
+                            priority="low"
+                        />
+                        <SeoVisual
+                            variant="review-workflow"
+                            ariaLabel="Code review workflow visualization"
+                            sizeMode="compact"
+                            animate
+                            priority="low"
+                        />
+                    </div>
+                </div>
+            </section>
+
+            <section className="relative z-10 w-full bg-black py-24 px-6 border-t border-white/5">
+                <div className="max-w-5xl mx-auto">
+                    <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-10">Frequently Asked Questions</h2>
+                    <div className="space-y-5">
+                        {HOMEPAGE_FAQ.map((item) => (
+                            <article key={item.question} className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
+                                <h3 className="text-xl font-semibold mb-3">{item.question}</h3>
+                                <p className="text-zinc-400 leading-relaxed">{item.answer}</p>
+                            </article>
+                        ))}
+                    </div>
+                </div>
+            </section>
 
 
             {trendingRepos.length > 0 && (
@@ -332,25 +524,8 @@ export default function HomeClient({
             )}
 
             <Footer />
-
-            <script
-                type="application/ld+json"
-                dangerouslySetInnerHTML={{
-                    __html: JSON.stringify({
-                        "@context": "https://schema.org",
-                        "@type": "SoftwareApplication",
-                        "name": "RepoMind",
-                        "applicationCategory": "DeveloperApplication",
-                        "operatingSystem": "Web",
-                        "offers": {
-                            "@type": "Offer",
-                            "price": "0",
-                            "priceCurrency": "USD",
-                        },
-                        "description": "RepoMind is a premium AI-powered platform for codebase mastery, enabling developers to analyze, visualize, and chat with any GitHub repository or profile instantly.",
-                    }),
-                }}
-            />
+            <JsonLdScript data={softwareSchema} />
+            <JsonLdScript data={faqSchema} />
             <InstallPWA />
         </main>
     );

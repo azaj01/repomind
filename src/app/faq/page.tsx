@@ -1,5 +1,8 @@
 import { Metadata } from "next";
+import Link from "next/link";
+import JsonLdScript from "@/components/JsonLdScript";
 import { buildOgImageUrl, createSeoMetadata } from "@/lib/seo";
+import { buildBreadcrumbStructuredData, buildFaqStructuredData } from "@/lib/structured-data";
 
 export const metadata: Metadata = createSeoMetadata({
     title: "FAQ",
@@ -42,25 +45,25 @@ const faqs = [
 ];
 
 export default function FAQPage() {
-    const faqSchema = {
-        "@context": "https://schema.org",
-        "@type": "FAQPage",
-        mainEntity: faqs.map((faq) => ({
-            "@type": "Question",
-            name: faq.question,
-            acceptedAnswer: {
-                "@type": "Answer",
-                text: faq.answer,
-            },
-        })),
-    };
+    const faqSchema = buildFaqStructuredData(faqs.map((faq) => ({
+        question: faq.question,
+        answer: faq.answer,
+    })));
+    const breadcrumbSchema = buildBreadcrumbStructuredData([
+        { name: "Home", path: "/" },
+        { name: "FAQ", path: "/faq" },
+    ]);
 
     return (
         <main className="min-h-screen max-w-4xl mx-auto py-24 px-6">
-            <script
-                type="application/ld+json"
-                dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
-            />
+            <JsonLdScript data={faqSchema} />
+            <JsonLdScript data={breadcrumbSchema} />
+
+            <nav aria-label="Breadcrumb" className="mb-8 text-sm text-zinc-400 flex items-center gap-2">
+                <Link href="/" className="hover:text-white transition-colors">Home</Link>
+                <span>/</span>
+                <span className="text-zinc-200">FAQ</span>
+            </nav>
             
             <div className="mb-12">
                 <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-4 text-white">Frequently Asked Questions</h1>
@@ -77,9 +80,9 @@ export default function FAQPage() {
             </div>
             
             <div className="mt-16 text-center">
-                <a href="/" className="inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-black bg-white hover:bg-zinc-200 transition-colors">
+                <Link href="/" className="inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-black bg-white hover:bg-zinc-200 transition-colors">
                     Start Analyzing for Free
-                </a>
+                </Link>
             </div>
         </main>
     );

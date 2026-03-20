@@ -70,4 +70,20 @@ describe("sitemap blog metadata", () => {
     expect(routes.some((entry) => entry.url === "https://repomind.in/topics/typescript")).toBe(true);
     expect(routes.some((entry) => entry.url === "https://repomind.in/topics/react")).toBe(true);
   });
+
+  it("includes core SEO landing pages and excludes coming-soon routes", async () => {
+    getPublishedPostsMock.mockResolvedValue([]);
+    getCuratedReposMock.mockResolvedValue([]);
+    getIndexableTopicsMock.mockResolvedValue([]);
+
+    const routes = await sitemap();
+
+    expect(routes.some((entry) => entry.url === "https://repomind.in/faq")).toBe(true);
+    expect(routes.some((entry) => entry.url === "https://repomind.in/github-code-analyzer")).toBe(true);
+    expect(routes.some((entry) => entry.url === "https://repomind.in/typescript-code-analyzer")).toBe(true);
+    expect(routes.some((entry) => entry.url === "https://repomind.in/nodejs-security-scanner")).toBe(true);
+    expect(routes.some((entry) => entry.url === "https://repomind.in/open-source-security-scanner")).toBe(true);
+    expect(routes.some((entry) => entry.url === "https://repomind.in/repository-risk-analysis")).toBe(true);
+    expect(routes.some((entry) => entry.url.includes("/coming-soon"))).toBe(false);
+  });
 });

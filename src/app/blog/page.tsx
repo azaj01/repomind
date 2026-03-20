@@ -4,26 +4,39 @@ import { getPublishedPosts } from "@/lib/services/blog-service";
 import { ArrowRight, Calendar } from "lucide-react";
 import Footer from "@/components/Footer";
 import { BlogPost } from "@prisma/client";
+import JsonLdScript from "@/components/JsonLdScript";
 import { buildOgImageUrl, createSeoMetadata } from "@/lib/seo";
+import { buildBreadcrumbStructuredData, buildItemListStructuredData } from "@/lib/structured-data";
 
 export const dynamic = "force-dynamic";
 
 export const metadata = createSeoMetadata({
-  title: "Insights",
-  description: "Deep dives into Agentic CAG, AI-driven code analysis, and high-speed security scanning on GitHub.",
+  title: "Engineering Insights for Repository Analysis and Security",
+  description: "Read practical guides on GitHub repository analysis, AI code review, and repository security scanning workflows.",
   canonical: "/blog",
   ogImage: buildOgImageUrl("marketing", { variant: "blog" }),
-  ogTitle: "RepoMind Insights",
-  ogDescription: "Engineering notes, security writeups, and product thinking from RepoMind.",
+  ogTitle: "RepoMind Engineering Insights",
+  ogDescription: "Practical guides for repository analysis, context-aware review, and security-first engineering.",
 });
 
 export default async function BlogIndex() {
   const posts: BlogPost[] = await getPublishedPosts();
   const featuredPost = posts[0];
   const regularPosts = posts.slice(1);
+  const breadcrumbSchema = buildBreadcrumbStructuredData([
+    { name: "Home", path: "/" },
+    { name: "Insights", path: "/blog" },
+  ]);
+  const itemListSchema = buildItemListStructuredData({
+    name: "RepoMind Insights",
+    items: posts.map((post) => ({ name: post.title, path: `/blog/${post.slug}` })),
+  });
 
   return (
     <div className="min-h-screen bg-[#09090b] text-white selection:bg-purple-500/30">
+      <JsonLdScript data={breadcrumbSchema} />
+      <JsonLdScript data={itemListSchema} />
+
       {/* Header / Nav Placeholder */}
       <div className="border-b border-white/5 bg-[#09090b]/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
@@ -39,14 +52,34 @@ export default async function BlogIndex() {
       </div>
 
       <main className="max-w-7xl mx-auto px-6 py-16">
+        <nav aria-label="Breadcrumb" className="mb-8 text-sm text-zinc-400 flex items-center gap-2">
+          <Link href="/" className="hover:text-white transition-colors">Home</Link>
+          <span>/</span>
+          <span className="text-zinc-200">Insights</span>
+        </nav>
+
         {/* Header Section */}
         <div className="mb-16">
           <h1 className="text-5xl font-extrabold mb-4 tracking-tight">
             Engineering <span className="bg-gradient-to-r from-purple-400 to-blue-500 bg-clip-text text-transparent">Insights</span>
           </h1>
           <p className="text-zinc-400 text-lg max-w-2xl">
-            Exploring the intersection of Agentic AI, high-context code understanding, and developer productivity.
+            Deep dives into GitHub repository analysis, AI code review strategy, and security-first engineering workflows.
           </p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link href="/github-repository-analysis" className="px-4 py-2 rounded-lg border border-zinc-700 text-zinc-200 hover:bg-zinc-900 transition-colors text-sm">
+              Repository Analysis
+            </Link>
+            <Link href="/ai-code-review-tool" className="px-4 py-2 rounded-lg border border-zinc-700 text-zinc-200 hover:bg-zinc-900 transition-colors text-sm">
+              AI Code Review
+            </Link>
+            <Link href="/security-scanner" className="px-4 py-2 rounded-lg border border-zinc-700 text-zinc-200 hover:bg-zinc-900 transition-colors text-sm">
+              Security Scanner
+            </Link>
+            <Link href="/explore" className="px-4 py-2 rounded-lg border border-zinc-700 text-zinc-200 hover:bg-zinc-900 transition-colors text-sm">
+              Explore Live Pages
+            </Link>
+          </div>
         </div>
 
         {posts.length === 0 ? (

@@ -4,9 +4,11 @@ import Link from "next/link";
 import { ArrowLeft, Clock, Share2 } from "lucide-react";
 import Footer from "@/components/Footer";
 import { EnhancedMarkdown } from "@/components/EnhancedMarkdown";
+import JsonLdScript from "@/components/JsonLdScript";
 import { BlogPost } from "@prisma/client";
 import { Metadata } from "next";
 import { buildOgImageUrl, createSeoMetadata, truncateMetaText } from "@/lib/seo";
+import { buildBlogPostingStructuredData, buildBreadcrumbStructuredData } from "@/lib/structured-data";
 
 // Generates static params for all blog posts
 export async function generateStaticParams() {
@@ -83,8 +85,27 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
     notFound();
   }
 
+  const blogPostingSchema = buildBlogPostingStructuredData({
+    title: post.title,
+    excerpt: post.excerpt,
+    image: post.image,
+    author: post.author,
+    slug: post.slug,
+    publishedAtIso: (post.publishedAt || post.createdAt).toISOString(),
+    updatedAtIso: post.updatedAt.toISOString(),
+  });
+
+  const breadcrumbSchema = buildBreadcrumbStructuredData([
+    { name: "Home", path: "/" },
+    { name: "Insights", path: "/blog" },
+    { name: post.title, path: `/blog/${post.slug}` },
+  ]);
+
   return (
     <div className="min-h-screen bg-[#09090b] text-white">
+      <JsonLdScript data={blogPostingSchema} />
+      <JsonLdScript data={breadcrumbSchema} />
+
        {/* Header / Nav */}
        <div className="border-b border-white/5 bg-[#09090b]/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
@@ -100,6 +121,14 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
       </div>
 
       <main className="max-w-4xl mx-auto px-6 py-16">
+        <nav aria-label="Breadcrumb" className="mb-6 text-sm text-zinc-400 flex items-center gap-2">
+          <Link href="/" className="hover:text-white transition-colors">Home</Link>
+          <span>/</span>
+          <Link href="/blog" className="hover:text-white transition-colors">Insights</Link>
+          <span>/</span>
+          <span className="text-zinc-200 line-clamp-1">{post.title}</span>
+        </nav>
+
         <Link 
           href="/blog" 
           className="inline-flex items-center gap-2 text-zinc-400 hover:text-white transition-colors mb-12 text-sm font-medium"
@@ -149,40 +178,26 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
 
         {/* Post Content */}
         <div className="prose prose-invert prose-purple max-w-none">
+            <p className="text-zinc-300 text-lg not-prose mb-8 leading-relaxed">
+              {post.excerpt}
+            </p>
             <EnhancedMarkdown content={post.content} />
         </div>
 
-        {/* Dynamic JSON-LD for SEO */}
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              "@context": "https://schema.org",
-              "@type": "BlogPosting",
-              "headline": post.title,
-              "description": post.excerpt,
-              "image": post.image,
-              "author": {
-                "@type": "Person",
-                "name": post.author,
-              },
-              "publisher": {
-                "@type": "Organization",
-                "name": "RepoMind",
-                "logo": {
-                  "@type": "ImageObject",
-                  "url": "https://repomind.in/logo.png"
-                }
-              },
-              "datePublished": (post.publishedAt || post.createdAt).toISOString(),
-              "dateModified": post.updatedAt.toISOString(),
-              "mainEntityOfPage": {
-                "@type": "WebPage",
-                "@id": `https://repomind.in/blog/${post.slug}`
-              }
-            })
-          }}
-        />
+        <section className="mt-14 rounded-2xl border border-white/10 bg-zinc-900/40 p-6">
+          <h3 className="text-xl font-semibold mb-4">Related Workflows</h3>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/github-repository-analysis" className="px-4 py-2 rounded-lg border border-zinc-700 text-zinc-200 hover:bg-zinc-900 transition-colors text-sm">
+              GitHub Repository Analysis
+            </Link>
+            <Link href="/ai-code-review-tool" className="px-4 py-2 rounded-lg border border-zinc-700 text-zinc-200 hover:bg-zinc-900 transition-colors text-sm">
+              AI Code Review Tool
+            </Link>
+            <Link href="/security-scanner" className="px-4 py-2 rounded-lg border border-zinc-700 text-zinc-200 hover:bg-zinc-900 transition-colors text-sm">
+              Security Scanner
+            </Link>
+          </div>
+        </section>
 
         {/* CTA */}
         <div className="mt-20 pt-12 border-t border-white/5 text-center">
