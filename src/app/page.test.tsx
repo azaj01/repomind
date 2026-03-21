@@ -18,7 +18,7 @@ describe("home page metadata", () => {
         expect(metadata.openGraph?.images?.[0]?.height).toBe(630);
         expect(metadata.twitter?.images?.[0]).toContain("type=marketing");
         expect(metadata.twitter?.images?.[0]).toContain("variant=home");
-        expect(metadata.twitter?.creator).toBe("@repomind");
-        expect(metadata.twitter?.site).toBe("@repomind");
+        expect(metadata.twitter?.creator).toBe("@_sam2903");
+        expect(metadata.twitter?.site).toBe("@_sam2903");
     });
 });

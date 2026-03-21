@@ -5,7 +5,7 @@ export type OgCardVariant = "home" | "repo" | "profile" | "report" | "blog" | "t
 export type ChatIntent = "architecture" | "security" | "explain" | "general";
 
 const BRAND_NAME = "RepoMind";
-const BRAND_TWITTER_HANDLE = "@repomind";
+const BRAND_TWITTER_HANDLE = "@_sam2903";
 const OG_IMAGE_WIDTH = 1200;
 const OG_IMAGE_HEIGHT = 630;
 

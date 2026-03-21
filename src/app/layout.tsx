@@ -30,6 +30,7 @@ export const metadata: Metadata = {
     template: "%s | RepoMind",
   },
   description: "Analyze GitHub repositories with full-context AI for architecture understanding, code review, and security scanning.",
+  authors: [{ name: "Sameer Verma", url: "https://github.com/403errors" }],
   keywords: [
     "github repository analysis",
     "github code analyzer",
@@ -76,8 +77,8 @@ export const metadata: Metadata = {
     title: "RepoMind",
     description: "Analyze GitHub repositories with full-context AI for architecture understanding, code review, and security scanning.",
     images: ["/assets/landing_page.png"],
-    creator: "@repomind",
-    site: "@repomind",
+    creator: "@_sam2903",
+    site: "@_sam2903",
   },
   robots: {
     index: true,

@@ -8,9 +8,9 @@ import { metadata } from "./page";
 
 describe("blog index metadata", () => {
     it("uses the blog marketing OG card", () => {
-        expect(metadata.title).toBe("Insights");
-        expect(metadata.description).toContain("Agentic CAG");
-        expect(metadata.openGraph?.title).toBe("RepoMind Insights");
+        expect(metadata.title).toBe("Engineering Insights for Repository Analysis and Security");
+        expect(metadata.description).toContain("GitHub repository analysis");
+        expect(metadata.openGraph?.title).toBe("RepoMind Engineering Insights");
         expect(metadata.openGraph?.images?.[0]?.url).toContain("type=marketing");
         expect(metadata.openGraph?.images?.[0]?.url).toContain("variant=blog");
     });
