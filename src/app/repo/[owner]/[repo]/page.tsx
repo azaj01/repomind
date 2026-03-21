@@ -4,13 +4,14 @@ import type { GitHubRepo, RepoCommit, RepoLanguage } from '@/lib/github';
 import { getErrorStatus, getRepo, getRepoFullContext } from '@/lib/github';
 import { cacheRepoUnavailable, getCachedRepoUnavailable } from '@/lib/cache';
 import { isCuratedRepo } from '@/lib/repo-catalog';
-import { ArrowLeft, Star, GitFork, AlertCircle, Clock, FileCode, Search, Lock, Home } from 'lucide-react';
+import { ArrowLeft, Star, GitFork, AlertCircle, Clock, FileCode, Search, Lock, Home, Github } from 'lucide-react';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { CopyBadge } from '@/components/CopyBadge';
 import { normalizeReadmeForPreview } from './repo-page-utils';
 import { buildOgImageUrl, createSeoMetadata, truncateMetaText } from '@/lib/seo';
+import { emojifyGitHubShortcodes } from '@/lib/github-emoji';
 
 interface Props {
     params: Promise<{
@@ -140,6 +141,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
     try {
         const repoData = await getRepo(owner, repo);
+        const repoDescription = emojifyGitHubShortcodes(repoData.description);
         return createSeoMetadata({
             title: `${owner}/${repo}`,
             description: `Analyze ${owner}/${repo} architecture, code quality, and security with RepoMind Agentic CAG.`,
@@ -147,14 +149,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
             ogImage: buildOgImageUrl("repo", {
                 owner,
                 repo,
-                description: repoData.description,
+                description: repoDescription,
                 stars: repoData.stargazers_count,
                 forks: repoData.forks_count,
                 language: repoData.language,
             }),
             ogTitle: `${owner}/${repo}`,
-            ogDescription: repoData.description
-                ? truncateMetaText(repoData.description, 160)
+            ogDescription: repoDescription
+                ? truncateMetaText(repoDescription, 160)
                 : `Analyze ${owner}/${repo} architecture, code quality, and security with RepoMind Agentic CAG.`,
             robots: shouldIndex
                 ? { index: true, follow: true }
@@ -225,6 +227,7 @@ export default async function RepoPage({ params }: Props) {
 
     const fullReadme = normalizeReadmeForPreview(readmeContent);
     const crawlerReadmeExcerpt = isCrawler ? buildCrawlerReadmeExcerpt(fullReadme) : null;
+    const repoDescription = emojifyGitHubShortcodes(repoData.description);
 
     return (
         <main className="min-h-screen bg-black text-white p-6 md:p-12 overflow-x-hidden relative">
@@ -244,9 +247,18 @@ export default async function RepoPage({ params }: Props) {
                                 <span className="text-zinc-400">{owner} / </span>
                                 <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">{repoData.name}</span>
                             </h1>
-                            {repoData.description && (
-                                <p className="text-xl text-zinc-300 max-w-2xl">{repoData.description}</p>
+                            {repoDescription && (
+                                <p className="text-xl text-zinc-300 max-w-2xl">{repoDescription}</p>
                             )}
+                            <a
+                                href={repoData.html_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-4 inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-white transition-colors"
+                            >
+                                <Github className="w-4 h-4" />
+                                View on GitHub
+                            </a>
                         </div>
                     </div>
 

@@ -112,7 +112,7 @@ export default async function TopicPage({ params }: Props) {
                                 </div>
 
                                 <div className="shrink-0 flex items-center text-purple-400 font-medium">
-                                    Analyze Code <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+                                    Explore Repo <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
                                 </div>
                             </div>
                         </Link>
