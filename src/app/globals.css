@@ -61,6 +61,26 @@
   animation: spin-gradient 3s linear infinite;
 }
 
+.neon-spin-ring::before {
+  background-image: conic-gradient(
+    from var(--angle),
+    #22d3ee 0%,
+    #3b82f6 35%,
+    #a855f7 65%,
+    #22d3ee 100%
+  );
+  animation: spin-gradient 2.1s linear infinite;
+  filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.45))
+    drop-shadow(0 0 20px rgba(168, 85, 247, 0.3));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conic-border-container::before,
+  .neon-spin-ring::before {
+    animation: none;
+  }
+}
+
 @keyframes soft-pulse {
   0%, 100% {
     transform: scale(1);

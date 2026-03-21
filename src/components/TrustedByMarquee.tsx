@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Star } from "lucide-react";
+import type { CatalogRepoEntry } from "@/lib/repo-catalog";
 
 interface RepoData {
     owner: string;
@@ -10,26 +11,35 @@ interface RepoData {
     stars: number;
 }
 
-export default function TrustedByMarquee() {
-    const [repos, setRepos] = useState<RepoData[]>([]);
+interface TrustedByMarqueeProps {
+    trendingRepos?: Pick<CatalogRepoEntry, "owner" | "repo" | "stars">[];
+}
+
+export default function TrustedByMarquee({ trendingRepos }: TrustedByMarqueeProps) {
+    const [marqueeRepos, setMarqueeRepos] = useState<RepoData[]>([]);
 
     useEffect(() => {
+        if (trendingRepos?.length) {
+            setMarqueeRepos(trendingRepos.slice(0, 20));
+            return;
+        }
+
         // Fetch the top repositories from our generated JSON
         fetch("/data/top-repos.json")
             .then((res) => res.json())
             .then((data: RepoData[]) => {
                 // We just need the top 20 or so for the marquee
-                setRepos(data.slice(0, 20));
+                setMarqueeRepos(data.slice(0, 20));
             })
             .catch((err) => console.error("Failed to load top repos", err));
-    }, []);
+    }, [trendingRepos]);
 
-    if (repos.length === 0) {
+    if (marqueeRepos.length === 0) {
         return null; // Don't render anything until we have data
     }
 
     // Duplicate the array to create an infinite loop effect
-    const duplicatedRepos = [...repos, ...repos];
+    const duplicatedRepos = [...marqueeRepos, ...marqueeRepos];
 
     const formatStars = (stars: number) => {
         if (stars >= 1000) {
@@ -42,7 +52,7 @@ export default function TrustedByMarquee() {
         <section className="py-12 border-y border-zinc-900 bg-zinc-950/50 overflow-hidden relative z-10 w-full mb-12">
             <div className="max-w-7xl mx-auto px-4 mb-6">
                 <p className="text-center text-sm font-medium text-zinc-500 uppercase tracking-widest">
-                    Analyzed Top Tier Repositories
+                    Trending Repositories
                 </p>
             </div>
 

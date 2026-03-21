@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
-import { ArrowRight, Star, GitFork, MessageSquare, Globe, TrendingUp } from "lucide-react";
+import { ArrowRight, ChevronDown, Star, GitFork, MessageSquare, Globe, TrendingUp } from "lucide-react";
 import { fetchGitHubData, getRecentSearches } from "./actions";
 import TrustedByMarquee from "@/components/TrustedByMarquee";
 import InteractiveDemo from "@/components/InteractiveDemo";
@@ -21,11 +21,11 @@ import PublicStats from "@/components/PublicStats";
 import AuthButton from "@/components/AuthButton";
 import Footer from "@/components/Footer";
 import JsonLdScript from "@/components/JsonLdScript";
-import SeoVisual from "@/components/seo/SeoVisual";
 import type { SearchHistoryItem } from "@/lib/services/history-service";
 import { INVALID_SESSION_ERROR_PARAM } from "@/lib/session-guard";
 import { BlogPost } from "@prisma/client";
 import { CatalogRepoEntry } from "@/lib/repo-catalog";
+import { FAQ_PAGE_ITEMS } from "@/lib/faq-data";
 import { normalizeGitHubInput } from "@/lib/utils";
 import RepoSearch from "@/components/RepoSearch";
 import { buildFaqStructuredData, buildSoftwareApplicationStructuredData } from "@/lib/structured-data";
@@ -35,24 +35,6 @@ type PublicStatsData = {
     totalQueries: number;
     totalScans: number;
 };
-
-const HOMEPAGE_FAQ = [
-    {
-        question: "What does RepoMind help me do?",
-        answer:
-            "RepoMind helps you analyze GitHub repositories with full-context AI so you can understand architecture, review code, and prioritize security risks faster.",
-    },
-    {
-        question: "How is Agentic CAG different from snippet-only analysis?",
-        answer:
-            "Agentic CAG selects and loads full relevant files to preserve system-level context, rather than relying only on disconnected snippets.",
-    },
-    {
-        question: "Can I use RepoMind for open-source due diligence?",
-        answer:
-            "Yes. RepoMind is designed for fast repository understanding before adoption, contribution, migration, or security review.",
-    },
-];
 
 export default function HomeClient({
     initialPosts = [],
@@ -65,6 +47,8 @@ export default function HomeClient({
 }) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const [activeFaqIndex, setActiveFaqIndex] = useState<number | null>(null);
+    const [showAllFaqs, setShowAllFaqs] = useState(false);
     const router = useRouter();
     const searchParams = useSearchParams();
     const { data: session } = useSession();
@@ -86,7 +70,7 @@ export default function HomeClient({
             "Repository security scanning",
         ],
     });
-    const faqSchema = buildFaqStructuredData(HOMEPAGE_FAQ);
+    const faqSchema = buildFaqStructuredData(FAQ_PAGE_ITEMS);
 
     useEffect(() => {
         if (session) {
@@ -131,55 +115,46 @@ export default function HomeClient({
                 <AuthButton />
             </div>
 
-            <section className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden z-10">
+            <section className="min-h-[100svh] flex flex-col items-center justify-center px-4 py-12 sm:py-14 md:py-16 lg:py-4 relative overflow-hidden z-10">
 
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.8 }}
-                    className="z-10 flex flex-col items-center text-center max-w-2xl w-full px-4"
+                    className="z-10 flex flex-col items-center text-center max-w-3xl w-full px-4 gap-2.5 md:gap-3.5"
                 >
-                    <div className="mb-8 conic-border-container rounded-full w-20 h-20 md:w-24 md:h-24 flex items-center justify-center">
-                        <Image
-                            src="/1080x1080.png"
-                            alt="RepoMind Logo"
-                            width={96}
-                            height={96}
-                            className="w-full h-full object-cover rounded-full"
-                        />
+                    <div className="w-full flex flex-col items-center gap-3 md:gap-4">
+                        <div className="conic-border-container neon-spin-ring rounded-full w-16 h-16 md:w-20 md:h-20 flex items-center justify-center">
+                            <Image
+                                src="/1080x1080.png"
+                                alt="RepoMind Logo"
+                                width={96}
+                                height={96}
+                                className="w-full h-full object-cover rounded-full"
+                            />
+                        </div>
+                        <div className="inline-flex items-center justify-center gap-2 md:gap-3 w-full">
+                            <p className="whitespace-nowrap text-[10px] md:text-xs font-semibold tracking-[0.35em] uppercase text-zinc-500 leading-none">
+                                RepoMind
+                            </p>
+                            <WhatsNewBadge />
+                        </div>
                     </div>
 
-                    <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight mb-4 bg-clip-text text-transparent bg-gradient-to-b from-white to-white/70 relative">
+                    <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight mb-3 bg-clip-text text-transparent bg-gradient-to-b from-white to-white/70 relative">
                         GitHub Repository Analysis,
                         <br />
-                        AI Code Review, and Security Scanning
+                        Code Review and Security Scanning
                     </h1>
-                    <div className="mb-6">
-                        <WhatsNewBadge />
-                    </div>
 
                     <CAGBadge />
 
-                    <p className="text-base sm:text-lg md:text-xl text-zinc-300 mb-5 max-w-2xl mx-auto">
-                        Understand unfamiliar repositories faster with context-aware AI.
-                        Move from URL to architecture clarity, code review insights, and actionable risk triage.
+                    <p className="text-sm sm:text-base md:text-lg text-zinc-300 mb-3 md:mb-4 max-w-2xl mx-auto leading-snug">
+                        Understand repositories faster with context-aware AI. Go from URL to architecture, code review, and security triage.
                     </p>
-                    <p className="text-sm md:text-base text-zinc-500 mb-8 max-w-xl mx-auto">
-                        Powered by <strong className="text-zinc-300">Agentic CAG</strong>, RepoMind preserves full-file context for reliable repository analysis.
-                    </p>
-
-                    <div className="w-full max-w-4xl mb-10">
-                        <SeoVisual
-                            variant="hero-flow"
-                            ariaLabel="RepoMind hero flow from repository URL to architecture, review, and security output"
-                            sizeMode="wide"
-                            animate
-                            priority="high"
-                        />
-                    </div>
 
                     {hasInvalidSessionError && (
-                        <div className="w-full max-w-md mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                        <div className="w-full max-w-md mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-100">
                             Your session could not be validated. Please sign in again.
                         </div>
                     )}
@@ -196,7 +171,7 @@ export default function HomeClient({
                         <motion.p
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
-                            className="mt-4 text-red-400 text-sm"
+                            className="mt-5 text-red-400 text-sm"
                         >
                             {error}
                         </motion.p>
@@ -206,7 +181,7 @@ export default function HomeClient({
                 </motion.div>
             </section>
 
-            <TrustedByMarquee />
+            <TrustedByMarquee trendingRepos={trendingRepos} />
             <InteractiveDemo />
 
             <div className="relative z-10 w-full bg-zinc-950">
@@ -249,7 +224,7 @@ export default function HomeClient({
 
             <section className="relative z-10 w-full bg-zinc-950 py-24 px-6 border-t border-white/5">
                 <div className="max-w-7xl mx-auto">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
+                    <div className="grid grid-cols-1 gap-10 items-start">
                         <div>
                             <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-5">Use Cases That Drive Decisions</h2>
                             <p className="text-zinc-400 text-lg mb-8">
@@ -269,22 +244,6 @@ export default function HomeClient({
                                     <p className="text-zinc-400">Surface actionable risk signals and triage findings with engineering context.</p>
                                 </article>
                             </div>
-                        </div>
-                        <div className="space-y-6">
-                            <SeoVisual
-                                variant="analysis-workflow"
-                                ariaLabel="Repository analysis workflow visualization"
-                                sizeMode="wide"
-                                animate
-                                priority="low"
-                            />
-                            <SeoVisual
-                                variant="trust-signal"
-                                ariaLabel="Trust and reliability visualization"
-                                sizeMode="wide"
-                                animate
-                                priority="low"
-                            />
                         </div>
                     </div>
                 </div>
@@ -322,44 +281,48 @@ export default function HomeClient({
                 </div>
             </section>
 
-            <section className="relative z-10 w-full bg-zinc-950 py-24 px-6 border-t border-white/5">
-                <div className="max-w-5xl mx-auto">
-                    <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">Why Full-File Context Matters</h2>
-                    <p className="text-zinc-300 text-lg leading-relaxed mb-6">
-                        Snippet-only approaches can lose architecture relationships and control-flow context. RepoMind uses Agentic CAG to preserve the connections that matter for real engineering decisions.
-                    </p>
-                    <p className="text-zinc-400 leading-relaxed mb-8">
-                        This context-first approach improves the quality of repository understanding, code review feedback, and security prioritization.
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <SeoVisual
-                            variant="comparison-grid"
-                            ariaLabel="Comparison of context-aware analysis and snippet-only workflows"
-                            sizeMode="compact"
-                            animate
-                            priority="low"
-                        />
-                        <SeoVisual
-                            variant="review-workflow"
-                            ariaLabel="Code review workflow visualization"
-                            sizeMode="compact"
-                            animate
-                            priority="low"
-                        />
-                    </div>
-                </div>
-            </section>
-
             <section className="relative z-10 w-full bg-black py-24 px-6 border-t border-white/5">
                 <div className="max-w-5xl mx-auto">
                     <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-10">Frequently Asked Questions</h2>
                     <div className="space-y-5">
-                        {HOMEPAGE_FAQ.map((item) => (
-                            <article key={item.question} className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
-                                <h3 className="text-xl font-semibold mb-3">{item.question}</h3>
-                                <p className="text-zinc-400 leading-relaxed">{item.answer}</p>
+                        {FAQ_PAGE_ITEMS.map((item, index) => (
+                            <article
+                                key={item.question}
+                                className={`${!showAllFaqs && index >= 3 ? "hidden" : "block"} rounded-2xl border border-zinc-800 bg-zinc-900/40`}
+                            >
+                                <button
+                                    type="button"
+                                    aria-expanded={activeFaqIndex === index}
+                                    aria-controls={`homepage-faq-answer-${index}`}
+                                    onClick={() => setActiveFaqIndex((current) => (current === index ? null : index))}
+                                    className="flex w-full items-center justify-between gap-4 p-6 text-left"
+                                >
+                                    <h3 className="text-xl font-semibold text-white">{item.question}</h3>
+                                    <ChevronDown
+                                        className={`h-5 w-5 shrink-0 text-zinc-400 transition-transform ${
+                                            activeFaqIndex === index ? "rotate-180 text-white" : ""
+                                        }`}
+                                    />
+                                </button>
+                                {activeFaqIndex === index && (
+                                    <div id={`homepage-faq-answer-${index}`} className="px-6 pb-6">
+                                        <p className="text-zinc-400 leading-relaxed">{item.answer}</p>
+                                    </div>
+                                )}
                             </article>
                         ))}
+                    </div>
+                    <div className="mt-8 flex justify-center">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShowAllFaqs((current) => !current);
+                                setActiveFaqIndex(null);
+                            }}
+                            className="inline-flex items-center justify-center px-5 py-2.5 rounded-full border border-white/10 bg-zinc-900/50 text-sm font-semibold text-white hover:bg-zinc-800 hover:border-white/20 transition-colors"
+                        >
+                            {showAllFaqs ? "Show fewer FAQs" : "Show more FAQs"}
+                        </button>
                     </div>
                 </div>
             </section>

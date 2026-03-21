@@ -25,10 +25,11 @@ export function getSeoPageMetadata(slug: string): Metadata {
     ogTitle: `${page.title} | RepoMind`,
     ogDescription: page.metaDescription,
     keywords: [
-      page.primaryIntent,
+      ...page.keywords,
       "github repository analysis",
       "ai code review tool",
       "repository security scanner",
+      "repomind",
     ],
   });
 }

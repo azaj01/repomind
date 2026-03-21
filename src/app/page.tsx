@@ -28,7 +28,7 @@ export const metadata: Metadata = createSeoMetadata({
 export default async function Home() {
     const [latestPosts, trendingRepos, publicStats] = await Promise.all([
         getHomepagePosts(),
-        getCuratedRepos("weekly"),
+        getCuratedRepos("monthly"),
         getPublicStats(),
     ]);
 

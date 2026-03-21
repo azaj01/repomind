@@ -113,7 +113,7 @@ export default function RepoSearch({
     return (
         <div className="w-full flex flex-col items-center">
             <form onSubmit={handleFormSubmit} className="w-full max-w-md relative group">
-                <div className="conic-border-container flex items-center bg-zinc-900 p-1 rounded-lg">
+                <div className="conic-border-container neon-spin-ring flex items-center bg-zinc-900 p-1 rounded-lg">
                     <input
                         type="text"
                         value={input}
@@ -148,7 +148,7 @@ export default function RepoSearch({
                 </AnimatePresence>
             </form>
 
-            <div className="mt-6 md:mt-10 flex flex-col items-center gap-4 md:gap-6 w-full">
+            <div className="mt-4 md:mt-6 flex flex-col items-center gap-2 md:gap-3 w-full">
                 <div className="flex flex-wrap justify-center items-center gap-2 md:gap-4 text-[10px] sm:text-xs md:text-sm text-zinc-500">
                     {isSessionActive && recentSearches.length > 0 ? (
                         <>
@@ -200,7 +200,7 @@ export default function RepoSearch({
                     )}
                 </div>
 
-                <Link 
+                <Link
                     href="/trending"
                     className="flex items-center gap-1.5 px-3 py-1 md:py-1.5 rounded-full bg-zinc-900/50 border border-white/5 hover:border-blue-500/30 text-blue-400 hover:text-blue-300 transition-all text-[10px] md:text-xs font-semibold animate-soft-pulse hover:animate-none"
                 >
