@@ -468,7 +468,36 @@ export async function* answerWithContextStream(
 
     try {
       const toolResponseParts = buildFunctionResponseParts(calls, responses);
-      const streamResult = await chat.sendMessageStream(toolResponseParts);
+
+      // CRITICAL FIX: The Gemini API requires that a function-response turn comes
+      // immediately after a *pure* function-call turn (no text or thought parts).
+      // When a thinking/streaming model emits thoughts or partial text before
+      // deciding to call a tool, the SDK records a mixed turn (text + functionCall)
+      // in its internal chat history, which the API rejects in Phase 2.
+      //
+      // Fix: Rebuild the chat session from scratch for Phase 2, injecting a
+      // manually-constructed history where the model turn contains ONLY the
+      // functionCall parts — exactly what the API requires.
+      const phase2Chat = model.startChat({
+        history: [
+          {
+            role: "user",
+            parts: [{ text: prompt }],
+          },
+          {
+            // Pure function-call turn: no text/thought parts — satisfies the API constraint.
+            role: "model",
+            parts: calls.map((call) => ({
+              functionCall: {
+                name: normalizeFunctionName(call.name),
+                args: call.args ?? {},
+              },
+            })),
+          },
+        ],
+      });
+
+      const streamResult = await phase2Chat.sendMessageStream(toolResponseParts);
 
       for await (const chunk of streamResult.stream) {
         const parts = ((chunk as unknown as StreamChunkShape).candidates?.[0]?.content?.parts ?? []);
