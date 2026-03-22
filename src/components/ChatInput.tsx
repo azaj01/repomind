@@ -105,7 +105,7 @@ export function ChatInput({
                     disabled={disabled}
                     rows={1}
                     className={cn(
-                        "block w-full bg-transparent border-none px-4 py-3 text-white text-base placeholder-zinc-500 focus:outline-none focus:ring-0 transition-all resize-none min-h-[52px] max-h-[200px]",
+                        "block w-full bg-transparent border-none px-4 py-3 text-white text-sm md:text-base font-normal placeholder:font-normal placeholder:text-sm md:placeholder:text-base placeholder-zinc-500 focus:outline-none focus:ring-0 transition-all resize-none min-h-[52px] max-h-[200px]",
                         disabled && "opacity-50 cursor-not-allowed"
                     )}
                     style={{

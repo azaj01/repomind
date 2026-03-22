@@ -899,8 +899,8 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
 
                         <div className="flex items-center gap-2 min-w-0 ml-2">
                             <h1 className="text-sm font-medium text-zinc-400 truncate flex items-center gap-1.5">
-                                <Link href="/" className="hover:text-white transition-colors">repomind</Link>
-                                <span className="text-zinc-700">/</span>
+                                <Link href="/" className="hidden md:inline hover:text-white transition-colors">repomind</Link>
+                                <span className="hidden md:inline text-zinc-700">/</span>
                                 <span className="text-zinc-100 font-semibold tracking-tight">{repoContext.owner}</span>
                                 <span className="text-zinc-700">/</span>
                                 <span className="text-white font-bold">{repoContext.repo}</span>
