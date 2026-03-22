@@ -48,6 +48,11 @@ interface VisualOutputDecision {
   reason: string;
 }
 
+interface UnsupportedMermaidFallback {
+  requestedTypeLabel: string;
+  fallbackType: MermaidDiagramType;
+}
+
 const TYPED_MERMAID_JSON_DIAGRAMS = new Set<MermaidDiagramType>([
   "flowchart",
   "sequenceDiagram",
@@ -64,6 +69,25 @@ const MERMAID_JSON_EXPLICIT_PATTERN = /\bmermaid-json\b/i;
 const MERMAID_EXPLICIT_PATTERN = /\bmermaid\b/i;
 const VISUAL_POLISH_PATTERN =
   /\b(animated|animation|beautiful|polish|polished|presentation|hero|showcase|stylish|aesthetic|premium|pretty)\b/i;
+const UNSUPPORTED_MERMAID_FALLBACKS: Array<{ pattern: RegExp; label: string; fallbackType?: MermaidDiagramType }> = [
+  { pattern: /\bpie(?:\s+chart|\s+diagram)?\b/i, label: "pie", fallbackType: "xychart" },
+  { pattern: /\bc4(?:\s*(?:context|container|component|deployment|dynamic|code))?\b/i, label: "C4", fallbackType: "flowchart" },
+  { pattern: /\btimeline(?:\s+diagram)?\b/i, label: "timeline", fallbackType: "gantt" },
+  { pattern: /\bquadrant(?:\s+chart|\s+diagram)?\b/i, label: "quadrantChart", fallbackType: "xychart" },
+  { pattern: /\brequirement(?:\s+diagram)?\b/i, label: "requirementDiagram", fallbackType: "flowchart" },
+];
+
+function detectUnsupportedMermaidFallback(question: string, routedType: MermaidDiagramType): UnsupportedMermaidFallback | null {
+  for (const entry of UNSUPPORTED_MERMAID_FALLBACKS) {
+    if (entry.pattern.test(question || "")) {
+      return {
+        requestedTypeLabel: entry.label,
+        fallbackType: entry.fallbackType ?? routedType,
+      };
+    }
+  }
+  return null;
+}
 
 export function resolveVisualOutputDecision(question: string): VisualOutputDecision {
   const route = routeMermaidDiagram(question);
@@ -280,6 +304,7 @@ function buildVisualContract(question: string): string {
   const target = getSvgComplexityTarget(question);
   const profile = getVisualDiagramProfile(question);
   const output = resolveVisualOutputDecision(question);
+  const unsupportedFallback = detectUnsupportedMermaidFallback(question, route.diagramType);
   const allowTwoVisuals = route.multipleVisualsRequested && Boolean(route.secondaryDiagramType);
   const minimumNodeCount = Math.max(6, target.minNodes);
   const preferredMinNodes = Math.max(profile.preferredNodeRange[0], minimumNodeCount);
@@ -302,6 +327,9 @@ function buildVisualContract(question: string): string {
               - Explicit multiple-visual request: ${allowTwoVisuals ? "yes" : "no"}
               - Secondary topology (if needed): ${allowTwoVisuals ? route.secondaryDiagramType : "none"}
               - Diagram guidance: honor explicit output-format requests from the user.
+              - Unsupported diagram handling: ${unsupportedFallback
+                ? `The user requested Mermaid \`${unsupportedFallback.requestedTypeLabel}\`, which RepoMind does not currently support. Start the answer with: "RepoMind currently doesn't support Mermaid ${unsupportedFallback.requestedTypeLabel} diagrams, so here's the closest supported diagram as ${unsupportedFallback.fallbackType}." Then provide the ${unsupportedFallback.fallbackType} diagram.`
+                : "If the user requests an unsupported Mermaid type (for example pie, C4, requirement, or quadrant), explicitly say it's not currently supported and then provide the closest supported diagram type."}
 
             - **VISUAL BLOCK HARD CONTRACT (MANDATORY)**:
               - Complexity tier for THIS request: **${target.tier.toUpperCase()}**.

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
     capBeadCount,
     resolveRouteBeadCount,
+    shouldAnimateDedicatedPreview,
     shouldEnableLoopingBeads,
     supportsRouteBeadAnimation,
 } from "@/lib/mermaid-animation";
@@ -26,5 +27,12 @@ describe("mermaid-animation", () => {
         expect(supportsRouteBeadAnimation("classDiagram\nclass Repo")).toBe(false);
         expect(resolveRouteBeadCount("mindmap\n  Root", 10, 2)).toBe(0);
         expect(resolveRouteBeadCount("flowchart LR\nA-->B", 10, 2)).toBe(2);
+    });
+
+    it("disables dedicated preview re-animation for mindmap and xychart", () => {
+        expect(shouldAnimateDedicatedPreview("mindmap\n  Root", false)).toBe(false);
+        expect(shouldAnimateDedicatedPreview("xychart\n  bar [1,2,3]", false)).toBe(false);
+        expect(shouldAnimateDedicatedPreview("flowchart LR\nA-->B", false)).toBe(true);
+        expect(shouldAnimateDedicatedPreview("flowchart LR\nA-->B", true)).toBe(false);
     });
 });

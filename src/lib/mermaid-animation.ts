@@ -1,4 +1,5 @@
 const ROUTE_BEAD_DIAGRAM_TYPES = new Set(["flowchart", "sequenceDiagram", "stateDiagram-v2"]);
+const DEDICATED_PREVIEW_ANIMATION_EXCLUDED_TYPES = new Set(["mindmap", "xychart"]);
 
 export function getMermaidDiagramDeclaration(source: string): string | null {
     const lines = (source || "")
@@ -36,4 +37,15 @@ export function resolveRouteBeadCount(source: string, routeCount: number, max = 
 
 export function shouldEnableLoopingBeads(prefersReducedMotion: boolean): boolean {
     return !prefersReducedMotion;
+}
+
+export function shouldAnimateDedicatedPreview(source: string, prefersReducedMotion: boolean): boolean {
+    if (prefersReducedMotion) {
+        return false;
+    }
+    const declaration = getMermaidDiagramDeclaration(source);
+    if (!declaration) {
+        return true;
+    }
+    return !DEDICATED_PREVIEW_ANIMATION_EXCLUDED_TYPES.has(declaration);
 }

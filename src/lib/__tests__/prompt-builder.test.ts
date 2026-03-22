@@ -125,6 +125,28 @@ describe("buildRepoMindPrompt", () => {
         expect(result).toContain('"diagramType": "xychart"');
     });
 
+    it("explicitly instructs unsupported pie requests to disclose fallback type", () => {
+        const result = buildRepoMindPrompt({
+            ...baseParams,
+            question: "Create a pie chart of language usage",
+        });
+
+        expect(result).toContain("requested Mermaid `pie`");
+        expect(result).toContain("doesn't support Mermaid pie diagrams");
+        expect(result).toContain("closest supported diagram as xychart");
+    });
+
+    it("explicitly instructs unsupported C4 requests to disclose fallback type", () => {
+        const result = buildRepoMindPrompt({
+            ...baseParams,
+            question: "Create a C4 container diagram for this repo",
+        });
+
+        expect(result).toContain("requested Mermaid `C4`");
+        expect(result).toContain("doesn't support Mermaid C4 diagrams");
+        expect(result).toContain("closest supported diagram as flowchart");
+    });
+
     it("lists only the unified supported mermaid-json diagram types", () => {
         const result = buildRepoMindPrompt({
             ...baseParams,

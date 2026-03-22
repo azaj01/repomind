@@ -17,6 +17,19 @@ export const MERMAID_THEME_VARIABLES = {
     nodeTextColor: '#e4e4e7',
     textColor: '#e4e4e7',
     fontFamily: APP_FONT_STACK,
+    xyChart: {
+        backgroundColor: "transparent",
+        titleColor: "#e5e7eb",
+        xAxisLabelColor: "#e5e7eb",
+        xAxisTitleColor: "#e5e7eb",
+        xAxisTickColor: "#6b7280",
+        xAxisLineColor: "#6b7280",
+        yAxisLabelColor: "#e5e7eb",
+        yAxisTitleColor: "#e5e7eb",
+        yAxisTickColor: "#6b7280",
+        yAxisLineColor: "#6b7280",
+        plotColorPalette: "#60a5fa, #34d399, #f59e0b, #f472b6, #a78bfa, #22d3ee",
+    },
 } as const;
 
 export const MERMAID_THEME_CSS = `
@@ -42,59 +55,6 @@ export const MERMAID_THEME_CSS = `
     .node ellipse {
         fill: #18181b !important;
         stroke: #3f3f46 !important;
-    }
-    .mindmap .node:nth-of-type(6n + 1) rect,
-    .mindmap .node:nth-of-type(6n + 1) circle {
-        fill: #1f2937 !important;
-        stroke: #60a5fa !important;
-    }
-    .mindmap .node:nth-of-type(6n + 2) rect,
-    .mindmap .node:nth-of-type(6n + 2) circle {
-        fill: #172554 !important;
-        stroke: #38bdf8 !important;
-    }
-    .mindmap .node:nth-of-type(6n + 3) rect,
-    .mindmap .node:nth-of-type(6n + 3) circle {
-        fill: #0f766e !important;
-        stroke: #34d399 !important;
-    }
-    .mindmap .node:nth-of-type(6n + 4) rect,
-    .mindmap .node:nth-of-type(6n + 4) circle {
-        fill: #4c1d95 !important;
-        stroke: #a78bfa !important;
-    }
-    .mindmap .node:nth-of-type(6n + 5) rect,
-    .mindmap .node:nth-of-type(6n + 5) circle {
-        fill: #78350f !important;
-        stroke: #f59e0b !important;
-    }
-    .mindmap .node:nth-of-type(6n + 6) rect,
-    .mindmap .node:nth-of-type(6n + 6) circle {
-        fill: #7f1d1d !important;
-        stroke: #f87171 !important;
-    }
-    .xychart .plot,
-    .xychart .background {
-        fill: transparent !important;
-    }
-    .xychart text,
-    .xychart .axisLabel,
-    .xychart .titleText {
-        fill: #e4e4e7 !important;
-    }
-    .xychart .axis line,
-    .xychart .axis path,
-    .xychart .tick line {
-        stroke: #52525b !important;
-    }
-    .xychart .bar-plot rect,
-    .xychart .bar {
-        fill: #60a5fa !important;
-        stroke: #60a5fa !important;
-    }
-    .xychart .line-plot path,
-    .xychart .line {
-        stroke: #22d3ee !important;
     }
     .er .entityBox {
         fill: #18181b !important;

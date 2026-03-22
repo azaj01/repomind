@@ -17,7 +17,7 @@ import { createPortal } from "react-dom";
 import { initMermaid } from "@/lib/mermaid-init";
 import { APP_FONT_STACK } from "@/lib/design-tokens";
 import { ensureMermaidMinimumDetail } from "@/lib/diagram-utils";
-import { resolveRouteBeadCount, shouldEnableLoopingBeads } from "@/lib/mermaid-animation";
+import { resolveRouteBeadCount, shouldAnimateDedicatedPreview, shouldEnableLoopingBeads } from "@/lib/mermaid-animation";
 
 // Initialize mermaid once
 initMermaid();
@@ -32,6 +32,22 @@ const MAX_ANIMATED_NODES = 24;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
 const SUPPORTED_MERMAID_TYPES_LABEL = "flowchart, sequenceDiagram, stateDiagram-v2, classDiagram, erDiagram, mindmap, gantt, xychart";
+const MINDMAP_BRANCH_COLORS = [
+    { fillVar: "--mindmap-branch-1-fill", strokeVar: "--mindmap-branch-1-stroke", fallbackFill: "#1d4ed8", fallbackStroke: "#60a5fa" },
+    { fillVar: "--mindmap-branch-2-fill", strokeVar: "--mindmap-branch-2-stroke", fallbackFill: "#0e7490", fallbackStroke: "#67e8f9" },
+    { fillVar: "--mindmap-branch-3-fill", strokeVar: "--mindmap-branch-3-stroke", fallbackFill: "#047857", fallbackStroke: "#6ee7b7" },
+    { fillVar: "--mindmap-branch-4-fill", strokeVar: "--mindmap-branch-4-stroke", fallbackFill: "#6d28d9", fallbackStroke: "#c4b5fd" },
+    { fillVar: "--mindmap-branch-5-fill", strokeVar: "--mindmap-branch-5-stroke", fallbackFill: "#b45309", fallbackStroke: "#fcd34d" },
+    { fillVar: "--mindmap-branch-6-fill", strokeVar: "--mindmap-branch-6-stroke", fallbackFill: "#be185d", fallbackStroke: "#f9a8d4" },
+] as const;
+
+function resolveThemeVar(variable: string, fallback: string): string {
+    if (typeof window === "undefined") {
+        return fallback;
+    }
+    const value = window.getComputedStyle(document.documentElement).getPropertyValue(variable).trim();
+    return value || fallback;
+}
 
 function extractErrorMessage(error: unknown): string {
     if (error && typeof error === "object" && "message" in error && typeof (error as { message?: unknown }).message === "string") {
@@ -97,7 +113,7 @@ async function requestFixedMermaidCode(code: string, timeoutMs = 30000): Promise
  * This runs synchronously BEFORE the svg string is committed to React state,
  * meaning the very first browser paint is already correct — no rAF delay needed.
  */
-function normalizeMermaidSvg(svgString: string): string {
+function normalizeMermaidSvg(svgString: string, chartSource = ""): string {
     if (!svgString || typeof window === 'undefined') return svgString;
 
     try {
@@ -136,6 +152,7 @@ function normalizeMermaidSvg(svgString: string): string {
         svgEl.style.maxHeight = '100%';
         svgEl.style.fontFamily = APP_FONT_STACK;
         svgEl.style.backgroundColor = 'transparent';
+        applyDiagramThemeOverrides(svgEl, chartSource);
 
         const existingStyle = doc.querySelector('style[data-repomind-font]');
         if (!existingStyle) {
@@ -196,6 +213,124 @@ function resetAnimatedSvgStyles(svgElement: SVGSVGElement): void {
         path.style.removeProperty('stroke-dasharray');
         path.style.removeProperty('stroke-dashoffset');
     });
+}
+
+function getMindmapSectionIndex(classList: DOMTokenList): number {
+    for (const className of Array.from(classList)) {
+        const match = /^section-(-?\d+)$/.exec(className);
+        if (!match) continue;
+        const section = Number.parseInt(match[1], 10);
+        if (!Number.isFinite(section) || section < 0) {
+            return 0;
+        }
+        return section % MINDMAP_BRANCH_COLORS.length;
+    }
+    return 0;
+}
+
+function applyMindmapThemeOverrides(svgElement: SVGSVGElement): void {
+    const palette = MINDMAP_BRANCH_COLORS.map((entry) => ({
+        fill: resolveThemeVar(entry.fillVar, entry.fallbackFill),
+        stroke: resolveThemeVar(entry.strokeVar, entry.fallbackStroke),
+    }));
+    const textColor = resolveThemeVar("--mindmap-branch-text", "#f8fafc");
+
+    const mindmapNodes = Array.from(svgElement.querySelectorAll<SVGGElement>("g.mindmap-node"));
+    mindmapNodes.forEach((node) => {
+        const sectionIndex = getMindmapSectionIndex(node.classList);
+        const sectionPalette = palette[sectionIndex] ?? palette[0];
+        const nodeShapes = node.querySelectorAll<SVGElement>(".label-container, .node-bkg, rect, polygon, circle, ellipse, path");
+        nodeShapes.forEach((shape) => {
+            shape.style.setProperty("fill", sectionPalette.fill, "important");
+            shape.style.setProperty("stroke", sectionPalette.stroke, "important");
+        });
+        const nodeLines = node.querySelectorAll<SVGLineElement>("line");
+        nodeLines.forEach((line) => {
+            line.style.setProperty("stroke", sectionPalette.stroke, "important");
+        });
+        const nodeText = node.querySelectorAll<SVGTextElement>("text");
+        nodeText.forEach((text) => {
+            text.style.setProperty("fill", textColor, "important");
+        });
+    });
+
+    palette.forEach((sectionPalette, sectionIndex) => {
+        const sectionEdges = svgElement.querySelectorAll<SVGElement>(`.section-edge-${sectionIndex}`);
+        sectionEdges.forEach((edge) => {
+            edge.style.setProperty("stroke", sectionPalette.stroke, "important");
+            if (edge.tagName.toLowerCase() !== "g") {
+                edge.style.setProperty("fill", "none", "important");
+            }
+            const edgePaths = edge.querySelectorAll<SVGElement>("path, line, polyline");
+            edgePaths.forEach((path) => {
+                path.style.setProperty("stroke", sectionPalette.stroke, "important");
+                path.style.setProperty("fill", "none", "important");
+            });
+        });
+    });
+
+    const allMindmapText = svgElement.querySelectorAll<SVGTextElement>(".mindmap-node-label, .mindmap-node text");
+    allMindmapText.forEach((text) => {
+        text.style.setProperty("fill", textColor, "important");
+    });
+}
+
+function applyXyChartThemeOverrides(svgElement: SVGSVGElement): void {
+    const textColor = resolveThemeVar("--xychart-text", "#e5e7eb");
+    const axisColor = resolveThemeVar("--xychart-axis", "#6b7280");
+    const barColor = resolveThemeVar("--xychart-bar", "#60a5fa");
+    const lineColor = resolveThemeVar("--xychart-line", "#34d399");
+
+    const mainGroup = svgElement.querySelector<SVGGElement>("g.main");
+    if (!mainGroup) return;
+
+    const background = mainGroup.querySelector<SVGRectElement>("rect.background");
+    if (background) {
+        background.setAttribute("fill", "transparent");
+        background.setAttribute("opacity", "0");
+        background.style.setProperty("fill", "transparent", "important");
+        background.style.setProperty("opacity", "0", "important");
+    }
+
+    const allText = mainGroup.querySelectorAll<SVGTextElement>("text");
+    allText.forEach((textNode) => {
+        textNode.style.setProperty("fill", textColor, "important");
+    });
+
+    const axisPaths = mainGroup.querySelectorAll<SVGPathElement>(
+        "g.left-axis path, g.bottom-axis path, g.top-axis path"
+    );
+    axisPaths.forEach((path) => {
+        path.style.setProperty("stroke", axisColor, "important");
+    });
+
+    const bars = mainGroup.querySelectorAll<SVGRectElement>("g.plot g[class^='bar-plot-'] rect");
+    bars.forEach((bar) => {
+        bar.style.setProperty("fill", barColor, "important");
+        bar.style.setProperty("stroke", barColor, "important");
+    });
+
+    const barLabels = mainGroup.querySelectorAll<SVGTextElement>("g.plot g[class^='bar-plot-'] text");
+    barLabels.forEach((label) => {
+        label.style.setProperty("fill", textColor, "important");
+    });
+
+    const lines = mainGroup.querySelectorAll<SVGPathElement>("g.plot g[class^='line-plot-'] path");
+    lines.forEach((line) => {
+        line.style.setProperty("stroke", lineColor, "important");
+        line.style.setProperty("fill", "none", "important");
+    });
+}
+
+function applyDiagramThemeOverrides(svgElement: SVGSVGElement, chartSource: string): void {
+    const declaration = getCanonicalMermaidDeclaration(chartSource ?? "");
+    if (declaration === "mindmap") {
+        applyMindmapThemeOverrides(svgElement);
+        return;
+    }
+    if (declaration === "xychart") {
+        applyXyChartThemeOverrides(svgElement);
+    }
 }
 
 function addRouteBeads(svgElement: SVGSVGElement, routePaths: SVGPathElement[], chart: string): void {
@@ -404,7 +539,7 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
                 try {
                     const { svg: newSvg } = await mermaid.render(id, sanitized);
                     if (mounted) {
-                        setSvg(normalizeMermaidSvg(newSvg));
+                        setSvg(normalizeMermaidSvg(newSvg, sanitized));
                         setRenderedChart(sanitized);
                         setError(null);
                         setIsFixing(false);
@@ -445,7 +580,7 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
                                 console.log('✅ AI Fix received, retrying render...');
                                 const { svg: fixedSvg } = await mermaid.render(id + '-autofixed', fixed);
                                 if (mounted) {
-                                    setSvg(normalizeMermaidSvg(fixedSvg));
+                                    setSvg(normalizeMermaidSvg(fixedSvg, fixed));
                                     setRenderedChart(fixed);
                                     setError(null);
                                     setIsFixing(false);
@@ -518,7 +653,7 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
                     }
                     codeToRender = compiled.mermaid;
                     const { svg } = await mermaid.render(id + '-manualfixed', codeToRender);
-                    setSvg(normalizeMermaidSvg(svg));
+                    setSvg(normalizeMermaidSvg(svg, codeToRender));
                     setRenderedChart(codeToRender);
                     setError(null);
                     if (typeof window !== "undefined") {
@@ -550,7 +685,7 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
 
             if (fixed) {
                 const { svg } = await mermaid.render(id + '-manualfixed', fixed);
-                setSvg(normalizeMermaidSvg(svg));
+                setSvg(normalizeMermaidSvg(svg, fixed));
                 setRenderedChart(fixed);
                 setError(null);
                 if (typeof window !== "undefined") {
@@ -586,6 +721,7 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
             if (!container) return;
             const svgElement = container.querySelector("svg");
             if (!svgElement) return;
+            const animationSource = renderedChart || chart;
 
             const shouldAnimate =
                 isStreaming
@@ -595,14 +731,15 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
             if (!shouldAnimate) {
                 applyResponsiveSvgSizing(svgElement);
                 resetAnimatedSvgStyles(svgElement);
+                applyDiagramThemeOverrides(svgElement, animationSource);
                 lastAnimatedSvgRef.current = svg;
                 return;
             }
 
             const reducedMotion = prefersReducedMotion();
-            const animationSource = renderedChart || chart;
             applyResponsiveSvgSizing(svgElement);
             resetAnimatedSvgStyles(svgElement);
+            applyDiagramThemeOverrides(svgElement, animationSource);
             if (!reducedMotion) {
                 runningAnimations.push(...runMermaidEntranceAnimations(svgElement, animationSource, shouldEnableLoopingBeads(reducedMotion)));
             }
@@ -633,7 +770,8 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
             const animationSource = renderedChart || chart;
             applyResponsiveSvgSizing(svgElement);
             resetAnimatedSvgStyles(svgElement);
-            if (!reducedMotion) {
+            applyDiagramThemeOverrides(svgElement, animationSource);
+            if (shouldAnimateDedicatedPreview(animationSource, reducedMotion)) {
                 runningAnimations = runMermaidEntranceAnimations(svgElement, animationSource, shouldEnableLoopingBeads(reducedMotion));
             }
         }, 300);
@@ -808,18 +946,17 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
                                             max-width: 100% !important;
                                             max-height: 100% !important;
                                             overflow: hidden !important;
-                                            color-scheme: dark;
                                             display: block;
                                             margin: auto !important;
                                             background: transparent !important;
+                                            backface-visibility: hidden;
+                                            transform: translateZ(0);
+                                            will-change: opacity, transform;
                                         }
                                     `}</style>
                                     <div className="h-full w-full overflow-hidden">
                                         <div className="h-full w-full grid place-items-center">
-                                            <motion.div
-                                                initial={{ opacity: 0, y: 20 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                transition={{ delay: 0.2 }}
+                                            <div
                                                 ref={modalRef}
                                                 className="h-full w-full flex items-center justify-center overflow-hidden"
                                                 dangerouslySetInnerHTML={{ __html: svg }}

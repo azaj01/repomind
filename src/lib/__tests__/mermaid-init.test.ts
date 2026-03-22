@@ -12,4 +12,11 @@ describe("mermaid init theme", () => {
         expect(MERMAID_THEME_CSS).toContain(".er g.row-rect-odd path");
         expect(MERMAID_THEME_CSS).toContain(".er .label");
     });
+
+    it("provides xychart defaults and avoids brittle mindmap/xychart selectors", () => {
+        expect(MERMAID_THEME_VARIABLES.xyChart.backgroundColor).toBe("transparent");
+        expect(MERMAID_THEME_VARIABLES.xyChart.plotColorPalette).toContain("#60a5fa");
+        expect(MERMAID_THEME_CSS).not.toContain(".mindmap .node:nth-of-type");
+        expect(MERMAID_THEME_CSS).not.toContain(".xychart .plot");
+    });
 });
