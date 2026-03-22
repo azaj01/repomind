@@ -4,6 +4,7 @@ const {
     getGenAIMock,
     getGenerativeModelMock,
     buildRepoMindPromptMock,
+    buildRepoMindVisualPromptMock,
     formatHistoryTextMock,
     getCachedQuerySelectionMock,
     cacheQuerySelectionMock,
@@ -30,6 +31,7 @@ const {
     getGenAIMock: vi.fn(),
     getGenerativeModelMock: vi.fn(),
     buildRepoMindPromptMock: vi.fn(),
+    buildRepoMindVisualPromptMock: vi.fn(),
     formatHistoryTextMock: vi.fn(),
     getCachedQuerySelectionMock: vi.fn(),
     cacheQuerySelectionMock: vi.fn(),
@@ -63,6 +65,7 @@ vi.mock("@/lib/ai-client", () => ({
 
 vi.mock("@/lib/prompt-builder", () => ({
     buildRepoMindPrompt: buildRepoMindPromptMock,
+    buildRepoMindVisualPrompt: buildRepoMindVisualPromptMock,
     formatHistoryText: formatHistoryTextMock,
 }));
 
@@ -110,6 +113,7 @@ describe("answerWithContextStream", () => {
         getGenAIMock.mockReset();
         getGenerativeModelMock.mockReset();
         buildRepoMindPromptMock.mockReset();
+        buildRepoMindVisualPromptMock.mockReset();
         formatHistoryTextMock.mockReset();
         getRecentRepoCommitsSnapshotMock.mockReset();
         getRecentProfileCommitsSnapshotMock.mockReset();
@@ -132,6 +136,7 @@ describe("answerWithContextStream", () => {
         getRepoDependencyAlertsSnapshotMock.mockReset();
 
         buildRepoMindPromptMock.mockReturnValue("prompt");
+        buildRepoMindVisualPromptMock.mockReturnValue("visual-prompt");
         formatHistoryTextMock.mockReturnValue("history");
 
         getGenAIMock.mockReturnValue({
@@ -199,6 +204,44 @@ describe("answerWithContextStream", () => {
         }
 
         expect(chunks).toContain("Final answer ");
+    });
+
+    it("uses visual-only prompt builder when query has visual intent", async () => {
+        const sendMessageStreamMock = vi.fn().mockResolvedValue({
+            stream: toAsyncStream([
+                {
+                    candidates: [{ content: { parts: [{ text: "diagram" }] } }],
+                },
+            ]),
+            response: Promise.resolve({
+                functionCalls: () => [],
+            }),
+        });
+
+        getGenerativeModelMock.mockReturnValue({
+            startChat: () => ({
+                sendMessageStream: sendMessageStreamMock,
+            }),
+        });
+
+        for await (const chunk of answerWithContextStream(
+            "Create a flowchart of the build pipeline",
+            "repo context",
+            { owner: "acme", repo: "widget" }
+        )) {
+            void chunk;
+        }
+
+        expect(buildRepoMindVisualPromptMock).toHaveBeenCalledTimes(1);
+        expect(buildRepoMindPromptMock).not.toHaveBeenCalled();
+        expect(buildRepoMindVisualPromptMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                question: "Create a flowchart of the build pipeline",
+                context: "repo context",
+                repoDetails: { owner: "acme", repo: "widget" },
+                historyText: "history",
+            })
+        );
     });
 
     it("reuses the same chat session for tool follow-up so thought signatures stay intact", async () => {
@@ -418,13 +461,19 @@ describe("fixMermaidSyntax", () => {
   class Repository
   class FileSelector
   class ChatService
-  Repository --> FileSelector`);
+  Repository --> FileSelector`, {
+            syntaxError: "Parse error on line 4",
+            diagramType: "classDiagram",
+        });
 
         expect(fixed).toContain("classDiagram");
         expect(generateContentMock).toHaveBeenCalledTimes(1);
 
         const prompt = String(generateContentMock.mock.calls[0]?.[0] ?? "");
         expect(prompt).toContain("Target diagram type: classDiagram");
+        expect(prompt).toContain("PARSER ERROR CONTEXT:\nParse error on line 4");
         expect(prompt).toContain("Do NOT convert this into flowchart node syntax");
+        expect(prompt).toContain("TYPE-SPECIFIC CANONICAL EXAMPLE");
+        expect(prompt).not.toContain("First line must be `sequenceDiagram`.");
     });
 });

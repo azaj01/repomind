@@ -6,7 +6,7 @@ import {
   type ModelPreference,
 } from "./ai-client";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
-import { buildRepoMindPrompt, formatHistoryText } from "./prompt-builder";
+import { buildRepoMindPrompt, buildRepoMindVisualPrompt, formatHistoryText } from "./prompt-builder";
 import { cacheQuerySelection, getCachedQuerySelection } from "./cache";
 import type { FileCachePolicy } from "./cache";
 import type { GitHubProfile } from "./github";
@@ -27,6 +27,7 @@ import {
   getRepoDependencyAlertsSnapshot,
 } from "./github";
 import type { GenerationConfig } from "@google/generative-ai";
+import { routeMermaidDiagram } from "./mermaid-router";
 
 type JsonObject = Record<string, unknown>;
 type GeminiTool = Record<string, unknown>;
@@ -717,7 +718,10 @@ export async function answerWithContext(
     }
   }
 
-  let prompt = buildRepoMindPrompt({ question, context: enrichedContext, repoDetails, historyText });
+  const useVisualOnlyPrompt = routeMermaidDiagram(question).visualIntent;
+  let prompt = useVisualOnlyPrompt
+    ? buildRepoMindVisualPrompt({ question, context: enrichedContext, repoDetails, historyText })
+    : buildRepoMindPrompt({ question, context: enrichedContext, repoDetails, historyText });
   const isProfileContext = repoDetails.repo === "profile";
   if (isProfileContext) {
     prompt += `\n\n[PROFILE TOOLS MODE]:
@@ -794,7 +798,10 @@ export async function* answerWithContextStream(
     }
   }
 
-  let prompt = buildRepoMindPrompt({ question, context: enrichedContext, repoDetails, historyText });
+  const useVisualOnlyPrompt = routeMermaidDiagram(question).visualIntent;
+  let prompt = useVisualOnlyPrompt
+    ? buildRepoMindVisualPrompt({ question, context: enrichedContext, repoDetails, historyText })
+    : buildRepoMindPrompt({ question, context: enrichedContext, repoDetails, historyText });
   const isProfileContext = repoDetails.repo === "profile";
   if (isProfileContext) {
     prompt += `\n\n[PROFILE TOOLS MODE]:
@@ -2123,83 +2130,224 @@ function detectMermaidFixDiagramType(code: string): MermaidFixDiagramType {
   return "unknown";
 }
 
-function buildMermaidFixPrompt(code: string, diagramType: MermaidFixDiagramType): string {
-  const commonRules = `GLOBAL RULES:
-1. Preserve the same Mermaid diagram type; do not convert to a different diagram family.
-2. Return only a valid Mermaid code block and no explanation text.
-3. Remove broken markdown/HTML artifacts and invalid characters that break parsing.
-4. Keep node/class/entity names concise and parse-safe.
-5. Do not add theme/color/style directives such as style, classDef, linkStyle, or %%{init...}%% unless they are strictly required for syntax correctness.`;
+interface MermaidFixPromptPack {
+  rules: string[];
+  antiPatterns: string[];
+  canonicalExample: string;
+}
 
-  const typeRules = (() => {
-    switch (diagramType) {
-      case "classDiagram":
-        return `TYPE RULES (classDiagram):
-- First line must be exactly: classDiagram
-- Do NOT convert this into flowchart node syntax (no A["Label"] rewriting).
-- Class declarations must use Mermaid class-diagram syntax (e.g., "class Repository").
-- Class members must follow "ClassName : member" format.
-- Relationship connectors must be valid class-diagram connectors: <|--, *--, o--, ..>, --, ..|>.
-- Relationship labels (if present) must follow: "A <|-- B : label".`;
-      case "sequenceDiagram":
-        return `TYPE RULES (sequenceDiagram):
-- First line must be exactly: sequenceDiagram
-- Participants and messages must follow Mermaid sequence syntax.
-- Use valid arrows such as ->>, -->>, -x.`;
-      case "stateDiagram-v2":
-        return `TYPE RULES (stateDiagram-v2):
-- First line must be exactly: stateDiagram-v2
-- Use valid state transitions and [*] start/end markers only where appropriate.`;
-      case "erDiagram":
-        return `TYPE RULES (erDiagram):
-- First line must be exactly: erDiagram
-- Entities must use block syntax and relations must use valid ER cardinality connectors.`;
-      case "mindmap":
-        return `TYPE RULES (mindmap):
-- First line must be exactly: mindmap
-- Maintain valid indentation hierarchy.`;
-      case "gantt":
-        return `TYPE RULES (gantt):
-- First line must be exactly: gantt
-- Keep valid date/task syntax and section blocks.`;
-      case "xychart":
-        return `TYPE RULES (xychart):
-- First line must be exactly: xychart (or xychart with orientation suffix).
-- Keep valid x-axis/y-axis and series syntax.`;
-      case "flowchart":
-        return `TYPE RULES (flowchart):
-- First line must be flowchart <direction>.
-- Use valid edge connectors and ensure referenced nodes are declared or parse-safe.`;
-      default:
-        return `TYPE RULES (unknown):
-- Infer the intended Mermaid type from the code and keep that type consistent.
-- Fix only syntax; do not redesign the diagram.`;
-    }
-  })();
+interface MermaidFixOptions {
+  syntaxError?: string;
+  diagramType?: string;
+}
 
-  return `You are a Mermaid diagram syntax expert. Fix the following Mermaid code so it parses successfully.
+const MERMAID_FIX_PROMPT_PACKS: Record<Exclude<MermaidFixDiagramType, "unknown">, MermaidFixPromptPack> = {
+  flowchart: {
+    rules: [
+      "First line must be `flowchart <direction>`.",
+      "Ensure every edge references valid node identifiers.",
+      "Keep square-node labels properly quoted when they include spaces/punctuation.",
+    ],
+    antiPatterns: [
+      "Do not emit `style`, `classDef`, `class`, or `linkStyle` directives.",
+      "Do not leave unmatched brackets or quotes in node labels.",
+      "Do not change this into another diagram type.",
+    ],
+    canonicalExample: `flowchart TD
+  A["Input"] --> B{"Valid?"}
+  B -->|yes| C["Process"]
+  B -->|no| D["Reject"]`,
+  },
+  sequenceDiagram: {
+    rules: [
+      "First line must be `sequenceDiagram`.",
+      "Participants/messages must use valid Mermaid sequence syntax.",
+      "Use valid message arrows such as `->>`, `-->>`, `-x`.",
+    ],
+    antiPatterns: [
+      "Do not use flowchart node wrappers (`A[Label]`).",
+      "Do not leave undeclared participants in messages.",
+      "Do not change this into another diagram type.",
+    ],
+    canonicalExample: `sequenceDiagram
+  participant Client
+  participant API
+  Client->>API: Request
+  API-->>Client: Response`,
+  },
+  "stateDiagram-v2": {
+    rules: [
+      "First line must be `stateDiagram-v2`.",
+      "Use valid `[*]` start/end markers only where appropriate.",
+      "Transitions must use `StateA --> StateB : label` form.",
+    ],
+    antiPatterns: [
+      "Do not use sequence or flowchart syntax.",
+      "Do not leave orphan states with no transitions.",
+      "Do not change this into another diagram type.",
+    ],
+    canonicalExample: `stateDiagram-v2
+  [*] --> Idle
+  Idle --> Running: start
+  Running --> [*]: done`,
+  },
+  classDiagram: {
+    rules: [
+      "First line must be `classDiagram`.",
+      "Class declarations must use class-diagram syntax.",
+      "Relationships must use valid class connectors such as `<|--`, `*--`, `o--`, `..>`.",
+    ],
+    antiPatterns: [
+      "Do NOT convert this into flowchart node syntax (no `A[Label]`).",
+      "Do not use invalid relationship symbols.",
+      "Do not change this into another diagram type.",
+    ],
+    canonicalExample: `classDiagram
+  class Repository
+  class Scanner
+  Repository ..> Scanner : uses`,
+  },
+  erDiagram: {
+    rules: [
+      "First line must be `erDiagram`.",
+      "Entities must use ER block syntax with attributes.",
+      "Relationships must use valid ER cardinality connectors.",
+    ],
+    antiPatterns: [
+      "Do not use classDiagram or flowchart connectors.",
+      "Do not omit entity names on relationship endpoints.",
+      "Do not change this into another diagram type.",
+    ],
+    canonicalExample: `erDiagram
+  USER {
+    uuid id PK
+  }
+  REPO {
+    uuid id PK
+    uuid owner_id FK
+  }
+  USER ||--o{ REPO : owns`,
+  },
+  mindmap: {
+    rules: [
+      "First line must be `mindmap`.",
+      "Hierarchy must be represented by indentation.",
+      "Labels should be concise and parse-safe.",
+    ],
+    antiPatterns: [
+      "Do not use arrows/operators.",
+      "Do not flatten all nodes at one indentation level.",
+      "Do not change this into another diagram type.",
+    ],
+    canonicalExample: `mindmap
+  root((Core))
+    Branch A
+      Leaf 1
+    Branch B`,
+  },
+  gantt: {
+    rules: [
+      "First line must be `gantt`.",
+      "Include valid date/task syntax and section blocks.",
+      "Use valid milestone and dependency syntax where needed.",
+    ],
+    antiPatterns: [
+      "Do not use flowchart edges.",
+      "Do not omit `dateFormat` for scheduled tasks.",
+      "Do not change this into another diagram type.",
+    ],
+    canonicalExample: `gantt
+  title Delivery Plan
+  dateFormat YYYY-MM-DD
+  section Build
+  Compile :a1, 2026-03-20, 2d`,
+  },
+  xychart: {
+    rules: [
+      "First line must be `xychart` (or `xychart <orientation>`).",
+      "Use valid x-axis/y-axis declarations and numeric series values.",
+      "Each series should keep consistent value counts.",
+    ],
+    antiPatterns: [
+      "Do not use unsupported chart types.",
+      "Do not include non-numeric values in series arrays.",
+      "Do not change this into another diagram type.",
+    ],
+    canonicalExample: `xychart
+  x-axis "Month" ["Jan", "Feb", "Mar"]
+  y-axis "Value" 0 --> 20
+  line [5, 8, 13]`,
+  },
+};
+
+function normalizeMermaidFixDiagramType(value: string | undefined): MermaidFixDiagramType {
+  const normalized = (value || "").trim().toLowerCase();
+  if (normalized === "graph" || normalized === "flowchart") return "flowchart";
+  if (normalized === "sequencediagram" || normalized === "sequence") return "sequenceDiagram";
+  if (normalized === "statediagram-v2" || normalized === "statediagram" || normalized === "state") return "stateDiagram-v2";
+  if (normalized === "classdiagram") return "classDiagram";
+  if (normalized === "erdiagram") return "erDiagram";
+  if (normalized === "mindmap") return "mindmap";
+  if (normalized === "gantt") return "gantt";
+  if (normalized === "xychart" || normalized === "xychart-beta") return "xychart";
+  return "unknown";
+}
+
+function resolveMermaidFixDiagramType(code: string, diagramTypeHint?: string): MermaidFixDiagramType {
+  const hintedType = normalizeMermaidFixDiagramType(diagramTypeHint);
+  if (hintedType !== "unknown") return hintedType;
+  return detectMermaidFixDiagramType(code);
+}
+
+function buildMermaidFixPrompt(code: string, diagramType: MermaidFixDiagramType, syntaxError?: string): string {
+  const pack = diagramType !== "unknown" ? MERMAID_FIX_PROMPT_PACKS[diagramType] : null;
+  const syntaxErrorSection = syntaxError && syntaxError.trim().length > 0
+    ? `PARSER ERROR CONTEXT:\n${syntaxError.trim()}`
+    : "PARSER ERROR CONTEXT:\nNot provided.";
+
+  const rulesSection = pack
+    ? pack.rules.map((rule) => `- ${rule}`).join("\n")
+    : "- Infer intended Mermaid type from code and preserve it.\n- Fix syntax only; do not redesign content.";
+
+  const antiPatternSection = pack
+    ? pack.antiPatterns.map((rule) => `- ${rule}`).join("\n")
+    : "- Do not convert into a different Mermaid family.\n- Do not add explanatory prose outside the Mermaid block.";
+
+  const exampleSection = pack
+    ? `\`\`\`mermaid\n${pack.canonicalExample}\n\`\`\``
+    : "`No type-specific example available.`";
+
+  return `You are a Mermaid syntax repair engine.
 
 Target diagram type: ${diagramType}
 
-${commonRules}
+GLOBAL REQUIREMENTS:
+- Preserve diagram semantics and keep the same Mermaid type.
+- Repair only syntax/parsing issues.
+- Return only one valid \`\`\`mermaid\`\`\` code block with corrected diagram code.
+- Do not include explanations, comments, or markdown outside that code block.
 
-${typeRules}
+TYPE-SPECIFIC RULES:
+${rulesSection}
+
+TYPE-SPECIFIC ANTI-PATTERNS:
+${antiPatternSection}
+
+TYPE-SPECIFIC CANONICAL EXAMPLE:
+${exampleSection}
+
+${syntaxErrorSection}
 
 INVALID MERMAID CODE:
 \`\`\`mermaid
 ${code}
-\`\`\`
-
-Return ONLY:
-\`\`\`mermaid
-[corrected code]
 \`\`\``;
 }
 
-export async function fixMermaidSyntax(code: string): Promise<string | null> {
+export async function fixMermaidSyntax(code: string, options: MermaidFixOptions = {}): Promise<string | null> {
   try {
-    const diagramType = detectMermaidFixDiagramType(code);
-    const prompt = buildMermaidFixPrompt(code, diagramType);
+    const diagramType = resolveMermaidFixDiagramType(code, options.diagramType);
+    const prompt = buildMermaidFixPrompt(code, diagramType, options.syntaxError);
 
     const result = await getGenAI()
       .getGenerativeModel({ model: DEFAULT_MODEL })

@@ -7,7 +7,12 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
 export async function POST(req: NextRequest) {
     try {
-        const { code } = await req.json();
+        const payload = await req.json() as {
+            code?: unknown;
+            syntaxError?: unknown;
+            diagramType?: unknown;
+        };
+        const code = typeof payload.code === "string" ? payload.code : "";
 
         if (!code) {
             return NextResponse.json(
@@ -16,7 +21,10 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        const fixed = await fixMermaidSyntax(code);
+        const fixed = await fixMermaidSyntax(code, {
+            syntaxError: typeof payload.syntaxError === "string" ? payload.syntaxError : undefined,
+            diagramType: typeof payload.diagramType === "string" ? payload.diagramType : undefined,
+        });
 
         if (!fixed) {
             return NextResponse.json(

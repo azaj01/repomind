@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildRepoMindPrompt, formatHistoryText, resolveVisualOutputDecision } from "@/lib/prompt-builder";
+import { buildRepoMindPrompt, buildRepoMindVisualPrompt, formatHistoryText, resolveVisualOutputDecision } from "@/lib/prompt-builder";
 
 describe("buildRepoMindPrompt", () => {
     const baseParams = {
@@ -238,6 +238,39 @@ describe("resolveVisualOutputDecision", () => {
             expect(decision.primaryFormat).not.toBe("svg");
             expect(decision.fallbackFormat).not.toBe("svg");
         }
+    });
+});
+
+describe("buildRepoMindVisualPrompt", () => {
+    const baseParams = {
+        question: "Create a mindmap of repository modules",
+        context: "src/index.ts exports app bootstrap",
+        repoDetails: { owner: "octocat", repo: "myproject" },
+        historyText: "",
+    };
+
+    it("includes only routed diagram type prompt pack details", () => {
+        const prompt = buildRepoMindVisualPrompt(baseParams);
+
+        expect(prompt).toContain("Routed diagram type: mindmap");
+        expect(prompt).toContain("TYPE-SPECIFIC BEST PRACTICES (mindmap)");
+        expect(prompt).toContain("TYPE-SPECIFIC ANTI-PATTERNS TO AVOID (mindmap)");
+        expect(prompt).toContain("CANONICAL mindmap EXAMPLE");
+        expect(prompt).not.toContain("TYPE-SPECIFIC BEST PRACTICES (flowchart)");
+        expect(prompt).not.toContain("TYPE-SPECIFIC BEST PRACTICES (sequenceDiagram)");
+    });
+
+    it("keeps compact visual-only contract and repo grounding", () => {
+        const prompt = buildRepoMindVisualPrompt({
+            ...baseParams,
+            question: "Create a flowchart for build pipeline",
+        });
+
+        expect(prompt).toContain("You are RepoMind Visual Composer.");
+        expect(prompt).toContain("OUTPUT CONTRACT:");
+        expect(prompt).toContain("Owner: octocat");
+        expect(prompt).toContain("Repo: myproject");
+        expect(prompt).toContain("CONTEXT:");
     });
 });
 

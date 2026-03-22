@@ -24,4 +24,11 @@ describe("Mermaid raw/preview controls", () => {
         expect(mermaidComponentSource).toContain("e.stopPropagation()");
         expect(mermaidComponentSource).toContain("if (!isGenerating && svg && !isRawView)");
     });
+
+    it("sends syntaxError and diagramType when requesting AI syntax fixes", () => {
+        expect(mermaidComponentSource).toContain("syntaxError?: string");
+        expect(mermaidComponentSource).toContain("diagramType?: string");
+        expect(mermaidComponentSource).toContain("body: JSON.stringify(payload)");
+        expect(mermaidComponentSource).toContain("const syntaxError = extractErrorMessage(renderError)");
+    });
 });

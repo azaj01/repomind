@@ -82,7 +82,13 @@ function prefersReducedMotion(): boolean {
     return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-async function requestFixedMermaidCode(code: string, timeoutMs = 30000): Promise<string | null> {
+interface MermaidFixRequestPayload {
+    code: string;
+    syntaxError?: string;
+    diagramType?: string;
+}
+
+async function requestFixedMermaidCode(payload: MermaidFixRequestPayload, timeoutMs = 30000): Promise<string | null> {
     if (typeof window === "undefined") {
         return null;
     }
@@ -94,7 +100,7 @@ async function requestFixedMermaidCode(code: string, timeoutMs = 30000): Promise
         const response = await fetch('/api/fix-mermaid', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code }),
+            body: JSON.stringify(payload),
             signal: controller.signal,
         });
 
@@ -1047,7 +1053,12 @@ export const Mermaid = ({ chart, isStreaming = false, rawCode }: MermaidProps) =
                         setError(null); // Clear error while fixing
 
                         try {
-                            const fixed = await requestFixedMermaidCode(sanitized);
+                            const syntaxError = extractErrorMessage(renderError);
+                            const fixed = await requestFixedMermaidCode({
+                                code: sanitized,
+                                syntaxError,
+                                diagramType: declaration ?? undefined,
+                            });
 
                             if (fixed) {
                                 console.log('✅ AI Fix received, retrying render...');
@@ -1116,6 +1127,7 @@ export const Mermaid = ({ chart, isStreaming = false, rawCode }: MermaidProps) =
         setIsFixing(true);
 
         try {
+            const retryErrorHint = error ?? undefined;
             let codeToRender = chart;
             if (chart.trim().startsWith("{")) {
                 try {
@@ -1154,7 +1166,11 @@ export const Mermaid = ({ chart, isStreaming = false, rawCode }: MermaidProps) =
                 return;
             }
 
-            const fixed = await requestFixedMermaidCode(sanitized);
+            const fixed = await requestFixedMermaidCode({
+                code: sanitized,
+                syntaxError: retryErrorHint,
+                diagramType: declaration ?? undefined,
+            });
 
             if (fixed) {
                 const { svg } = await mermaid.render(id + '-manualfixed', fixed);

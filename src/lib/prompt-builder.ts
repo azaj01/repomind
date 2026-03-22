@@ -53,6 +53,12 @@ interface UnsupportedMermaidFallback {
   fallbackType: MermaidDiagramType;
 }
 
+interface MermaidTypePromptPack {
+  bestPractices: string[];
+  antiPatterns: string[];
+  canonicalMermaidExample: string;
+}
+
 const TYPED_MERMAID_JSON_DIAGRAMS = new Set<MermaidDiagramType>([
   "flowchart",
   "sequenceDiagram",
@@ -77,6 +83,172 @@ const UNSUPPORTED_MERMAID_FALLBACKS: Array<{ pattern: RegExp; label: string; fal
   { pattern: /\brequirement(?:\s+diagram)?\b/i, label: "requirementDiagram", fallbackType: "flowchart" },
 ];
 
+const MERMAID_TYPE_PROMPT_PACKS: Record<MermaidDiagramType, MermaidTypePromptPack> = {
+  flowchart: {
+    bestPractices: [
+      "Use a top-down (`TD`) layout unless the user asks for another direction.",
+      "Group related stages into compact branches or subgraphs to avoid long vertical chains.",
+      "Keep edge labels short and only where decision context is needed.",
+    ],
+    antiPatterns: [
+      "Do not create isolated nodes that are not connected.",
+      "Do not add style/class directives (`style`, `classDef`, `linkStyle`, `%%{init}%%`).",
+      "Do not use direct self-loops (`A --> A`); route via an intermediate helper node.",
+    ],
+    canonicalMermaidExample: `flowchart TD
+  Input["Request"]
+  Validate{"Valid?"}
+  Process["Process"]
+  Reject["Reject"]
+  Output["Response"]
+  Input --> Validate
+  Validate -->|yes| Process
+  Validate -->|no| Reject
+  Process --> Output`,
+  },
+  sequenceDiagram: {
+    bestPractices: [
+      "Declare participants explicitly before messages.",
+      "Keep message text action-focused and concise.",
+      "Use sync/async/reply arrows consistently to reflect call semantics.",
+    ],
+    antiPatterns: [
+      "Do not introduce undeclared participants mid-flow.",
+      "Do not overload a single message with long prose.",
+      "Do not switch to flowchart syntax.",
+    ],
+    canonicalMermaidExample: `sequenceDiagram
+  actor User
+  participant API
+  participant DB
+  User->>API: POST /query
+  API->>DB: fetch records
+  DB-->>API: rows
+  API-->>User: 200 OK`,
+  },
+  "stateDiagram-v2": {
+    bestPractices: [
+      "Use explicit start and end states with `[*]` when relevant.",
+      "Name states clearly and keep transition labels action-oriented.",
+      "Model only meaningful lifecycle transitions.",
+    ],
+    antiPatterns: [
+      "Do not use sequence or flowchart arrow syntax.",
+      "Do not create disconnected states.",
+      "Do not add redundant transitions that duplicate meaning.",
+    ],
+    canonicalMermaidExample: `stateDiagram-v2
+  [*] --> Idle
+  Idle --> Running: start
+  Running --> Failed: error
+  Running --> Done: success
+  Failed --> Idle: retry
+  Done --> [*]`,
+  },
+  classDiagram: {
+    bestPractices: [
+      "Declare classes first, then relationships.",
+      "Use valid UML connectors (`<|--`, `*--`, `o--`, `..>`).",
+      "Keep attributes/methods concise and typed when possible.",
+    ],
+    antiPatterns: [
+      "Do not use flowchart node wrappers like `A[Label]`.",
+      "Do not use invalid relationship operators.",
+      "Do not repeat equivalent relationships in multiple directions.",
+    ],
+    canonicalMermaidExample: `classDiagram
+  class Repository {
+    +string name
+    +analyze()
+  }
+  class Scanner {
+    +scan()
+  }
+  Repository ..> Scanner : uses`,
+  },
+  erDiagram: {
+    bestPractices: [
+      "Define entities with clear attributes and keys (`PK`, `FK`, `UK`).",
+      "Use Mermaid ER cardinality connectors (`||--o{`, `}|..|{`, etc.).",
+      "Label relationships only when they add meaning.",
+    ],
+    antiPatterns: [
+      "Do not use classDiagram or flowchart relationship syntax.",
+      "Do not omit key fields for core entities.",
+      "Do not leave relation endpoints undefined.",
+    ],
+    canonicalMermaidExample: `erDiagram
+  USER {
+    uuid id PK
+    string email UK
+  }
+  REPO {
+    uuid id PK
+    uuid owner_id FK
+    string name
+  }
+  USER ||--o{ REPO : owns`,
+  },
+  gantt: {
+    bestPractices: [
+      "Always define a valid `dateFormat` and section blocks.",
+      "Keep tasks short, with explicit start/end or `after` dependencies.",
+      "Use milestones only for real checkpoints.",
+    ],
+    antiPatterns: [
+      "Do not use flowchart arrows.",
+      "Do not omit section names.",
+      "Do not mix incompatible date formats.",
+    ],
+    canonicalMermaidExample: `gantt
+  title Delivery Plan
+  dateFormat YYYY-MM-DD
+  section Build
+  Compile :a1, 2026-03-20, 2d
+  Test :after a1, 2d
+  section Release
+  Ship milestone :milestone, 2026-03-25, 0d`,
+  },
+  mindmap: {
+    bestPractices: [
+      "Use indentation to represent hierarchy.",
+      "Keep branch labels short and concept-oriented.",
+      "Prefer balanced branch depth for readability.",
+    ],
+    antiPatterns: [
+      "Do not use arrows or edge operators.",
+      "Do not flatten all concepts under root.",
+      "Do not mix mindmap syntax with flowchart nodes.",
+    ],
+    canonicalMermaidExample: `mindmap
+  root((RepoMind))
+    Analysis
+      Scanner
+      Signals
+    Output
+      Diagram
+      Summary`,
+  },
+  xychart: {
+    bestPractices: [
+      "Define clear axis titles and categories/ranges.",
+      "Keep all series lengths consistent.",
+      "Use line/bar series only with numeric values.",
+    ],
+    antiPatterns: [
+      "Do not use unsupported series types.",
+      "Do not provide non-numeric data points.",
+      "Do not omit axis context when comparing trends.",
+    ],
+    canonicalMermaidExample: `xychart
+  title "Module Activity"
+  x-axis "Month" ["Jan", "Feb", "Mar"]
+  y-axis "Commits" 0 --> 20
+  bar [6, 11, 9]
+  line [5, 9, 12]`,
+  },
+};
+
 function detectUnsupportedMermaidFallback(question: string, routedType: MermaidDiagramType): UnsupportedMermaidFallback | null {
   for (const entry of UNSUPPORTED_MERMAID_FALLBACKS) {
     if (entry.pattern.test(question || "")) {
@@ -87,6 +259,16 @@ function detectUnsupportedMermaidFallback(question: string, routedType: MermaidD
     }
   }
   return null;
+}
+
+function truncateVisualContext(context: string, limit = 16000): string {
+  const value = (context || "").trim();
+  if (value.length <= limit) return value;
+  return `${value.slice(0, limit)}\n\n[context truncated for visual-only prompt efficiency]`;
+}
+
+function getMermaidTypePromptPack(diagramType: MermaidDiagramType): MermaidTypePromptPack {
+  return MERMAID_TYPE_PROMPT_PACKS[diagramType];
 }
 
 export function resolveVisualOutputDecision(question: string): VisualOutputDecision {
@@ -370,6 +552,64 @@ ${diagramSchema}
               - If the request is not clearly visual, answer in text only.
               - Prefer the routed topology and avoid generic flowchart repetition.
   `;
+}
+
+export function buildRepoMindVisualPrompt(params: RepoMindPromptParams): string {
+  const { question, context, repoDetails, historyText } = params;
+  const route = routeMermaidDiagram(question);
+  const output = resolveVisualOutputDecision(question);
+  const unsupportedFallback = detectUnsupportedMermaidFallback(question, route.diagramType);
+  const pack = getMermaidTypePromptPack(route.diagramType);
+  const jsonSchema = getMermaidJsonSchema(route.diagramType);
+  const compactContext = truncateVisualContext(context);
+  const compactHistory = historyText?.trim() || "None";
+
+  return `
+You are RepoMind Visual Composer.
+
+TASK:
+- Produce exactly one high-quality Mermaid diagram for this request.
+- Routed diagram type: ${route.diagramType}
+- Preferred output format: ${output.primaryFormat}
+- Fallback output format: ${output.fallbackFormat}
+- Keep output concise and render-safe.
+
+TYPE-SPECIFIC BEST PRACTICES (${route.diagramType}):
+${pack.bestPractices.map((rule) => `- ${rule}`).join("\n")}
+
+TYPE-SPECIFIC ANTI-PATTERNS TO AVOID (${route.diagramType}):
+${pack.antiPatterns.map((rule) => `- ${rule}`).join("\n")}
+
+CANONICAL ${route.diagramType} EXAMPLE:
+\`\`\`mermaid
+${pack.canonicalMermaidExample}
+\`\`\`
+
+MERMAID-JSON SCHEMA FOR ${route.diagramType}:
+\`\`\`json
+${jsonSchema}
+\`\`\`
+
+OUTPUT CONTRACT:
+- Return only one code block (\`\`\`${output.primaryFormat}\`\`\`) unless fallback is required.
+- If using fallback, return one \`\`\`${output.fallbackFormat}\`\`\` block only.
+- Do not include explanations, status text, or extra prose outside the code block.
+- Do not include theme/style directives (\`style\`, \`classDef\`, \`class\`, \`linkStyle\`, \`%%{init...}%%\`).
+${unsupportedFallback ? `- If user requested unsupported Mermaid \`${unsupportedFallback.requestedTypeLabel}\`, begin with a single line note that RepoMind maps it to ${unsupportedFallback.fallbackType}, then emit the mapped diagram.` : ""}
+
+REPO GROUNDING:
+- Owner: ${repoDetails.owner}
+- Repo: ${repoDetails.repo}
+
+CONTEXT:
+${compactContext}
+
+CONVERSATION HISTORY:
+${compactHistory}
+
+USER QUESTION:
+${question}
+`;
 }
 
 function buildResponseStructureRules(question: string): string {
