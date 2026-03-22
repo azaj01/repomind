@@ -123,6 +123,24 @@ describe("sanitizeMermaidCode", () => {
         expect(result).toContain("xychart");
         expect(result).not.toContain("xychart-beta");
     });
+
+    it("repairs mismatched quote pairs in flowchart square-node labels", () => {
+        const result = sanitizeMermaidCode(`flowchart TD
+subgraph "BuildTime"
+Compiler["React Compiler] -->|Optimizes/Memoizes| Code[App Code / JSX"]
+end`);
+
+        expect(result).toContain('Compiler["React Compiler"] -->|Optimizes/Memoizes| Code["App Code / JSX"]');
+        expect(result).not.toContain('Compiler["React Compiler]');
+        expect(result).not.toContain('Code[App Code / JSX"]');
+    });
+
+    it("repairs one-sided quote mistakes in simple flowchart node labels", () => {
+        const result = sanitizeMermaidCode(`flowchart TD
+A["Start] --> B[Finish"]`);
+
+        expect(result).toContain('A["Start"] --> B["Finish"]');
+    });
 });
 
 describe("extractDiagramType", () => {

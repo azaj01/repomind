@@ -426,6 +426,35 @@ export function validateMermaidSyntax(code: string): { valid: boolean; error?: s
     }
 }
 
+const FLOWCHART_SQUARE_NODE_PATTERN = /\b([A-Za-z0-9_-]+)\[([^\]]*)\]/g;
+
+function normalizeFlowchartLabelText(rawLabel: string): string {
+    let cleaned = rawLabel.trim();
+    const hadDoubleQuotes = cleaned.includes('"');
+
+    if (cleaned.startsWith('"')) {
+        cleaned = cleaned.slice(1);
+    }
+    if (cleaned.endsWith('"')) {
+        cleaned = cleaned.slice(0, -1);
+    }
+
+    cleaned = cleaned.trim().replace(/"/g, "'");
+    if (!cleaned) {
+        cleaned = "Node";
+    }
+
+    const shouldQuote = hadDoubleQuotes || /[^A-Za-z0-9_-]/.test(cleaned);
+    return shouldQuote ? `"${cleaned}"` : cleaned;
+}
+
+function normalizeFlowchartSquareNodeLabels(line: string): string {
+    return line.replace(FLOWCHART_SQUARE_NODE_PATTERN, (_full, id: string, label: string) => {
+        const normalizedLabel = normalizeFlowchartLabelText(label);
+        return `${id}[${normalizedLabel}]`;
+    });
+}
+
 /**
  * Sanitize Mermaid code (fix common AI mistakes)
  * Smarter, less aggressive sanitization
@@ -483,26 +512,27 @@ export function sanitizeMermaidCode(code: string): string {
     const processedLines = lines.map(line => {
         const trimmed = line.trim();
         if (!trimmed) return '';
+        let normalizedLine = normalizeFlowchartSquareNodeLabels(trimmed);
 
         // Drop model-injected style directives to preserve app theme consistency.
-        if (trimmed.match(/^(classDef|class|click|style|linkStyle)\s/)) {
+        if (normalizedLine.match(/^(classDef|class|click|style|linkStyle)\s/)) {
             return "";
         }
 
         // Handle subgraph
-        if (trimmed.startsWith('subgraph ')) {
-            const title = trimmed.substring(9).trim();
+        if (normalizedLine.startsWith('subgraph ')) {
+            const title = normalizedLine.substring(9).trim();
             // Ensure title is quoted if it contains spaces or special chars
             if (!title.startsWith('"') && !title.startsWith('[')) {
                 return `subgraph "${title.replace(/"/g, "'")}"`;
             }
-            return trimmed;
+            return normalizedLine;
         }
 
         // Fix node definitions with special characters in labels
         // Matches: ID[Label with (special) chars] or ID(Label) or ID((Label))
         const nodeDefRegex = /^([a-zA-Z0-9_-]+)(\[|\(\(|\(|\[\[|\{\{)(.*?)(\]|\)\)|\)|\]\]|\}\})$/;
-        const nodeMatch = trimmed.match(nodeDefRegex);
+        const nodeMatch = normalizedLine.match(nodeDefRegex);
         if (nodeMatch) {
             const [, id, open, label, close] = nodeMatch;
             if (!label.startsWith('"') && (label.includes('(') || label.includes(')') || label.includes('[') || label.includes(']'))) {
@@ -512,31 +542,31 @@ export function sanitizeMermaidCode(code: string): string {
 
         // Fix arrow syntax: A -- Label --> B
         // We want to ensure the label is quoted: A -- "Label" --> B
-        if (trimmed.includes('-->') || trimmed.includes('-.->') || trimmed.includes('==>')) {
+        if (normalizedLine.includes('-->') || normalizedLine.includes('-.->') || normalizedLine.includes('==>')) {
             // Regex to find unquoted text between arrow parts
             const arrowLabelRegex = /(--|\.-|==)\s+([a-zA-Z0-9\s.,;:!?()_-]+?)\s+(-->|\.->|==>)/;
-            const match = trimmed.match(arrowLabelRegex);
+            const match = normalizedLine.match(arrowLabelRegex);
             if (match) {
                 const [full, start, label, end] = match;
                 if (!label.includes('"')) {
-                    return trimmed.replace(full, `${start} "${label.trim()}" ${end}`);
+                    normalizedLine = normalizedLine.replace(full, `${start} "${label.trim()}" ${end}`);
                 }
             }
         }
 
         // Normalize legacy "graph" declaration to canonical "flowchart".
-        if (isFlowchartDeclaration(trimmed)) {
-            const direction = trimmed.split(/\s+/)[1] ?? "TD";
+        if (isFlowchartDeclaration(normalizedLine)) {
+            const direction = normalizedLine.split(/\s+/)[1] ?? "TD";
             return `flowchart ${direction}`;
         }
 
         // Normalize legacy "xychart-beta" declaration to canonical "xychart".
-        if (isXychartDeclaration(trimmed)) {
-            const suffix = trimmed.split(/\s+/).slice(1).join(" ");
+        if (isXychartDeclaration(normalizedLine)) {
+            const suffix = normalizedLine.split(/\s+/).slice(1).join(" ");
             return suffix ? `xychart ${suffix}` : "xychart";
         }
 
-        return trimmed;
+        return normalizedLine;
     });
 
     // Ensure all subgraphs are closed
