@@ -13,6 +13,9 @@ vi.stubGlobal("localStorage", {
     key(i: number): string | null { return Object.keys(_store)[i] ?? null; },
 });
 
+const fetchMock = vi.fn();
+vi.stubGlobal("fetch", fetchMock);
+
 // Mock axios so cloud storage calls don't throw
 vi.mock("axios", () => ({
     default: {
@@ -35,6 +38,7 @@ import {
 beforeEach(() => {
     Object.keys(_store).forEach(k => delete _store[k]);
     vi.clearAllMocks();
+    fetchMock.mockReset();
 });
 
 // ─── formatStorageSize ────────────────────────────────────────────────────────
@@ -130,6 +134,75 @@ describe("saveConversation and loadConversation", () => {
 
         const second = loaded?.[1] as Record<string, unknown>;
         expect(second.modelUsed).toBe("thinking");
+    });
+
+    it("treats successful empty cloud response as authoritative and clears stale local cache", async () => {
+        localStorage.setItem("repomind_chat_owner_repo", JSON.stringify({
+            owner: "owner",
+            repo: "repo",
+            timestamp: Date.now(),
+            messages: [{ id: "1", role: "user", content: "stale local" }],
+        }));
+
+        fetchMock.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            statusText: "OK",
+            json: async () => ({ messages: [] }),
+        });
+
+        const loaded = await loadConversation("owner", "repo", true);
+        expect(loaded).toBeNull();
+        expect(localStorage.getItem("repomind_chat_owner_repo")).toBeNull();
+    });
+
+    it("serializes cloud save and clear mutations so clear runs last", async () => {
+        let releasePost: (() => void) | null = null;
+        const postGate = new Promise<void>((resolve) => {
+            releasePost = resolve;
+        });
+
+        fetchMock.mockImplementation((_url: string, init?: { method?: string }) => {
+            if (init?.method === "POST") {
+                return postGate.then(() => ({
+                    ok: true,
+                    status: 200,
+                    statusText: "OK",
+                    json: async () => ({ success: true }),
+                }));
+            }
+
+            if (init?.method === "DELETE") {
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    statusText: "OK",
+                    json: async () => ({ success: true }),
+                });
+            }
+
+            return Promise.resolve({
+                ok: true,
+                status: 200,
+                statusText: "OK",
+                json: async () => ({ messages: [] }),
+            });
+        });
+
+        const savePromise = saveConversation("owner", "repo", [{ id: "1", role: "user", content: "A" }], true);
+        await Promise.resolve();
+        const clearPromise = clearConversation("owner", "repo", true);
+        await Promise.resolve();
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("POST");
+
+        releasePost?.();
+        await savePromise;
+        await clearPromise;
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(fetchMock.mock.calls[1]?.[1]?.method).toBe("DELETE");
     });
 });
 

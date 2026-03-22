@@ -28,7 +28,7 @@ export const templates = {
             sanitized.push(`Step ${sanitized.length + 1}`);
         }
 
-        return `graph TD
+        return `flowchart TD
 ${sanitized.map((c, i) => `  N${i}["${c}"]`).join('\n')}
 ${sanitized.slice(0, -1).map((_, i) => `  N${i} --> N${i + 1}`).join('\n')}`;
     },
@@ -38,7 +38,7 @@ ${sanitized.slice(0, -1).map((_, i) => `  N${i} --> N${i + 1}`).join('\n')}`;
      */
     layeredArch: (layers: string[]) => {
         const clean = (s: string) => s.replace(/["'`<>]/g, '').replace(/[^a-zA-Z0-9 ]/g, ' ').trim();
-        return `graph TB
+        return `flowchart TB
   subgraph Frontend
     UI["${clean(layers[0] || 'User Interface')}"]
     Shell["${clean(layers[1] || 'App Shell')}"]
@@ -77,7 +77,7 @@ ${sanitized.slice(0, -1).map((_, i) => `  N${i} --> N${i + 1}`).join('\n')}`;
         }
 
         return `
-graph LR
+flowchart LR
 ${normalized.map(c => `  ${c.name.replace(/[^a-zA-Z0-9]/g, '_')}["${c.name}"]`).join('\n')}
 ${normalized.flatMap(c =>
             (c.deps || []).map(d => `  ${c.name.replace(/[^a-zA-Z0-9]/g, '_')} --> ${d.replace(/[^a-zA-Z0-9]/g, '_')}`)
@@ -89,7 +89,7 @@ ${normalized.flatMap(c =>
      * Service architecture diagram
      */
     serviceArch: () => `
-graph TB
+flowchart TB
   Client["Client/Browser"]
   LB["Load Balancer"]
   App1["App Server 1"]
@@ -108,7 +108,16 @@ graph TB
 };
 
 const MIN_FLOWCHART_NODE_COUNT = 6;
-const VALID_MERMAID_DIAGRAM_TYPES = ["graph", ...MERMAID_DIAGRAM_DECLARATIONS];
+const VALID_MERMAID_DIAGRAM_TYPES = [...MERMAID_DIAGRAM_DECLARATIONS];
+
+function isFlowchartDeclarationLine(line: string): boolean {
+    return line.startsWith("flowchart ") || line.startsWith("graph ");
+}
+
+function isFlowchartDeclaration(code: string): boolean {
+    const trimmed = code.trim();
+    return trimmed === "flowchart" || trimmed === "graph" || isFlowchartDeclarationLine(trimmed);
+}
 
 export function countMermaidFlowchartNodes(code: string): number {
     const nodeIds = new Set<string>();
@@ -116,7 +125,7 @@ export function countMermaidFlowchartNodes(code: string): number {
 
     for (const rawLine of lines) {
         const line = rawLine.trim();
-        if (!line || line.startsWith("graph ") || line.startsWith("flowchart ") || line.startsWith("subgraph ") || line === "end") {
+        if (!line || isFlowchartDeclarationLine(line) || line.startsWith("subgraph ") || line === "end") {
             continue;
         }
 
@@ -139,7 +148,7 @@ function getFirstMermaidNodeId(code: string): string | null {
     const lines = code.split("\n");
     for (const rawLine of lines) {
         const line = rawLine.trim();
-        if (!line || line.startsWith("graph ") || line.startsWith("flowchart ") || line.startsWith("subgraph ") || line === "end") {
+        if (!line || isFlowchartDeclarationLine(line) || line.startsWith("subgraph ") || line === "end") {
             continue;
         }
 
@@ -196,7 +205,7 @@ function getMermaidExpansionLabels(context?: string): string[] {
 export function ensureMermaidMinimumDetail(code: string, context?: string, minimumNodes = MIN_FLOWCHART_NODE_COUNT): string {
     const trimmed = code.trim();
     const diagramType = extractDiagramType(trimmed);
-    if (diagramType !== "graph" && diagramType !== "flowchart") {
+    if (diagramType !== "flowchart") {
         return code;
     }
 
@@ -278,7 +287,7 @@ export function validateMermaidSyntax(code: string): { valid: boolean; error?: s
         }
 
         const diagramType = extractDiagramType(trimmed);
-        if ((diagramType === "graph" || diagramType === "flowchart") && countMermaidFlowchartNodes(trimmed) < MIN_FLOWCHART_NODE_COUNT) {
+        if (diagramType === "flowchart" && countMermaidFlowchartNodes(trimmed) < MIN_FLOWCHART_NODE_COUNT) {
             return { valid: false, error: `Flowchart must contain at least ${MIN_FLOWCHART_NODE_COUNT} nodes.` };
         }
 
@@ -306,7 +315,14 @@ export function sanitizeMermaidCode(code: string): string {
     }).join('\n');
 
     const diagramType = extractDiagramType(sanitized);
-    if (diagramType === "mindmap" || diagramType === "gantt") {
+    if (
+        diagramType === "mindmap" ||
+        diagramType === "gantt" ||
+        diagramType === "sequenceDiagram" ||
+        diagramType === "classDiagram" ||
+        diagramType === "erDiagram" ||
+        diagramType === "stateDiagram-v2"
+    ) {
         return sanitized
             .split('\n')
             .map((line) => line.replace(/[ \t]+$/g, ""))
@@ -361,9 +377,10 @@ export function sanitizeMermaidCode(code: string): string {
             }
         }
 
-        // Ensure flowchart/graph always has a direction if missing
-        if (trimmed === 'graph' || trimmed === 'flowchart') {
-            return `${trimmed} TD`;
+        // Normalize legacy "graph" declaration to canonical "flowchart".
+        if (isFlowchartDeclaration(trimmed)) {
+            const direction = trimmed.split(/\s+/)[1] ?? "TD";
+            return `flowchart ${direction}`;
         }
 
         return trimmed;
@@ -395,7 +412,7 @@ export function extractDiagramType(code: string): string {
         return "unknown";
     }
 
-    if (trimmed.startsWith("graph") || trimmed.startsWith("flowchart")) {
+    if (isFlowchartDeclaration(trimmed)) {
         return "flowchart";
     }
 
@@ -468,7 +485,7 @@ export interface MermaidEdge {
 }
 
 export interface MermaidFlowchartDiagramData {
-    diagramType?: "flowchart" | "graph";
+    diagramType?: "flowchart";
     title?: string;
     direction?: "TB" | "TD" | "BT" | "RL" | "LR";
     nodes: MermaidNode[];
@@ -631,6 +648,144 @@ function cleanId(id: string): string {
     return id.replace(/[^a-zA-Z0-9]/g, "_");
 }
 
+function toNonEmptyString(value: unknown): string | null {
+    if (typeof value === "string") {
+        const trimmed = value.trim();
+        return trimmed.length > 0 ? trimmed : null;
+    }
+
+    if (typeof value === "number" || typeof value === "boolean") {
+        return String(value);
+    }
+
+    return null;
+}
+
+function toRecord(value: unknown): Record<string, unknown> | null {
+    return isRecord(value) ? value : null;
+}
+
+function pickString(record: Record<string, unknown>, keys: string[]): string | null {
+    for (const key of keys) {
+        const value = toNonEmptyString(record[key]);
+        if (value) {
+            return value;
+        }
+    }
+    return null;
+}
+
+function normalizeSequenceParticipantKind(value: unknown): MermaidSequenceParticipant["kind"] {
+    const raw = toNonEmptyString(value)?.toLowerCase();
+    if (!raw) {
+        return "participant";
+    }
+
+    const normalized = raw.replace(/[\s_-]/g, "");
+    if (normalized === "actor") return "actor";
+    if (normalized === "boundary") return "boundary";
+    if (normalized === "control") return "control";
+    if (normalized === "entity") return "entity";
+    if (normalized === "database" || normalized === "db") return "database";
+    if (normalized === "collection" || normalized === "collections") return "collections";
+    if (normalized === "queue") return "queue";
+    return "participant";
+}
+
+function normalizeSequenceMessageKind(value: unknown): MermaidSequenceMessage["kind"] {
+    const raw = toNonEmptyString(value)?.toLowerCase();
+    if (!raw) {
+        return "sync";
+    }
+
+    const normalized = raw.replace(/[\s_-]/g, "");
+    if (normalized === "async" || normalized === "asynchronous") return "async";
+    if (normalized === "reply" || normalized === "return" || normalized === "response") return "reply";
+    if (normalized === "create" || normalized === "spawn") return "create";
+    if (normalized === "destroy" || normalized === "delete" || normalized === "terminate") return "destroy";
+    return "sync";
+}
+
+function normalizeSequenceParticipants(rawParticipants: unknown[]): MermaidSequenceParticipant[] {
+    const normalized: Array<MermaidSequenceParticipant | null> = rawParticipants.map((entry) => {
+        if (typeof entry === "string") {
+            const label = toNonEmptyString(entry);
+            if (!label) return null;
+            return {
+                id: cleanId(label),
+                label,
+                kind: "participant" as const,
+            };
+        }
+
+        const record = toRecord(entry);
+        if (!record) return null;
+
+        const label = pickString(record, ["label", "name", "title", "displayName"]);
+        const id = pickString(record, ["id", "alias", "key", "name", "label"]) ?? label;
+        if (!id) {
+            return null;
+        }
+
+        return {
+            id: cleanId(id),
+            label: label ?? id,
+            kind: normalizeSequenceParticipantKind(record.kind ?? record.type ?? record.role),
+        };
+    });
+
+    return normalized.filter((entry): entry is MermaidSequenceParticipant => entry !== null);
+}
+
+function normalizeSequenceMessages(rawMessages: unknown[]): MermaidSequenceMessage[] {
+    const normalized: Array<MermaidSequenceMessage | null> = rawMessages.map((entry) => {
+        if (typeof entry === "string") {
+            const pattern = /^\s*([A-Za-z0-9_.-]+)\s*[-=]+>+\s*([A-Za-z0-9_.-]+)\s*:\s*(.+)\s*$/;
+            const match = entry.match(pattern);
+            if (!match) {
+                return null;
+            }
+
+            return {
+                from: cleanId(match[1]),
+                to: cleanId(match[2]),
+                text: cleanLabel(match[3]),
+                kind: "sync" as const,
+            };
+        }
+
+        const record = toRecord(entry);
+        if (!record) return null;
+
+        const from = pickString(record, ["from", "source", "sender", "caller", "actor", "participant", "who"]);
+        const to = pickString(record, ["to", "target", "receiver", "callee", "destination", "service"]);
+        const text = pickString(record, ["text", "message", "label", "action", "description", "event", "request", "response"]);
+
+        if (!from || !to || !text) {
+            return null;
+        }
+
+        return {
+            from: cleanId(from),
+            to: cleanId(to),
+            text: cleanLabel(text),
+            kind: normalizeSequenceMessageKind(record.kind ?? record.type ?? record.messageType ?? record.arrow),
+        };
+    });
+
+    return normalized.filter((entry): entry is MermaidSequenceMessage => entry !== null);
+}
+
+function firstArray(...values: unknown[]): unknown[] {
+    for (const value of values) {
+        if (Array.isArray(value) && value.length > 0) {
+            return value;
+        }
+    }
+
+    return [];
+}
+
 function normalizeDiagramType(value: unknown): MermaidJsonDiagramType | "flowchart" | null {
     if (value === "graph" || value === "flowchart" || value == null) {
         return "flowchart";
@@ -701,7 +856,7 @@ function compileFlowchartDiagram(data: MermaidFlowchartDiagramData | Record<stri
     }
 
     const lines = [
-        `graph ${direction}`,
+        `flowchart ${direction}`,
         ...nodes.map((node) => {
             const entry = node as MermaidNode;
             if (!entry.id || !entry.label) {
@@ -1035,12 +1190,52 @@ function compileTypedMermaidJson(data: unknown): MermaidJsonCompileResult {
         case "flowchart":
             return compileFlowchartDiagram(payload);
         case "sequenceDiagram":
-            return compileSequenceDiagram({
-                diagramType: "sequenceDiagram",
-                title: typeof data.title === "string" ? data.title : undefined,
-                participants: Array.isArray(payload.participants) ? payload.participants as MermaidSequenceParticipant[] : [],
-                messages: Array.isArray(payload.messages) ? payload.messages as MermaidSequenceMessage[] : [],
-            });
+            {
+                const sourceRecord = data as Record<string, unknown>;
+                const rawParticipants = firstArray(
+                    payload.participants,
+                    payload.actors,
+                    payload.entities,
+                    sourceRecord.participants,
+                    sourceRecord.actors,
+                    sourceRecord.entities
+                );
+                const rawMessages = firstArray(
+                    payload.messages,
+                    payload.interactions,
+                    payload.steps,
+                    payload.calls,
+                    sourceRecord.messages,
+                    sourceRecord.interactions,
+                    sourceRecord.steps,
+                    sourceRecord.calls
+                );
+
+                const messages = normalizeSequenceMessages(rawMessages);
+                const participantMap = new Map<string, MermaidSequenceParticipant>();
+                for (const participant of normalizeSequenceParticipants(rawParticipants)) {
+                    participantMap.set(cleanId(participant.id), participant);
+                }
+
+                // Infer missing participants from message endpoints.
+                for (const message of messages) {
+                    if (!participantMap.has(message.from)) {
+                        participantMap.set(message.from, { id: message.from, label: message.from, kind: "participant" });
+                    }
+                    if (!participantMap.has(message.to)) {
+                        participantMap.set(message.to, { id: message.to, label: message.to, kind: "participant" });
+                    }
+                }
+
+                const participants = Array.from(participantMap.values());
+
+                return compileSequenceDiagram({
+                    diagramType: "sequenceDiagram",
+                    title: typeof sourceRecord.title === "string" ? sourceRecord.title : undefined,
+                    participants,
+                    messages,
+                });
+            }
         case "stateDiagram-v2":
             return compileStateDiagram({
                 diagramType: "stateDiagram-v2",

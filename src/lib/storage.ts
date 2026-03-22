@@ -15,6 +15,38 @@ const TARGET_SIZE = 8 * MB; // Clean up to 8MB (leave buffer)
 const STORAGE_PREFIX = 'repomind_chat_';
 const PROFILE_PREFIX = 'repomind_profile_';
 const CHAT_ROLES = new Set<ChatRole>(["user", "model"]);
+const cloudMutationTails = new Map<string, Promise<void>>();
+
+function getRepoStorageKey(owner: string, repo: string): string {
+    return `${STORAGE_PREFIX}${owner}_${repo}`;
+}
+
+function getProfileStorageKey(username: string): string {
+    return `${PROFILE_PREFIX}${username}`;
+}
+
+function getRepoCloudKey(owner: string, repo: string): string {
+    return `repo:${owner}:${repo}`;
+}
+
+function getProfileCloudKey(username: string): string {
+    return `profile:${username}`;
+}
+
+function enqueueCloudMutation<T>(conversationKey: string, mutation: () => Promise<T>): Promise<T> {
+    const previousTail = cloudMutationTails.get(conversationKey) ?? Promise.resolve();
+    const next = previousTail.catch(() => undefined).then(mutation);
+    const tail = next.then(() => undefined, () => undefined);
+
+    cloudMutationTails.set(conversationKey, tail);
+    void tail.finally(() => {
+        if (cloudMutationTails.get(conversationKey) === tail) {
+            cloudMutationTails.delete(conversationKey);
+        }
+    });
+
+    return next;
+}
 
 function isRole(value: unknown): value is ChatRole {
     return typeof value === "string" && CHAT_ROLES.has(value as ChatRole);
@@ -63,10 +95,16 @@ function normalizeMessages(rawMessages: unknown): Message[] {
 export async function saveConversation(owner: string, repo: string, messages: Message[], useCloudStorage = false): Promise<void> {
     try {
         if (useCloudStorage) {
-            await fetch('/api/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ owner, repo, messages })
+            await enqueueCloudMutation(getRepoCloudKey(owner, repo), async () => {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ owner, repo, messages })
+                });
+
+                if (!response.ok) {
+                    console.error('Failed to sync to cloud:', response.status, response.statusText);
+                }
             }).catch(err => console.error('Failed to sync to cloud:', err));
         }
 
@@ -77,7 +115,7 @@ export async function saveConversation(owner: string, repo: string, messages: Me
             cleanupOldConversations(TARGET_SIZE);
         }
 
-        const key = `${STORAGE_PREFIX}${owner}_${repo}`;
+        const key = getRepoStorageKey(owner, repo);
         const data: StoredConversation = {
             owner,
             repo,
@@ -91,7 +129,7 @@ export async function saveConversation(owner: string, repo: string, messages: Me
             console.warn('localStorage quota exceeded, forcing cleanup...');
             cleanupOldConversations(TARGET_SIZE);
             try {
-                const key = `${STORAGE_PREFIX}${owner}_${repo}`;
+                const key = getRepoStorageKey(owner, repo);
                 const data: StoredConversation = {
                     owner,
                     repo,
@@ -113,27 +151,29 @@ export async function saveConversation(owner: string, repo: string, messages: Me
  */
 export async function loadConversation(owner: string, repo: string, useCloudStorage = false): Promise<Message[] | null> {
     try {
+        const key = getRepoStorageKey(owner, repo);
+
         if (useCloudStorage) {
             try {
                 const response = await fetch(`/api/chat?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`);
                 if (response.ok) {
                     const data = await response.json();
-                    if (data.messages && data.messages.length > 0) {
-                        const normalizedCloudMessages = normalizeMessages(data.messages);
-                        if (normalizedCloudMessages.length === 0) {
-                            return null;
-                        }
+                    const normalizedCloudMessages = normalizeMessages(data.messages);
+                    if (normalizedCloudMessages.length > 0) {
                         // Update local cache
-                        saveConversation(owner, repo, normalizedCloudMessages, false);
+                        void saveConversation(owner, repo, normalizedCloudMessages, false);
                         return normalizedCloudMessages;
                     }
+
+                    // Successful cloud response with no messages is authoritative.
+                    localStorage.removeItem(key);
+                    return null;
                 }
             } catch (err) {
                 console.error('Failed to load from cloud, falling back to local:', err);
             }
         }
 
-        const key = `${STORAGE_PREFIX}${owner}_${repo}`;
         const data = localStorage.getItem(key);
         if (!data) return null;
 
@@ -152,11 +192,17 @@ export async function loadConversation(owner: string, repo: string, useCloudStor
 export async function clearConversation(owner: string, repo: string, useCloudStorage = false): Promise<void> {
     try {
         if (useCloudStorage) {
-            await fetch(`/api/chat?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`, {
-                method: 'DELETE'
+            await enqueueCloudMutation(getRepoCloudKey(owner, repo), async () => {
+                const response = await fetch(`/api/chat?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    console.error('Failed to clear from cloud:', response.status, response.statusText);
+                }
             }).catch(err => console.error('Failed to clear from cloud:', err));
         }
-        const key = `${STORAGE_PREFIX}${owner}_${repo}`;
+        const key = getRepoStorageKey(owner, repo);
         localStorage.removeItem(key);
     } catch (e) {
         console.error('Failed to clear conversation:', e);
@@ -169,10 +215,16 @@ export async function clearConversation(owner: string, repo: string, useCloudSto
 export async function saveProfileConversation(username: string, messages: Message[], useCloudStorage = false): Promise<void> {
     try {
         if (useCloudStorage) {
-            await fetch('/api/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, messages })
+            await enqueueCloudMutation(getProfileCloudKey(username), async () => {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, messages })
+                });
+
+                if (!response.ok) {
+                    console.error('Failed to sync profile chat to cloud:', response.status, response.statusText);
+                }
             }).catch(err => console.error('Failed to sync profile chat to cloud:', err));
         }
 
@@ -181,7 +233,7 @@ export async function saveProfileConversation(username: string, messages: Messag
             cleanupOldConversations(TARGET_SIZE);
         }
 
-        const key = `${PROFILE_PREFIX}${username}`;
+        const key = getProfileStorageKey(username);
         const data = {
             username,
             messages,
@@ -193,7 +245,7 @@ export async function saveProfileConversation(username: string, messages: Messag
         if (e instanceof Error && e.name === 'QuotaExceededError') {
             cleanupOldConversations(TARGET_SIZE);
             try {
-                const key = `${PROFILE_PREFIX}${username}`;
+                const key = getProfileStorageKey(username);
                 localStorage.setItem(key, JSON.stringify({ username, messages, timestamp: Date.now() }));
             } catch {
                 console.error('localStorage full after cleanup');
@@ -207,26 +259,28 @@ export async function saveProfileConversation(username: string, messages: Messag
  */
 export async function loadProfileConversation(username: string, useCloudStorage = false): Promise<Message[] | null> {
     try {
+        const key = getProfileStorageKey(username);
+
         if (useCloudStorage) {
             try {
                 const response = await fetch(`/api/chat?username=${encodeURIComponent(username)}`);
                 if (response.ok) {
                     const data = await response.json();
-                    if (data.messages && data.messages.length > 0) {
-                        const normalizedCloudMessages = normalizeMessages(data.messages);
-                        if (normalizedCloudMessages.length === 0) {
-                            return null;
-                        }
-                        saveProfileConversation(username, normalizedCloudMessages, false);
+                    const normalizedCloudMessages = normalizeMessages(data.messages);
+                    if (normalizedCloudMessages.length > 0) {
+                        void saveProfileConversation(username, normalizedCloudMessages, false);
                         return normalizedCloudMessages;
                     }
+
+                    // Successful cloud response with no messages is authoritative.
+                    localStorage.removeItem(key);
+                    return null;
                 }
             } catch (err) {
                 console.error('Failed to load profile from cloud, falling back to local:', err);
             }
         }
 
-        const key = `${PROFILE_PREFIX}${username}`;
         const data = localStorage.getItem(key);
         if (!data) return null;
 
@@ -245,11 +299,17 @@ export async function loadProfileConversation(username: string, useCloudStorage 
 export async function clearProfileConversation(username: string, useCloudStorage = false): Promise<void> {
     try {
         if (useCloudStorage) {
-            await fetch(`/api/chat?username=${encodeURIComponent(username)}`, {
-                method: 'DELETE'
+            await enqueueCloudMutation(getProfileCloudKey(username), async () => {
+                const response = await fetch(`/api/chat?username=${encodeURIComponent(username)}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    console.error('Failed to clear profile chat from cloud:', response.status, response.statusText);
+                }
             }).catch(err => console.error('Failed to clear profile chat from cloud:', err));
         }
-        const key = `${PROFILE_PREFIX}${username}`;
+        const key = getProfileStorageKey(username);
         localStorage.removeItem(key);
     } catch (e) {
         console.error('Failed to clear profile conversation:', e);

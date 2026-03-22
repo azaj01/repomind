@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import { BotIcon } from "@/components/icons/BotIcon";
 import { UserIcon } from "@/components/icons/UserIcon";
 import { CopySquaresIcon } from "@/components/icons/CopySquaresIcon";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { GitHubProfile } from "@/lib/github";
@@ -43,6 +43,19 @@ const PROFILE_SUGGESTIONS = [
 
 type HttpError = Error & { status?: number; code?: string };
 type ChatRunStatus = "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
+
+function areProfileMessagesEquivalent(left: ProfileChatMessage[], right: ProfileChatMessage[]): boolean {
+    if (left.length !== right.length) return false;
+    return left.every((message, index) => {
+        const next = right[index];
+        if (!next) return false;
+        return (
+            message.id === next.id &&
+            message.role === next.role &&
+            message.content === next.content
+        );
+    });
+}
 
 function parseResponseError(rawResponseText: string, status: number): { message: string; code?: string } {
     if (!rawResponseText.trim()) {
@@ -96,7 +109,8 @@ export function ProfileChatInterface({
     recentCommits,
     recentCommitFreshnessLabel,
 }: ProfileChatInterfaceProps) {
-    const { data: session } = useSession();
+    const { data: session, status: sessionStatus } = useSession();
+    const shouldUseCloudStorage = sessionStatus !== "unauthenticated";
     const [messages, setMessages] = useState<ProfileChatMessage[]>([
         {
             id: "welcome",
@@ -135,17 +149,24 @@ export function ProfileChatInterface({
     }, [session, crossRepoEnabled]);
 
     // Load conversation on mount
-    const toastShownRef = useRef(false);
+    const restoreGenerationRef = useRef(0);
+    const skipNextAutoScrollRef = useRef(false);
     useEffect(() => {
+        const restoreGeneration = restoreGenerationRef.current;
         const fetchConversation = async () => {
-            const saved = await loadProfileConversation(profile.login, !!session);
+            const saved = await loadProfileConversation(profile.login, shouldUseCloudStorage);
+            if (restoreGeneration !== restoreGenerationRef.current) {
+                return;
+            }
             if (saved && saved.length > 1) {
-                setMessages(saved);
+                setMessages((prev) => {
+                    if (areProfileMessagesEquivalent(prev, saved)) {
+                        return prev;
+                    }
+                    skipNextAutoScrollRef.current = true;
+                    return saved;
+                });
                 setShowSuggestions(false);
-                if (!toastShownRef.current) {
-                    toast.info('Conversation restored', { duration: 2000 });
-                    toastShownRef.current = true;
-                }
             }
             setInitialized(true);
 
@@ -161,6 +182,9 @@ export function ProfileChatInterface({
                             finalText?: string | null;
                             errorMessage?: string | null;
                         };
+                        if (restoreGeneration !== restoreGenerationRef.current) {
+                            return;
+                        }
                         const resumeMsgId = `run-${run.runId}`;
                         const text = (run.finalText ?? run.partialText ?? "").toString();
                         if (text) {
@@ -182,6 +206,9 @@ export function ProfileChatInterface({
                                     const r = await fetch(`/api/chat/run?runId=${encodeURIComponent(storedRunId)}`);
                                     if (!r.ok) return;
                                     const next = await r.json() as { status: ChatRunStatus; partialText?: string; finalText?: string | null; errorMessage?: string | null };
+                                    if (restoreGeneration !== restoreGenerationRef.current) {
+                                        return;
+                                    }
                                     const nextText = (next.finalText ?? next.partialText ?? "").toString();
                                     setMessages((prev) => prev.map((m) => (m.id === resumeMsgId ? { ...m, content: nextText } : m)));
                                     if (next.status === "COMPLETED") {
@@ -210,14 +237,14 @@ export function ProfileChatInterface({
             }
         };
         fetchConversation();
-    }, [profile.login, session]);
+    }, [profile.login, shouldUseCloudStorage, activeRunKey]);
 
     // Save on every message change
     useEffect(() => {
         if (initialized && messages.length > 1) {
-            saveProfileConversation(profile.login, messages, !!session);
+            void saveProfileConversation(profile.login, messages, shouldUseCloudStorage);
         }
-    }, [messages, initialized, profile.login, session]);
+    }, [messages, initialized, profile.login, shouldUseCloudStorage]);
 
     // Calculate total token count
     const totalTokens = useMemo(() => {
@@ -226,11 +253,15 @@ export function ProfileChatInterface({
 
     const tokenWarningLevel = getTokenWarningLevel(totalTokens);
 
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
+        messagesEndRef.current?.scrollIntoView({ behavior });
     };
 
     useEffect(() => {
+        if (skipNextAutoScrollRef.current) {
+            skipNextAutoScrollRef.current = false;
+            return;
+        }
         scrollToBottom();
     }, [messages]);
 
@@ -552,7 +583,14 @@ export function ProfileChatInterface({
     };
 
     const handleClearChat = async () => {
-        await clearProfileConversation(profile.login, !!session);
+        restoreGenerationRef.current += 1;
+        if (typeof window !== "undefined") {
+            window.sessionStorage.removeItem(activeRunKey);
+        }
+        await clearProfileConversation(profile.login, shouldUseCloudStorage);
+        setLoading(false);
+        setConnectionLost(false);
+        setInitialized(true);
         setMessages([
             {
                 id: "welcome",
@@ -590,7 +628,7 @@ export function ProfileChatInterface({
     return (
         <div className="flex flex-col h-[100dvh] bg-black text-white">
             {/* Profile Header */}
-            <div className="border-b border-white/10 p-4 md:p-6 bg-zinc-900/50 backdrop-blur-sm">
+            <div className="relative z-40 border-b border-white/10 p-4 md:p-6 bg-zinc-950/95">
                 <div className="flex items-start gap-3 md:gap-6 max-w-3xl mx-auto">
                     <Link
                         href="/"
@@ -666,7 +704,7 @@ export function ProfileChatInterface({
             <div
                 ref={chatScrollRef}
                 onMouseUp={handleSelection}
-                className="flex-1 overflow-y-auto p-4 space-y-6 relative selection:bg-blue-500/50 selection:text-white [&_*::selection]:bg-blue-500/50 [&_*::selection]:text-white"
+                className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-6 relative isolate z-0 selection:bg-blue-500/50 selection:text-white [&_*::selection]:bg-blue-500/50 [&_*::selection]:text-white"
             >
                 {connectionLost && (
                     <div className="max-w-3xl mx-auto">
@@ -692,14 +730,11 @@ export function ProfileChatInterface({
                         Ask RepoMindAI
                     </button>
                 )}
-                <AnimatePresence initial={false}>
-                    {messages.map((msg) => {
+                {messages.map((msg) => {
                         const isLatestMessage = msg.id === messages[messages.length - 1]?.id;
                         return (
-                        <motion.div
+                        <div
                             key={msg.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
                             className={cn(
                                 "flex gap-4 max-w-3xl mx-auto",
                                 msg.role === "user" ? "flex-row-reverse" : "flex-row"
@@ -796,17 +831,16 @@ export function ProfileChatInterface({
                                     </div>
                                 )}
                             </div>
-                        </motion.div>
+                        </div>
                         );
                     })}
-                </AnimatePresence>
 
                 {/* Old loading bubble removed - streaming now happens inline in the last message */}
                 <div ref={messagesEndRef} />
             </div>
 
             {/* Input Area */}
-            <div className="p-4 border-t border-white/10 bg-black/50 backdrop-blur-lg space-y-3">
+            <div className="relative z-40 p-4 border-t border-white/10 bg-zinc-950/95 space-y-3">
                 {referenceText && (
                     <div className="max-w-3xl mx-auto">
                         <div className="flex items-center gap-2 bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-zinc-300">

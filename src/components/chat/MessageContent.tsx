@@ -1,10 +1,9 @@
-import { memo, useMemo, type HTMLAttributes, type ReactNode } from "react";
+import { memo, useMemo, useCallback, type HTMLAttributes, type ReactNode } from "react";
 
 import { EnhancedMarkdown } from "@/components/EnhancedMarkdown";
 import { Mermaid } from "@/components/Mermaid";
-import { DynamicSVG } from "@/components/DynamicSVG";
 import { CodeBlock } from "@/components/CodeBlock";
-import { generateMermaidFromJSON } from "@/lib/diagram-utils";
+import { compileMermaidFromJSON } from "@/lib/diagram-utils";
 import { repairMarkdown } from "@/lib/markdown-utils";
 import { Loader2 } from "lucide-react";
 
@@ -43,8 +42,6 @@ function stripEliteSvgBanner(content: string): string {
 
 function MessageContentBase({
     content,
-    messageId,
-    messages = [],
     currentOwner,
     currentRepo,
     isStreaming = false,
@@ -56,7 +53,7 @@ function MessageContentBase({
     );
     const isStreamingMessage = isStreaming;
 
-    const resolvePath = (path: string, isFolder: boolean) => {
+    const resolvePath = useCallback((path: string, isFolder: boolean) => {
         if (!fileTree || fileTree.length === 0) return path;
         
         // Exact match
@@ -86,44 +83,68 @@ function MessageContentBase({
         }
 
         return path;
-    };
+    }, [fileTree]);
 
-    const components = useMemo(() => ({
+    const components = {
         code: ({ className, children, inline, ...props }: MarkdownCodeProps) => {
             const match = /language-([\w-]+)/.exec(className ?? "");
-            const isMermaid = match?.[1] === "mermaid";
-            const isMermaidJson = match?.[1] === "mermaid-json";
+            const language = (match?.[1] ?? "").toLowerCase();
+            const isMermaid = language === "mermaid";
+            const isMermaidJson = language === "mermaid-json";
+            const isJsonLanguage = language === "json";
+            const rawContent = String(children ?? "").replace(/\n$/, "");
+            const trimmedContent = rawContent.trim();
+            const looksLikeMermaidJsonPayload =
+                trimmedContent.startsWith("{") &&
+                (
+                    /"diagramType"\s*:\s*"/.test(trimmedContent) ||
+                    (/"nodes"\s*:/.test(trimmedContent) && /"edges"\s*:/.test(trimmedContent)) ||
+                    (/"participants"\s*:/.test(trimmedContent) && /"messages"\s*:/.test(trimmedContent))
+                );
 
             if (isMermaid) {
                 return (
                     <Mermaid
-                        chart={String(children).replace(/\n$/, "")}
+                        chart={rawContent}
                         isStreaming={isStreamingMessage}
                     />
                 );
             }
 
-            if (match?.[1] === "svg") {
+            if (language === "svg") {
                 return (
-                    <DynamicSVG
-                        svg={String(children).replace(/\n$/, "")}
-                        isStreaming={isStreamingMessage}
-                    />
+                    <div className="my-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                        <p className="mb-2 text-xs text-amber-200">
+                            Direct SVG rendering is deprecated. Showing legacy SVG source.
+                        </p>
+                        <CodeBlock
+                            language="svg"
+                            value={rawContent}
+                            components={components}
+                            owner={currentOwner}
+                            repo={currentRepo}
+                        />
+                    </div>
                 );
             }
 
-            if (isMermaidJson) {
-                const jsonContent = String(children).replace(/\n$/, "");
+            if (isMermaidJson || isJsonLanguage || looksLikeMermaidJsonPayload) {
+                const jsonContent = rawContent;
                 try {
-                    const chart = generateMermaidFromJSON(JSON.parse(jsonContent));
-                    if (chart) {
-                        return <Mermaid chart={chart} isStreaming={isStreamingMessage} />;
+                    const compiled = compileMermaidFromJSON(JSON.parse(jsonContent));
+                    if (compiled.valid && compiled.mermaid) {
+                        return <Mermaid chart={compiled.mermaid} isStreaming={isStreamingMessage} />;
                     }
-                } catch {
-                    // Fall through to code rendering below.
+                    if (!compiled.valid && isMermaidJson) {
+                        console.warn('[mermaid-json] Compile failed:', compiled.error, '\nRaw JSON:', jsonContent);
+                    }
+                } catch (e) {
+                    if (isMermaidJson) {
+                        console.warn('[mermaid-json] JSON parse error:', e, '\nRaw content:', jsonContent);
+                    }
                 }
 
-                if (isStreamingMessage) {
+                if (isStreamingMessage && isMermaidJson) {
                     return (
                         <div className="flex items-center gap-2 p-4 bg-zinc-900/50 rounded-lg border border-white/10">
                             <Loader2 className="w-4 h-4 animate-spin text-zinc-400" />
@@ -143,7 +164,7 @@ function MessageContentBase({
                 );
             }
 
-            const childrenStr = String(children ?? "").replace(/\n$/, "");
+            const childrenStr = rawContent;
             const isBlock = childrenStr.endsWith("\n");
             const shouldRenderBlock = Boolean(match) || isBlock || inline === false;
 
@@ -252,7 +273,7 @@ function MessageContentBase({
         td: ({ children }: MarkdownContainerProps) => (
             <td className="px-4 py-2 text-sm text-zinc-300 border border-zinc-700">{children}</td>
         ),
-    }), [currentOwner, currentRepo, isStreamingMessage, fileTree, resolvePath]);
+    };
 
     return (
         <div className="w-full [&>*:first-child]:!mt-0">

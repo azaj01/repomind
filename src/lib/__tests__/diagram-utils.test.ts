@@ -135,7 +135,7 @@ describe("getFallbackTemplate", () => {
 
     it("returns a string containing mermaid syntax keywords", () => {
         const result = getFallbackTemplate("API service");
-        expect(result).toMatch(/flowchart|graph|sequenceDiagram|classDiagram/i);
+        expect(result).toMatch(/flowchart|sequenceDiagram|classDiagram/i);
     });
 });
 
@@ -151,7 +151,7 @@ describe("generateMermaidFromJSON", () => {
                 edges: [{ from: "A", to: "B" }],
             },
         });
-        expect(result).toContain("graph"); // uses 'graph TD' syntax
+        expect(result).toContain("flowchart TD");
         expect(result).toContain("Start");
         expect(result).toContain("End");
     });
@@ -165,7 +165,7 @@ describe("generateMermaidFromJSON", () => {
             edges: [{ from: "A", to: "B" }],
         });
 
-        expect(result).toContain("graph");
+        expect(result).toContain("flowchart TD");
         expect(result).toContain("Start");
         expect(result).toContain("End");
     });
@@ -228,6 +228,41 @@ describe("generateMermaidFromJSON", () => {
         expect(result).toContain("sequenceDiagram");
         expect(result).toContain("actor user as User");
         expect(result).toContain("user->>api: Request");
+    });
+
+    it("infers sequence participants from messages when participants are omitted", () => {
+        const result = generateMermaidFromJSON({
+            diagramType: "sequenceDiagram",
+            payload: {
+                messages: [
+                    { from: "user", to: "api", text: "Request" },
+                    { from: "api", to: "db", text: "Query", kind: "async" },
+                ],
+            },
+        });
+
+        expect(result).toContain("sequenceDiagram");
+        expect(result).toContain("participant user as user");
+        expect(result).toContain("participant api as api");
+        expect(result).toContain("participant db as db");
+        expect(result).toContain("api->>db: Query");
+    });
+
+    it("supports alternate sequence json keys like actors/interactions", () => {
+        const result = generateMermaidFromJSON({
+            diagramType: "sequenceDiagram",
+            payload: {
+                actors: [{ name: "Frontend", role: "actor" }, { name: "Backend" }],
+                interactions: [
+                    { source: "Frontend", target: "Backend", message: "POST /chat" },
+                    { source: "Backend", target: "Frontend", message: "200 OK", type: "reply" },
+                ],
+            },
+        });
+
+        expect(result).toContain("sequenceDiagram");
+        expect(result).toContain("actor Frontend as Frontend");
+        expect(result).toContain("Backend-->>Frontend: 200 OK");
     });
 
     it("generates a typed mindmap", () => {

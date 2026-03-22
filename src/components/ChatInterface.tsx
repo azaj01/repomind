@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { BotIcon } from "@/components/icons/BotIcon";
 import { UserIcon } from "@/components/icons/UserIcon";
 import { CopySquaresIcon } from "@/components/icons/CopySquaresIcon";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { toast } from "sonner";
 
 import { scanRepositoryVulnerabilities, fetchProfile, getRemainingDeepScans, getLatestRepoScanId, createScanShareLink } from "@/app/actions";
@@ -63,6 +63,19 @@ type SubmitMode = "normal" | "quick_scan" | "deep_scan";
 type HttpError = Error & { status?: number; code?: string };
 type ChatRunStatus = "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
 
+function areRepoMessagesEquivalent(left: RepoChatMessage[], right: RepoChatMessage[]): boolean {
+    if (left.length !== right.length) return false;
+    return left.every((message, index) => {
+        const next = right[index];
+        if (!next) return false;
+        return (
+            message.id === next.id &&
+            message.role === next.role &&
+            message.content === next.content
+        );
+    });
+}
+
 // Keep this in sync with server-side pruneFilePaths to avoid sending noisy/binary paths in request payloads.
 const REQUEST_FILE_PATH_SKIP_PATTERN =
     /(\.(png|jpg|jpeg|gif|svg|ico|lock|pdf|zip|tar|gz|map|wasm|min\.js|min\.css|woff|woff2|ttf|otf|eot)|package-lock\.json|yarn\.lock)$/i;
@@ -113,7 +126,8 @@ function getUserFacingAnalysisError(error: unknown, code?: string): string {
 }
 
 export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: ChatInterfaceProps) {
-    const { data: session } = useSession();
+    const { data: session, status: sessionStatus } = useSession();
+    const shouldUseCloudStorage = sessionStatus !== "unauthenticated";
     const [messages, setMessages] = useState<RepoChatMessage[]>([
         {
             id: "welcome",
@@ -179,19 +193,26 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
     }, [repoContext.owner]);
 
     // Load conversation on mount
-    const toastShownRef = useRef(false);
     const initialPromptHandled = useRef(false);
+    const restoreGenerationRef = useRef(0);
+    const skipNextAutoScrollRef = useRef(false);
 
     useEffect(() => {
+        const restoreGeneration = restoreGenerationRef.current;
         const fetchConversation = async () => {
-            const saved = await loadConversation(repoContext.owner, repoContext.repo, !!session);
+            const saved = await loadConversation(repoContext.owner, repoContext.repo, shouldUseCloudStorage);
+            if (restoreGeneration !== restoreGenerationRef.current) {
+                return;
+            }
             if (saved && saved.length > 1) {
-                setMessages(saved);
+                setMessages((prev) => {
+                    if (areRepoMessagesEquivalent(prev, saved)) {
+                        return prev;
+                    }
+                    skipNextAutoScrollRef.current = true;
+                    return saved;
+                });
                 setShowSuggestions(false);
-                if (!toastShownRef.current) {
-                    toast.info('Conversation restored', { duration: 2000 });
-                    toastShownRef.current = true;
-                }
             }
             setInitialized(true);
 
@@ -207,6 +228,9 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
                             finalText?: string | null;
                             errorMessage?: string | null;
                         };
+                        if (restoreGeneration !== restoreGenerationRef.current) {
+                            return;
+                        }
                         const resumeMsgId = `run-${run.runId}`;
                         const text = (run.finalText ?? run.partialText ?? "").toString();
                         if (text) {
@@ -228,6 +252,9 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
                                     const r = await fetch(`/api/chat/run?runId=${encodeURIComponent(storedRunId)}`);
                                     if (!r.ok) return;
                                     const next = await r.json() as { status: ChatRunStatus; partialText?: string; finalText?: string | null; errorMessage?: string | null };
+                                    if (restoreGeneration !== restoreGenerationRef.current) {
+                                        return;
+                                    }
                                     const nextText = (next.finalText ?? next.partialText ?? "").toString();
                                     setMessages((prev) => prev.map((m) => (m.id === resumeMsgId ? { ...m, content: nextText } : m)));
                                     if (next.status === "COMPLETED") {
@@ -276,14 +303,14 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
         };
 
         fetchConversation();
-    }, [repoContext.owner, repoContext.repo, initialPrompt, session]);
+    }, [repoContext.owner, repoContext.repo, initialPrompt, shouldUseCloudStorage, activeRunKey]);
 
     // Save on every message change
     useEffect(() => {
         if (initialized && messages.length > 1) {
-            saveConversation(repoContext.owner, repoContext.repo, messages, !!session);
+            void saveConversation(repoContext.owner, repoContext.repo, messages, shouldUseCloudStorage);
         }
-    }, [messages, initialized, repoContext.owner, repoContext.repo, session]);
+    }, [messages, initialized, repoContext.owner, repoContext.repo, shouldUseCloudStorage]);
 
     // Calculate total token count
     const totalTokens = useMemo(() => {
@@ -302,11 +329,15 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
         setShowSuggestions(nextShowSuggestions);
     }, [messages.length, input, loading, scanning]);
 
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
+        messagesEndRef.current?.scrollIntoView({ behavior });
     };
 
     useEffect(() => {
+        if (skipNextAutoScrollRef.current) {
+            skipNextAutoScrollRef.current = false;
+            return;
+        }
         scrollToBottom();
     }, [messages]);
 
@@ -764,7 +795,14 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
     });
 
     const handleClearChat = async () => {
-        await clearConversation(repoContext.owner, repoContext.repo, !!session);
+        restoreGenerationRef.current += 1;
+        if (typeof window !== "undefined") {
+            window.sessionStorage.removeItem(activeRunKey);
+        }
+        await clearConversation(repoContext.owner, repoContext.repo, shouldUseCloudStorage);
+        setLoading(false);
+        setConnectionLost(false);
+        setInitialized(true);
         setMessages([
             {
                 id: "welcome",
@@ -816,7 +854,7 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
     return (
         <div className="flex flex-col h-full bg-black text-white relative">
             {/* Repo Header */}
-            <div className="sticky top-0 z-20 border-b border-white/5 bg-zinc-950/80 backdrop-blur-xl shrink-0 shadow-lg">
+            <div className="sticky top-0 z-40 border-b border-white/5 bg-zinc-950/95 shrink-0 shadow-lg">
                 <div className="flex items-center justify-between px-4 h-16 w-full gap-4">
                     {/* Left Section: Breadcrumbs & Context */}
                     <div className="flex items-center gap-3 min-w-0 shrink">
@@ -925,7 +963,7 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
             <div
                 ref={chatScrollRef}
                 onMouseUp={handleSelection}
-                className="flex-1 overflow-y-auto p-4 space-y-6 relative selection:bg-blue-500/50 selection:text-white [&_*::selection]:bg-blue-500/50 [&_*::selection]:text-white"
+                className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-6 relative isolate z-0 selection:bg-blue-500/50 selection:text-white [&_*::selection]:bg-blue-500/50 [&_*::selection]:text-white"
             >
                 {connectionLost && (
                     <div className="max-w-4xl mx-auto">
@@ -951,8 +989,7 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
                         Ask RepoMindAI
                     </button>
                 )}
-                <AnimatePresence initial={false}>
-                    {messages.map((msg) => {
+                {messages.map((msg) => {
                         const isLatestMessage = msg.id === messages[messages.length - 1]?.id;
                         const isStreamingScanPlaceholder =
                             msg.role === "model" &&
@@ -962,10 +999,8 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
                             isLatestMessage;
 
                         return (
-                            <motion.div
+                            <div
                                 key={msg.id}
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
                                 className={cn(
                                     "flex gap-4 max-w-4xl mx-auto",
                                     msg.role === "user" ? "flex-row-reverse" : "flex-row"
@@ -1136,16 +1171,15 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
                                         </details>
                                     )}
                                 </div>
-                            </motion.div>
+                            </div>
                         );
                     })}
-                </AnimatePresence>
 
 
                 <div ref={messagesEndRef} />
             </div>
 
-            <div className="p-4 border-t border-white/10 bg-black/50 backdrop-blur-lg space-y-3">
+            <div className="relative z-40 p-4 border-t border-white/10 bg-zinc-950/95 space-y-3">
                 {referenceText && (
                     <div className="max-w-4xl mx-auto">
                         <div className="flex items-center gap-2 bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-zinc-300">

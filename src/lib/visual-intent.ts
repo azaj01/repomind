@@ -22,7 +22,7 @@ export type VisualDiagramFamily =
     | "mindmap"
     | "default";
 
-export type VisualDiagramFormat = "svg" | "mermaid" | "mermaid-json";
+export type VisualDiagramFormat = "mermaid" | "mermaid-json";
 export type PreferredMermaidDiagram = MermaidDiagramType;
 
 export interface VisualDiagramProfile {

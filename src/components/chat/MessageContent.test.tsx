@@ -21,10 +21,6 @@ vi.mock("@/components/DeveloperCard", () => ({
     DeveloperCard: () => <div data-testid="developer-card" />,
 }));
 
-vi.mock("@/components/DynamicSVG", () => ({
-    DynamicSVG: () => <div data-testid="dynamic-svg" />,
-}));
-
 vi.mock("@/components/CodeBlock", () => ({
     CodeBlock: ({ language, value }: { language: string; value: string }) => (
         <pre data-testid="codeblock" data-language={language}>
@@ -47,7 +43,7 @@ describe("MessageContent", () => {
         );
 
         expect(html).toContain('data-testid="mermaid"');
-        expect(html).toContain("graph TD");
+        expect(html).toContain("flowchart TD");
         expect(html).toContain("Start");
     });
 
@@ -66,6 +62,36 @@ describe("MessageContent", () => {
         expect(html).toContain("actor user as User");
     });
 
+    it("converts typed sequence diagram json blocks into mermaid", () => {
+        const html = renderToStaticMarkup(
+            <MessageContent
+                content={`\`\`\`json
+{"diagramType":"sequenceDiagram","title":"User-to-AI Data Flow","payload":{"participants":[{"id":"u","label":"User","kind":"actor"},{"id":"api","label":"Backend API","kind":"participant"}],"messages":[{"from":"u","to":"api","text":"Submit coding question","kind":"sync"}]}}
+\`\`\``}
+                messageId="msg-1c"
+            />
+        );
+
+        expect(html).toContain('data-testid="mermaid"');
+        expect(html).toContain("sequenceDiagram");
+        expect(html).toContain("actor u as User");
+    });
+
+    it("converts unlabeled sequence diagram json blocks into mermaid", () => {
+        const html = renderToStaticMarkup(
+            <MessageContent
+                content={`\`\`\`
+{"diagramType":"sequenceDiagram","payload":{"participants":[{"id":"u","label":"User","kind":"actor"},{"id":"ai","label":"AI Model","kind":"participant"}],"messages":[{"from":"u","to":"ai","text":"Ask question","kind":"sync"}]}}
+\`\`\``}
+                messageId="msg-1d"
+            />
+        );
+
+        expect(html).toContain('data-testid="mermaid"');
+        expect(html).toContain("sequenceDiagram");
+        expect(html).toContain("Ask question");
+    });
+
     it("falls back to raw json when mermaid-json is malformed", () => {
         const html = renderToStaticMarkup(
             <MessageContent
@@ -79,5 +105,20 @@ describe("MessageContent", () => {
         expect(html).toContain('data-testid="codeblock"');
         expect(html).toContain('data-language="json"');
         expect(html).toContain("&quot;nodes&quot;");
+    });
+
+    it("shows legacy svg blocks as code with deprecation notice", () => {
+        const html = renderToStaticMarkup(
+            <MessageContent
+                content={`\`\`\`svg
+<svg viewBox="0 0 10 10"></svg>
+\`\`\``}
+                messageId="msg-3"
+            />
+        );
+
+        expect(html).toContain("Direct SVG rendering is deprecated");
+        expect(html).toContain('data-testid="codeblock"');
+        expect(html).toContain('data-language="svg"');
     });
 });

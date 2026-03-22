@@ -17,11 +17,30 @@ export interface RepoMindPromptParams {
   historyText: string;
 }
 
+function buildTopicalScopeRules(repoDetails: { owner: string; repo: string }): string {
+  const isProfileContext = repoDetails.repo === "profile";
+
+  if (isProfileContext) {
+    return `
+        - **TOPIC SCOPE (PROFILE CHAT - CRITICAL)**:
+          - Keep the answer focused on the developer profile and their repositories, commits, skills, and project activity.
+          - Do NOT explain RepoMind internals, prompt design, or system pipeline unless the user explicitly asks about RepoMind itself.
+          - If the prompt is ambiguous, default to profile/repository interpretation instead of self-description.
+          - Mention RepoMind's own identity only when the user clearly asks "who are you", "what is RepoMind", or "how does RepoMind work".`;
+  }
+
+  return `
+        - **TOPIC SCOPE (REPOSITORY CHAT - CRITICAL)**:
+          - Keep the answer focused on the current repository's code, architecture, behavior, and development history.
+          - Do NOT include RepoMind internals, persona layers, or prompt/pipeline self-descriptions unless the user explicitly asks about RepoMind itself.
+          - If the prompt is ambiguous, default to repository interpretation instead of self-description.`;
+}
+
 function shouldIncludeVisualContract(question: string): boolean {
   return routeMermaidDiagram(question).visualIntent;
 }
 
-type VisualOutputFormat = "svg" | "mermaid" | "mermaid-json";
+type VisualOutputFormat = "mermaid" | "mermaid-json";
 
 interface VisualOutputDecision {
   primaryFormat: VisualOutputFormat;
@@ -52,23 +71,23 @@ export function resolveVisualOutputDecision(question: string): VisualOutputDecis
   if (MERMAID_JSON_EXPLICIT_PATTERN.test(normalizedQuestion)) {
     return {
       primaryFormat: "mermaid-json",
-      fallbackFormat: "svg",
+      fallbackFormat: "mermaid",
       reason: "User explicitly requested mermaid-json.",
     };
   }
 
   if (SVG_EXPLICIT_PATTERN.test(normalizedQuestion)) {
     return {
-      primaryFormat: "svg",
-      fallbackFormat: "mermaid-json",
-      reason: "User explicitly requested SVG.",
+      primaryFormat: "mermaid-json",
+      fallbackFormat: "mermaid",
+      reason: "User requested SVG; mapped to Mermaid pipeline for production stability.",
     };
   }
 
   if (MERMAID_EXPLICIT_PATTERN.test(normalizedQuestion)) {
     return {
       primaryFormat: "mermaid",
-      fallbackFormat: "svg",
+      fallbackFormat: "mermaid-json",
       reason: "User explicitly requested Mermaid.",
     };
   }
@@ -76,46 +95,46 @@ export function resolveVisualOutputDecision(question: string): VisualOutputDecis
   if (TYPED_MERMAID_JSON_DIAGRAMS.has(route.diagramType)) {
     return {
       primaryFormat: "mermaid-json",
-      fallbackFormat: "svg",
+      fallbackFormat: "mermaid",
       reason: "Typed diagrams are more reliable with mermaid-json.",
     };
   }
 
   if (VISUAL_POLISH_PATTERN.test(normalizedQuestion)) {
     return {
-      primaryFormat: "svg",
-      fallbackFormat: "mermaid-json",
-      reason: "Visual polish intent detected.",
+      primaryFormat: "mermaid-json",
+      fallbackFormat: "mermaid",
+      reason: "Visual polish intent detected; using stable Mermaid pipeline.",
     };
   }
 
   if (target.tier === "complex") {
     return {
       primaryFormat: "mermaid-json",
-      fallbackFormat: "svg",
+      fallbackFormat: "mermaid",
       reason: "Complex diagrams default to mermaid-json.",
     };
   }
 
   if (target.tier === "simple") {
     return {
-      primaryFormat: "svg",
-      fallbackFormat: "mermaid-json",
-      reason: "Simple diagrams default to SVG.",
+      primaryFormat: "mermaid-json",
+      fallbackFormat: "mermaid",
+      reason: "Simple diagrams default to mermaid-json for a single stable pipeline.",
     };
   }
 
   if (route.family === "architecture" || route.family === "workflow") {
     return {
-      primaryFormat: "svg",
-      fallbackFormat: "mermaid-json",
-      reason: "Standard architecture/workflow requests prefer SVG.",
+      primaryFormat: "mermaid-json",
+      fallbackFormat: "mermaid",
+      reason: "Standard architecture/workflow requests use mermaid-json.",
     };
   }
 
   return {
     primaryFormat: "mermaid-json",
-    fallbackFormat: "svg",
+    fallbackFormat: "mermaid",
     reason: "Standard non-architecture visuals default to mermaid-json.",
   };
 }
@@ -272,8 +291,7 @@ function buildVisualContract(question: string): string {
               - Hard maximum logical blocks: **${target.maxNodes}**.
               - Minimum connection edges: **${target.minEdges}** relationships.
               - Output exactly one visual block in the primary format unless fallback is needed.
-              - Allowed block languages: \`\`\`svg\`\`\`, \`\`\`mermaid\`\`\`, \`\`\`mermaid-json\`\`\`.
-              - If outputting \`\`\`svg\`\`\`: self-check it starts with \`<svg\` and ends with \`</svg>\`. If not, switch to fallback format.
+              - Allowed block languages: \`\`\`mermaid\`\`\`, \`\`\`mermaid-json\`\`\`.
               - If outputting \`\`\`mermaid\`\`\`: start with \`${route.diagramType}\`. If syntax confidence is low, switch to fallback format.
               - If outputting \`\`\`mermaid-json\`\`\`: emit valid parseable JSON. If invalid, switch to fallback format.
               - For \`\`\`mermaid-json\`\`\`, the JSON must include:
@@ -327,6 +345,7 @@ export function buildRepoMindPrompt(params: RepoMindPromptParams): string {
   const { question, context, repoDetails, historyText } = params;
   const visualContract = shouldIncludeVisualContract(question) ? buildVisualContract(question) : "";
   const responseStructureRules = buildResponseStructureRules(question);
+  const topicalScopeRules = buildTopicalScopeRules(repoDetails);
 
   return `
     You are a specialized coding assistant called "RepoMind".
@@ -347,6 +366,7 @@ export function buildRepoMindPrompt(params: RepoMindPromptParams): string {
           - *Example*: User: "Who wrote this garbage?" -> You: "I see no \`git blame\` here, but I'm sure they had 'great personality'."
           - *Example*: User: "Are you dumb?" -> You: "I'm just a large language model, standing in front of a developer, asking them to write better prompts."
         - **Conciseness**: Be brief. Do not waffle.
+${topicalScopeRules}
         - **SOURCE OF TRUTH (CRITICAL)**:
           - **Trust Code Over Docs**: READMEs and comments can be outdated. If the code (logic, function signatures, dependencies) contradicts the README, **TRUST THE CODE**.
           - **Verify**: Always verify claims in the README against the actual source files provided in the context.

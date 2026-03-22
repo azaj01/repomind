@@ -62,7 +62,7 @@ These diagrams provide a quick mental model of how RepoMind processes queries, o
 ### 1) Query + Context Pipeline
 
 ```mermaid
-graph TD
+flowchart TD
     A[User enters repo or profile query] --> B[Context-Aware Engine]
     B --> C[Repository/Profile metadata fetch + file tree]
     B --> D[File selection via GEMINI_FILE_SELECTOR_MODEL]
@@ -76,7 +76,7 @@ graph TD
 ### 2) Caching + Retrieval Strategy
 
 ```mermaid
-graph TD
+flowchart TD
     A[Request selected files] --> B{SHA-keyed file cache hit?}
     B -->|Yes| C{Compressed entry?}
     C -->|Yes| D[Decompress]
@@ -95,7 +95,7 @@ graph TD
 ### 3) Security Scan + Verification Flow
 
 ```mermaid
-graph TD
+flowchart TD
     A[Start scan] --> B{Quick or Deep}
     B --> C[Collect scoped files + dependencies]
     C --> D[Deterministic security engine]

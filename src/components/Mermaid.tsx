@@ -7,9 +7,11 @@ import { Download, X, Maximize2, ZoomIn, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import html2canvas from "html2canvas-pro";
 import { motion, AnimatePresence } from "framer-motion";
+import { createPortal } from "react-dom";
 import { initMermaid } from "@/lib/mermaid-init";
 import { APP_FONT_STACK } from "@/lib/design-tokens";
 import { ensureMermaidMinimumDetail } from "@/lib/diagram-utils";
+import { resolveRouteBeadCount, shouldEnableLoopingBeads } from "@/lib/mermaid-animation";
 
 // Initialize mermaid once
 initMermaid();
@@ -19,11 +21,24 @@ interface MermaidProps {
     isStreaming?: boolean;
 }
 
+const MAX_ROUTE_BEADS = 2;
+const MAX_ANIMATED_PATHS = 24;
+const MAX_ANIMATED_NODES = 24;
+const SVG_NS = "http://www.w3.org/2000/svg";
+const XLINK_NS = "http://www.w3.org/1999/xlink";
+
 function extractErrorMessage(error: unknown): string {
     if (error && typeof error === "object" && "message" in error && typeof (error as { message?: unknown }).message === "string") {
         return (error as { message: string }).message;
     }
     return "Failed to process diagram";
+}
+
+function prefersReducedMotion(): boolean {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+        return false;
+    }
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 /**
@@ -77,8 +92,8 @@ function normalizeMermaidSvg(svgString: string): string {
         // Set responsive CSS. `height: auto` is valid in CSS (not as SVG attr).
         svgEl.style.width = '100%';
         svgEl.style.height = 'auto';
-        svgEl.style.overflow = 'visible';
-        svgEl.style.maxHeight = 'none';
+        svgEl.style.overflow = 'hidden';
+        svgEl.style.maxHeight = '100%';
         svgEl.style.fontFamily = APP_FONT_STACK;
 
         const existingStyle = doc.querySelector('style[data-repomind-font]');
@@ -113,8 +128,8 @@ function applyResponsiveSvgSizing(svgElement: SVGSVGElement): void {
     svgElement.removeAttribute('height');
     svgElement.style.width = '100%';
     svgElement.style.height = 'auto';
-    svgElement.style.overflow = 'visible';
-    svgElement.style.maxHeight = 'none';
+    svgElement.style.overflow = 'hidden';
+    svgElement.style.maxHeight = '100%';
     svgElement.style.fontFamily = APP_FONT_STACK;
 }
 
@@ -123,6 +138,8 @@ function resetAnimatedSvgStyles(svgElement: SVGSVGElement): void {
     animatedElements.forEach((element) => {
         element.getAnimations?.().forEach((animation) => animation.cancel());
     });
+
+    svgElement.querySelectorAll("[data-rm-beads]").forEach((node) => node.remove());
 
     const allNodes = svgElement.querySelectorAll<SVGElement>(".node, .actor, .state, .class-name");
     allNodes.forEach((node) => {
@@ -138,21 +155,60 @@ function resetAnimatedSvgStyles(svgElement: SVGSVGElement): void {
     });
 }
 
-function runMermaidEntranceAnimations(svgElement: SVGSVGElement): Animation[] {
+function addRouteBeads(svgElement: SVGSVGElement, routePaths: SVGPathElement[], chart: string): void {
+    const beadCount = resolveRouteBeadCount(chart, routePaths.length, MAX_ROUTE_BEADS);
+    if (beadCount <= 0) return;
+
+    const layer = document.createElementNS(SVG_NS, "g");
+    layer.setAttribute("data-rm-beads", "true");
+    layer.setAttribute("pointer-events", "none");
+
+    for (let index = 0; index < beadCount; index += 1) {
+        const path = routePaths[index];
+        if (!path) continue;
+        const pathId = path.id || `rm-route-${index + 1}`;
+        if (!path.id) {
+            path.id = pathId;
+        }
+
+        const bead = document.createElementNS(SVG_NS, "circle");
+        bead.setAttribute("r", "2.6");
+        bead.setAttribute("fill", "#60a5fa");
+        bead.setAttribute("opacity", "0.8");
+
+        const animateMotion = document.createElementNS(SVG_NS, "animateMotion");
+        animateMotion.setAttribute("dur", `${2.1 + (index * 0.3)}s`);
+        animateMotion.setAttribute("repeatCount", "indefinite");
+        animateMotion.setAttribute("rotate", "auto");
+
+        const mpath = document.createElementNS(SVG_NS, "mpath");
+        mpath.setAttribute("href", `#${pathId}`);
+        mpath.setAttributeNS(XLINK_NS, "xlink:href", `#${pathId}`);
+        animateMotion.appendChild(mpath);
+        bead.appendChild(animateMotion);
+        layer.appendChild(bead);
+    }
+
+    svgElement.appendChild(layer);
+}
+
+function runMermaidEntranceAnimations(svgElement: SVGSVGElement, chart: string, enableLoopingBeads: boolean): Animation[] {
     const runningAnimations: Animation[] = [];
 
-    // Animate edge paths (drawing effect)
-    const paths = svgElement.querySelectorAll<SVGPathElement>("path.edgePath path, path.flowchart-link, .sequence-diagram path");
-    paths.forEach((path, i) => {
+    const routePaths = Array.from(
+        svgElement.querySelectorAll<SVGPathElement>("path.edgePath path, path.flowchart-link, .sequence-diagram path, .stateDiagram path")
+    );
+    const animatedPaths = routePaths.slice(0, MAX_ANIMATED_PATHS);
+    animatedPaths.forEach((path, i) => {
         try {
             const length = path.getTotalLength();
             if (length < 5) return;
-            const stagger = Math.min(i * 20, 240);
+            const stagger = Math.min(i * 12, 160);
             const animation = path.animate([
                 { strokeDasharray: `${length}`, strokeDashoffset: length },
                 { strokeDasharray: `${length}`, strokeDashoffset: 0 }
             ], {
-                duration: 800 + (length / 2),
+                duration: Math.min(680, 280 + (length / 6)),
                 delay: stagger,
                 fill: "none",
                 easing: "ease-out"
@@ -163,15 +219,14 @@ function runMermaidEntranceAnimations(svgElement: SVGSVGElement): Animation[] {
         }
     });
 
-    // Animate nodes
-    const nodes = svgElement.querySelectorAll<SVGElement>(".node, .actor, .state, .class-name");
+    const nodes = Array.from(svgElement.querySelectorAll<SVGElement>(".node, .actor, .state, .class-name")).slice(0, MAX_ANIMATED_NODES);
     nodes.forEach((node, i) => {
-        const stagger = Math.min(i * 18, 180);
+        const stagger = Math.min(i * 10, 120);
         const animation = node.animate([
             { opacity: 0 },
             { opacity: 1 }
         ], {
-            duration: 420,
+            duration: 240,
             delay: stagger,
             fill: "none",
             easing: "ease-out"
@@ -179,12 +234,18 @@ function runMermaidEntranceAnimations(svgElement: SVGSVGElement): Animation[] {
         runningAnimations.push(animation);
     });
 
+    if (enableLoopingBeads) {
+        addRouteBeads(svgElement, routePaths, chart);
+    }
+
     return runningAnimations;
 }
 
 
 export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
     const [svg, setSvg] = useState<string>("");
+    const [renderedChart, setRenderedChart] = useState<string>("");
+    const [isBrowser, setIsBrowser] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isFixing, setIsFixing] = useState(false);
@@ -210,6 +271,10 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
         }
         return `mermaid-${Math.abs(hash).toString(36)}`;
     }, [chart]);
+
+    useEffect(() => {
+        setIsBrowser(true);
+    }, []);
 
     useEffect(() => {
         if (!chart) return;
@@ -261,6 +326,7 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
                     const { svg: newSvg } = await mermaid.render(id, sanitized);
                     if (mounted) {
                         setSvg(normalizeMermaidSvg(newSvg));
+                        setRenderedChart(sanitized);
                         setError(null);
                         setIsFixing(false);
                     }
@@ -307,6 +373,7 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
                                     const { svg: fixedSvg } = await mermaid.render(id + '-autofixed', fixed);
                                     if (mounted) {
                                         setSvg(normalizeMermaidSvg(fixedSvg));
+                                        setRenderedChart(fixed);
                                         setError(null);
                                         setIsFixing(false);
                                     }
@@ -373,6 +440,7 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
                     codeToRender = compiled.mermaid;
                     const { svg } = await mermaid.render(id + '-manualfixed', codeToRender);
                     setSvg(normalizeMermaidSvg(svg));
+                    setRenderedChart(codeToRender);
                     setError(null);
                     console.log('✅ Layer 3 successful: Typed Mermaid JSON re-rendered');
                     return;
@@ -397,6 +465,7 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
                 if (fixed) {
                     const { svg } = await mermaid.render(id + '-manualfixed', fixed);
                     setSvg(normalizeMermaidSvg(svg));
+                    setRenderedChart(fixed);
                     setError(null);
                     console.log('✅ Layer 3 successful: Manual AI fix worked');
                     return;
@@ -432,14 +501,19 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
                     : !streamAnimationPlayedRef.current && lastAnimatedSvgRef.current !== svg;
 
             if (!shouldAnimate) {
+                applyResponsiveSvgSizing(svgElement);
+                resetAnimatedSvgStyles(svgElement);
                 lastAnimatedSvgRef.current = svg;
                 return;
             }
 
-            // Only reset styles when we are actually going to animate.
+            const reducedMotion = prefersReducedMotion();
+            const animationSource = renderedChart || chart;
             applyResponsiveSvgSizing(svgElement);
             resetAnimatedSvgStyles(svgElement);
-            runningAnimations.push(...runMermaidEntranceAnimations(svgElement));
+            if (!reducedMotion) {
+                runningAnimations.push(...runMermaidEntranceAnimations(svgElement, animationSource, shouldEnableLoopingBeads(reducedMotion)));
+            }
 
             if (isStreaming) {
                 streamAnimationPlayedRef.current = true;
@@ -451,7 +525,7 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
             cancelAnimationFrame(raf);
             runningAnimations.forEach((animation) => animation.cancel());
         };
-    }, [svg, isStreaming]);
+    }, [svg, isStreaming, chart, renderedChart]);
 
     useEffect(() => {
         if (!isModalOpen || !modalRef.current) return;
@@ -463,16 +537,20 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
             const svgElement = container.querySelector("svg");
             if (!svgElement) return;
 
+            const reducedMotion = prefersReducedMotion();
+            const animationSource = renderedChart || chart;
             applyResponsiveSvgSizing(svgElement);
             resetAnimatedSvgStyles(svgElement);
-            runningAnimations = runMermaidEntranceAnimations(svgElement);
+            if (!reducedMotion) {
+                runningAnimations = runMermaidEntranceAnimations(svgElement, animationSource, shouldEnableLoopingBeads(reducedMotion));
+            }
         }, 300);
 
         return () => {
             clearTimeout(timer);
             runningAnimations.forEach((animation) => animation.cancel());
         };
-    }, [isModalOpen, svg]);
+    }, [isModalOpen, svg, chart, renderedChart]);
 
     const exportToPNG = async (e?: React.MouseEvent) => {
         e?.stopPropagation(); // Prevent modal opening if clicking export button
@@ -500,7 +578,7 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
     return (
         <>
             <div
-                className={`my-4 group relative ${isGenerating ? "cursor-default" : "cursor-zoom-in"}`}
+                className={`my-4 group relative isolate ${isGenerating ? "cursor-default" : "cursor-zoom-in"}`}
                 onClick={() => {
                     if (!isGenerating && svg) {
                         setIsModalOpen(true);
@@ -509,7 +587,7 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
             >
                 <div
                     ref={diagramRef}
-                    className="overflow-x-auto bg-zinc-950/50 p-4 md:p-8 rounded-lg border border-white/5 hover:border-white/10 transition-colors flex justify-center min-w-0"
+                    className="overflow-x-auto overflow-y-auto max-h-[28rem] md:max-h-[36rem] bg-zinc-950/50 p-4 md:p-8 rounded-lg border border-white/5 hover:border-white/10 transition-colors flex justify-center min-w-0"
                     dangerouslySetInnerHTML={{ __html: svg }}
                     style={{ minHeight: svg ? 'auto' : '200px' }}
                 />
@@ -562,75 +640,80 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
             </div>
 
             {/* Fullscreen Modal */}
-            <AnimatePresence>
-                {isModalOpen && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 md:p-8"
-                        onClick={() => setIsModalOpen(false)}
-                    >
+            {isBrowser && createPortal(
+                <AnimatePresence>
+                    {isModalOpen && (
                         <motion.div
-                            initial={{ scale: 0.9, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.9, opacity: 0 }}
-                            className="relative w-full max-w-[95vw] max-h-[95vh] bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col"
-                            onClick={(e) => e.stopPropagation()}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-sm p-3 md:p-6"
+                            onClick={() => setIsModalOpen(false)}
                         >
-                            {/* Header */}
-                            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-zinc-900/50">
-                                <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-                                    <ZoomIn className="w-4 h-4" />
-                                    Diagram Preview
-                                </h3>
-                                <div className="flex items-center gap-2">
-                                    {!isGenerating && svg && (
+                            <motion.div
+                                initial={{ scale: 0.9, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.9, opacity: 0 }}
+                                className="relative isolate w-[min(96vw,1440px)] h-[min(92vh,980px)] bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {/* Header */}
+                                <div className="flex shrink-0 items-center justify-between p-4 border-b border-white/10 bg-zinc-900/50">
+                                    <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
+                                        <ZoomIn className="w-4 h-4" />
+                                        Diagram Preview
+                                    </h3>
+                                    <div className="flex items-center gap-2">
+                                        {!isGenerating && svg && (
+                                            <button
+                                                onClick={exportToPNG}
+                                                className="p-2 hover:bg-white/10 rounded-lg text-zinc-400 hover:text-white transition-colors"
+                                                title="Export as PNG"
+                                            >
+                                                <Download className="w-5 h-5" />
+                                            </button>
+                                        )}
                                         <button
-                                            onClick={exportToPNG}
+                                            onClick={() => setIsModalOpen(false)}
                                             className="p-2 hover:bg-white/10 rounded-lg text-zinc-400 hover:text-white transition-colors"
-                                            title="Export as PNG"
+                                            title="Close"
                                         >
-                                            <Download className="w-5 h-5" />
+                                            <X className="w-5 h-5" />
                                         </button>
-                                    )}
-                                    <button
-                                        onClick={() => setIsModalOpen(false)}
-                                        className="p-2 hover:bg-white/10 rounded-lg text-zinc-400 hover:text-white transition-colors"
-                                        title="Close"
-                                    >
-                                        <X className="w-5 h-5" />
-                                    </button>
+                                    </div>
                                 </div>
-                            </div>
 
-                            {/* Content */}
-                            <div className="flex-1 overflow-auto bg-zinc-950/50 relative custom-scrollbar diagram-modal-content">
-                                <style>{`
-                                    .diagram-modal-content svg {
-                                        width: 100% !important;
-                                        height: auto !important;
-                                        max-width: 100% !important;
-                                        max-height: none !important;
-                                        color-scheme: dark;
-                                    }
-                                `}</style>
-                                <div className="min-h-full w-full flex items-center justify-center p-4 md:p-12">
-                                    <motion.div
-                                        initial={{ opacity: 0, y: 20 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ delay: 0.2 }}
-                                        ref={modalRef}
-                                        className="bg-zinc-900/40 p-8 rounded-2xl border border-white/10 backdrop-blur-md shadow-2xl flex items-center justify-center"
-                                        style={{ minWidth: 'min(90vw, 800px)' }}
-                                        dangerouslySetInnerHTML={{ __html: svg }}
-                                    />
+                                {/* Content */}
+                                <div className="flex-1 min-h-0 overflow-hidden bg-zinc-950/50 relative custom-scrollbar diagram-modal-content">
+                                    <style>{`
+                                        .diagram-modal-content svg {
+                                            width: min(100%, 1100px) !important;
+                                            height: auto !important;
+                                            max-width: 100% !important;
+                                            max-height: min(72vh, 860px) !important;
+                                            overflow: hidden !important;
+                                            color-scheme: dark;
+                                            display: block;
+                                            margin: 0 auto;
+                                        }
+                                    `}</style>
+                                    <div className="h-full w-full overflow-auto p-3 md:p-6">
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 20 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ delay: 0.2 }}
+                                            ref={modalRef}
+                                            className="mx-auto max-w-full max-h-full overflow-auto bg-zinc-900/40 p-4 md:p-6 rounded-2xl border border-white/10 backdrop-blur-md shadow-2xl"
+                                            dangerouslySetInnerHTML={{ __html: svg }}
+                                        />
+                                    </div>
                                 </div>
-                            </div>
+                            </motion.div>
                         </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                    )}
+                </AnimatePresence>,
+                document.body
+            )}
         </>
     );
 };

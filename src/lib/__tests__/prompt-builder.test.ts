@@ -50,6 +50,22 @@ describe("buildRepoMindPrompt", () => {
         expect(result).toContain("RepoMind");
     });
 
+    it("enforces repository-topic scope in repo chat", () => {
+        const result = buildRepoMindPrompt(baseParams);
+        expect(result).toContain("TOPIC SCOPE (REPOSITORY CHAT - CRITICAL)");
+        expect(result).toContain("default to repository interpretation instead of self-description");
+    });
+
+    it("enforces profile-topic scope in profile chat", () => {
+        const result = buildRepoMindPrompt({
+            ...baseParams,
+            repoDetails: { owner: "octocat", repo: "profile" },
+        });
+
+        expect(result).toContain("TOPIC SCOPE (PROFILE CHAT - CRITICAL)");
+        expect(result).toContain("default to profile/repository interpretation instead of self-description");
+    });
+
     it("keeps non-visual prompts text-first", () => {
         const result = buildRepoMindPrompt(baseParams);
 
@@ -68,6 +84,21 @@ describe("buildRepoMindPrompt", () => {
         expect(result).toContain("15-20");
         expect(result).toContain("50");
         expect(result).toContain("markdown tables instead of diagrams");
+        expect(result).not.toContain("SVG FEW-SHOT REFERENCE (ONLY FOR SVG PRIMARY FORMAT)");
+        expect(result).not.toContain("SVG PRODUCTION RULES (MANDATORY WHEN SVG IS PRIMARY)");
+    });
+
+    it("maps explicit svg requests to mermaid-json without svg prompt sections", () => {
+        const result = buildRepoMindPrompt({
+            ...baseParams,
+            question: "Generate an SVG architecture diagram for this repository",
+        });
+
+        expect(result).toContain("Primary output format: **MERMAID-JSON**");
+        expect(result).toContain("Fallback output format: **MERMAID**");
+        expect(result).not.toContain("SVG FEW-SHOT REFERENCE");
+        expect(result).not.toContain("SVG PRODUCTION RULES");
+        expect(result).not.toContain("```svg```");
     });
 
     it("uses mermaid-json for a supported non-flowchart diagram type", () => {
@@ -88,7 +119,7 @@ describe("buildRepoMindPrompt", () => {
         });
 
         expect(result).toContain("Primary output format: **MERMAID-JSON**");
-        expect(result).toContain("Fallback output format: **SVG**");
+        expect(result).toContain("Fallback output format: **MERMAID**");
     });
 
     it("keeps the static prompt template free of emoji characters", () => {
@@ -100,8 +131,8 @@ describe("buildRepoMindPrompt", () => {
 describe("resolveVisualOutputDecision", () => {
     it("honors explicit svg requests", () => {
         const decision = resolveVisualOutputDecision("Generate an SVG architecture diagram");
-        expect(decision.primaryFormat).toBe("svg");
-        expect(decision.fallbackFormat).toBe("mermaid-json");
+        expect(decision.primaryFormat).toBe("mermaid-json");
+        expect(decision.fallbackFormat).toBe("mermaid");
     });
 
     it("honors explicit mermaid requests", () => {
@@ -114,9 +145,9 @@ describe("resolveVisualOutputDecision", () => {
         expect(decision.primaryFormat).toBe("mermaid-json");
     });
 
-    it("routes visual polish prompts to svg", () => {
+    it("routes visual polish prompts to mermaid-json", () => {
         const decision = resolveVisualOutputDecision("Create a beautiful architecture diagram");
-        expect(decision.primaryFormat).toBe("svg");
+        expect(decision.primaryFormat).toBe("mermaid-json");
     });
 
     it("routes complex requests to mermaid-json", () => {
@@ -124,14 +155,29 @@ describe("resolveVisualOutputDecision", () => {
         expect(decision.primaryFormat).toBe("mermaid-json");
     });
 
-    it("routes simple requests to svg", () => {
+    it("routes simple requests to mermaid-json", () => {
         const decision = resolveVisualOutputDecision("Create a simple process flow diagram");
-        expect(decision.primaryFormat).toBe("svg");
+        expect(decision.primaryFormat).toBe("mermaid-json");
     });
 
-    it("routes standard architecture requests to svg", () => {
+    it("routes standard architecture requests to mermaid-json", () => {
         const decision = resolveVisualOutputDecision("Create an architecture diagram for this repo");
-        expect(decision.primaryFormat).toBe("svg");
+        expect(decision.primaryFormat).toBe("mermaid-json");
+    });
+
+    it("never returns svg as primary or fallback", () => {
+        const queries = [
+            "Generate an SVG architecture diagram",
+            "Show this as mermaid flow",
+            "Create a sequence diagram for API calls",
+            "Create a simple process flow diagram",
+        ];
+
+        for (const query of queries) {
+            const decision = resolveVisualOutputDecision(query);
+            expect(decision.primaryFormat).not.toBe("svg");
+            expect(decision.fallbackFormat).not.toBe("svg");
+        }
     });
 });
 

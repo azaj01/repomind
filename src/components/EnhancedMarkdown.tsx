@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -10,7 +10,6 @@ import { RepoCard } from "./RepoCard";
 import { DeveloperCard } from "./DeveloperCard";
 import { SmartLink } from "./SmartLink";
 import { Mermaid } from "./Mermaid";
-import { DynamicSVG } from "./DynamicSVG";
 import { FileIcon, FolderIcon } from "./FileIcon";
 import { generateMermaidFromJSON } from "@/lib/diagram-utils";
 
@@ -73,7 +72,7 @@ interface EnhancedMarkdownProps {
 export function EnhancedMarkdown({ content, components, currentOwner, currentRepo, isStreaming = false, fileTree = [] }: EnhancedMarkdownProps) {
     const parts = useMemo(() => parseCardContent(content), [content]);
     
-    const resolvePath = (path: string, isFolder: boolean) => {
+    const resolvePath = useCallback((path: string, isFolder: boolean) => {
         if (!fileTree || fileTree.length === 0) return path;
         
         // Exact match
@@ -103,7 +102,7 @@ export function EnhancedMarkdown({ content, components, currentOwner, currentRep
         }
 
         return path;
-    };
+    }, [fileTree]);
 
     const mergedComponents = useMemo(() => ({
         a: (props: any) => (
@@ -143,10 +142,14 @@ export function EnhancedMarkdown({ content, components, currentOwner, currentRep
 
             if (match && match[1] === "svg") {
                 return (
-                    <DynamicSVG 
-                        svg={childrenStr} 
-                        isStreaming={isStreaming} 
-                    />
+                    <div className="my-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                        <p className="mb-2 text-xs text-amber-200">
+                            Direct SVG rendering is deprecated. Showing legacy SVG source.
+                        </p>
+                        <pre className="overflow-x-auto rounded-lg border border-white/10 bg-zinc-900/60 p-4 text-xs text-zinc-300 whitespace-pre-wrap">
+                            {childrenStr}
+                        </pre>
+                    </div>
                 );
             }
 
