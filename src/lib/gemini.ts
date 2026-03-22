@@ -12,20 +12,14 @@ import type { FileCachePolicy } from "./cache";
 import type { GitHubProfile } from "./github";
 import { stripEmojiCharacters } from "./no-emoji";
 import {
-  getRecentProfileCommitsSnapshot,
   getRecentRepoCommitsSnapshot,
   getUserRepos,
   getUserReposByAge,
   getRepoReleasesSnapshot,
-  getProfileReleasesSnapshot,
   getRepoPullRequestsSnapshot,
-  getProfilePullRequestsSnapshot,
   getRepoIssuesSnapshot,
-  getProfileIssuesSnapshot,
   getRepoCommitFrequencySnapshot,
-  getProfileCommitFrequencySnapshot,
   getRepoContributorsSnapshot,
-  getProfileContributorsSnapshot,
   getRepoFileHistorySnapshot,
   compareRepoRefsSnapshot,
   getRepoWorkflowRunsSnapshot,
@@ -52,6 +46,8 @@ type StreamChunkShape = {
 const MAX_REPO_COMMITS = 10;
 const MAX_PROFILE_COMMITS = 20;
 const SUPPORT_EMAIL = "pieisnot22by7@gmail.com";
+const MAX_GITHUB_CALLS_PER_FUNCTION = 2;
+const PROFILE_REPO_SAMPLE_SIZE = 1;
 let _modernGenAI: GoogleGenAI | null = null;
 
 function asObject(value: unknown): JsonObject {
@@ -107,6 +103,52 @@ function parseOptionalString(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function buildGitHubCallPolicy(options: {
+  functionName: string;
+  callsUsed: number;
+  sampledRepositories?: string[];
+  totalCandidateRepositories?: number;
+}): {
+  functionName: string;
+  maxConsecutiveCalls: number;
+  callsUsed: number;
+  limitedByCap: boolean;
+  sampledRepositories: string[];
+  note?: string;
+} {
+  const sampledRepositories = (options.sampledRepositories ?? []).filter((repo) => repo.length > 0);
+  const callsUsed = clampNumber(options.callsUsed, 0, MAX_GITHUB_CALLS_PER_FUNCTION);
+  const totalCandidateRepositories = options.totalCandidateRepositories;
+  const limitedByCap = typeof totalCandidateRepositories === "number" && totalCandidateRepositories > sampledRepositories.length;
+
+  const note = limitedByCap
+    ? `Transparency: ${options.functionName} was limited to ${MAX_GITHUB_CALLS_PER_FUNCTION} consecutive GitHub API calls, so this answer is based on sampled repository data (${sampledRepositories.join(", ")}).`
+    : undefined;
+
+  return {
+    functionName: options.functionName,
+    maxConsecutiveCalls: MAX_GITHUB_CALLS_PER_FUNCTION,
+    callsUsed,
+    limitedByCap,
+    sampledRepositories,
+    note,
+  };
+}
+
+function withGitHubCallPolicy(
+  functionResponseData: Record<string, unknown>,
+  policy: ReturnType<typeof buildGitHubCallPolicy>
+): Record<string, unknown> {
+  return {
+    ...functionResponseData,
+    githubCallPolicy: policy,
+  };
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 function isFunctionTurnOrderError(error: unknown): boolean {
@@ -682,12 +724,14 @@ export async function answerWithContext(
     - Use \`fetch_recent_commits\` for coding activity. 
     - Limit: 20 commits for overall profile, 10 for specific repo mentions.
     - Additional tools available: \`fetch_repos_by_age\`, \`fetch_repo_releases\`, \`fetch_pull_requests\`, \`fetch_issue_activity\`, \`fetch_commit_frequency\`, \`fetch_contributors\`, \`fetch_file_history\`, \`compare_refs\`, \`fetch_workflow_runs\`, \`fetch_repo_languages\`, \`fetch_dependency_updates\`.
+    - TOOL TRANSPARENCY: If a tool response includes \`githubCallPolicy.limitedByCap=true\`, you MUST include \`githubCallPolicy.note\` verbatim in your answer.
     - **STRICT GROUNDING**: If the user asks for more than these limits, you MUST fetch the maximum (20 or 10) and explicitly state: "Note: Currently, the limit for fetching commits is \${maxAllowed}. Please contact **${SUPPORT_EMAIL}** if you need more usage. I will provide the answer on the basis of the latest \${maxAllowed} commits."
     - Do NOT summarize more than the tool returns. If only 10 are returned, you only describe 10.`;
   } else {
     prompt += `\n\n[REPO TOOLS MODE]:
     - Use \`fetch_recent_commits\` for history. Limit: 10 commits.
     - Additional tools available: \`fetch_repos_by_age\`, \`fetch_repo_releases\`, \`fetch_pull_requests\`, \`fetch_issue_activity\`, \`fetch_commit_frequency\`, \`fetch_contributors\`, \`fetch_file_history\`, \`compare_refs\`, \`fetch_workflow_runs\`, \`fetch_repo_languages\`, \`fetch_dependency_updates\`.
+    - TOOL TRANSPARENCY: If a tool response includes \`githubCallPolicy.limitedByCap=true\`, you MUST include \`githubCallPolicy.note\` verbatim in your answer.
     - **STRICT GROUNDING**: If the user asks for more than 10, you MUST fetch 10 and explicitly state: "Note: Currently, the limit for fetching commits is 10. Please contact **${SUPPORT_EMAIL}** if you need more usage. I will provide the answer on the basis of the latest 10 commits."
     - Do NOT hallucinate commits. Only use what the tool provides.`;
   }
@@ -757,12 +801,14 @@ export async function* answerWithContextStream(
     - Use \`fetch_recent_commits\` for coding activity. Limit: 20 (overall) or 10 (specific repo).
     - Use \`fetch_repos_by_age\` for oldest/newest/journey timeline of repositories.
     - Additional tools available: \`fetch_repo_releases\`, \`fetch_pull_requests\`, \`fetch_issue_activity\`, \`fetch_commit_frequency\`, \`fetch_contributors\`, \`fetch_file_history\`, \`compare_refs\`, \`fetch_workflow_runs\`, \`fetch_repo_languages\`, \`fetch_dependency_updates\`.
+    - TOOL TRANSPARENCY: If a tool response includes \`githubCallPolicy.limitedByCap=true\`, you MUST include \`githubCallPolicy.note\` verbatim in your answer.
     - If user asks for more, you MUST fetch the max allowed and say: "Note: Currently, the limit for fetching commits is \${maxAllowed}. Please contact **${SUPPORT_EMAIL}** if you need more usage. I will provide the answer on the basis of the latest \${maxAllowed} commits."`;
   } else {
     prompt += `\n\n[REPO TOOLS MODE]: 
     - Use \`fetch_recent_commits\` for history. Limit: 10.
     - Use \`fetch_repos_by_age\` for oldest/newest/journey timeline across the owner's repositories.
     - Additional tools available: \`fetch_repo_releases\`, \`fetch_pull_requests\`, \`fetch_issue_activity\`, \`fetch_commit_frequency\`, \`fetch_contributors\`, \`fetch_file_history\`, \`compare_refs\`, \`fetch_workflow_runs\`, \`fetch_repo_languages\`, \`fetch_dependency_updates\`.
+    - TOOL TRANSPARENCY: If a tool response includes \`githubCallPolicy.limitedByCap=true\`, you MUST include \`githubCallPolicy.note\` verbatim in your answer.
     - If user asks for more, you MUST fetch 10 and say: "Note: Currently, the limit for fetching commits is 10. Please contact **${SUPPORT_EMAIL}** if you need more usage. I will provide the answer on the basis of the latest 10 commits."`;
   }
 
@@ -999,6 +1045,32 @@ function buildTools(repoDetails: { owner: string; repo: string }): GeminiTool[] 
   ];
 }
 
+interface ProfileRepoSampleResult {
+  error?: string;
+  sampledRepositories: string[];
+  totalRepositories: number;
+  callsUsed: number;
+}
+
+async function sampleProfileRepositories(owner: string): Promise<ProfileRepoSampleResult> {
+  try {
+    const repos = await getUserRepos(owner);
+    const sampledRepositories = repos.slice(0, PROFILE_REPO_SAMPLE_SIZE).map((repo) => repo.name);
+    return {
+      sampledRepositories,
+      totalRepositories: repos.length,
+      callsUsed: 1,
+    };
+  } catch {
+    return {
+      error: "Failed to list repositories for profile-level analysis.",
+      sampledRepositories: [],
+      totalRepositories: 0,
+      callsUsed: 1,
+    };
+  }
+}
+
 async function resolveToolCall(
   call: FunctionCallShape,
   repoDetails: { owner: string; repo: string }
@@ -1010,6 +1082,10 @@ async function resolveToolCall(
 }> {
   const callName = typeof call.name === "string" ? call.name : "";
   const args = asObject(call.args);
+  const defaultPolicy = buildGitHubCallPolicy({
+    functionName: callName || "unknown_tool",
+    callsUsed: 0,
+  });
 
   if (callName === "fetch_recent_commits") {
     const rawLimit = args.limit ? Number(args.limit) : undefined;
@@ -1024,43 +1100,99 @@ async function resolveToolCall(
 
       if (isSpecficRepo) {
         const snapshot = await getRecentRepoCommitsSnapshot(repoDetails.owner, repository, limit);
+        const repositoryScope = `${repoDetails.owner}/${repository}`;
+        const policy = buildGitHubCallPolicy({
+          functionName: callName,
+          callsUsed: 1,
+          sampledRepositories: [repositoryScope],
+        });
         if (!snapshot.success) {
           return {
-            functionResponseData: { error: snapshot.error, commits: [] },
+            functionResponseData: withGitHubCallPolicy({ error: snapshot.error, commits: [] }, policy),
             statusMessage: "Failed to fetch repository commits.",
             toolEvent: { name: "fetch_recent_commits", detail: repository, usageUnits: 1 },
           };
         }
         return {
-          functionResponseData: {
+          functionResponseData: withGitHubCallPolicy({
             commits: snapshot.data.commits,
             scope: "repository",
             repository,
             limitExceeded,
-            maxAllowed
-          },
+            maxAllowed,
+          }, policy),
           statusMessage: `Fetching latest ${limit} commits of ${repository}...`,
           toolEvent: { name: "fetch_recent_commits", detail: repository, usageUnits: 1 },
           commitFreshnessLabel: `Commits checked: ${snapshot.data.freshness.label}`,
         };
       }
 
-      const snapshot = await getRecentProfileCommitsSnapshot(repoDetails.owner, limit);
-      if (!snapshot.success) {
+      const sample = await sampleProfileRepositories(repoDetails.owner);
+      if (sample.error) {
+        const policy = buildGitHubCallPolicy({
+          functionName: callName,
+          callsUsed: sample.callsUsed,
+        });
         return {
-          functionResponseData: { error: snapshot.error, commits: [] },
+          functionResponseData: withGitHubCallPolicy({ error: sample.error, commits: [] }, policy),
           statusMessage: "Failed to fetch profile commits.",
           toolEvent: { name: "fetch_recent_commits", detail: "overall", usageUnits: 1 },
         };
       }
+
+      const sampledRepo = sample.sampledRepositories[0];
+      if (!sampledRepo) {
+        const policy = buildGitHubCallPolicy({
+          functionName: callName,
+          callsUsed: sample.callsUsed,
+          sampledRepositories: [],
+          totalCandidateRepositories: sample.totalRepositories,
+        });
+        return {
+          functionResponseData: withGitHubCallPolicy({
+            commits: [],
+            scope: "overall",
+            sampledRepositories: [],
+            limitExceeded,
+            maxAllowed,
+          }, policy),
+          statusMessage: "No repositories available for profile commits.",
+          toolEvent: { name: "fetch_recent_commits", detail: "overall", usageUnits: 1 },
+        };
+      }
+
+      const snapshot = await getRecentRepoCommitsSnapshot(repoDetails.owner, sampledRepo, limit);
+      const sampledScope = `${repoDetails.owner}/${sampledRepo}`;
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: sample.callsUsed + 1,
+        sampledRepositories: [sampledScope],
+        totalCandidateRepositories: sample.totalRepositories,
+      });
+
+      if (!snapshot.success) {
+        return {
+          functionResponseData: withGitHubCallPolicy({
+            error: snapshot.error,
+            commits: [],
+            scope: "overall",
+            sampledRepositories: [sampledScope],
+            limitExceeded,
+            maxAllowed,
+          }, policy),
+          statusMessage: "Failed to fetch profile commits from sampled repository.",
+          toolEvent: { name: "fetch_recent_commits", detail: "overall", usageUnits: 1 },
+        };
+      }
       return {
-        functionResponseData: {
+        functionResponseData: withGitHubCallPolicy({
           commits: snapshot.data.commits,
           scope: "overall",
+          sampledRepositories: [sampledScope],
           limitExceeded,
-          maxAllowed
-        },
-        statusMessage: "Fetching latest commits across repositories...",
+          maxAllowed,
+        }, policy),
+        statusMessage: `Fetching latest commits from sampled repository ${sampledScope}...`,
         toolEvent: { name: "fetch_recent_commits", detail: "overall", usageUnits: 1 },
         commitFreshnessLabel: `Commits checked: ${snapshot.data.freshness.label}`,
       };
@@ -1071,21 +1203,27 @@ async function resolveToolCall(
     const limitExceeded = (requestedLimit !== undefined && requestedLimit > maxAllowed);
 
     const snapshot = await getRecentRepoCommitsSnapshot(repoDetails.owner, repoDetails.repo, limit);
+    const repositoryScope = `${repoDetails.owner}/${repoDetails.repo}`;
+    const policy = buildGitHubCallPolicy({
+      functionName: callName,
+      callsUsed: 1,
+      sampledRepositories: [repositoryScope],
+    });
     if (!snapshot.success) {
       return {
-        functionResponseData: { error: snapshot.error, commits: [] },
+        functionResponseData: withGitHubCallPolicy({ error: snapshot.error, commits: [] }, policy),
         statusMessage: "Failed to fetch repository commits.",
         toolEvent: { name: "fetch_recent_commits", detail: `${repoDetails.owner}/${repoDetails.repo}`, usageUnits: 1 },
       };
     }
     return {
-      functionResponseData: {
+      functionResponseData: withGitHubCallPolicy({
         commits: snapshot.data.commits,
         scope: "repository",
         repository: repoDetails.repo,
         limitExceeded,
-        maxAllowed
-      },
+        maxAllowed,
+      }, policy),
       statusMessage: `Fetching latest ${limit} commits of ${repoDetails.owner}/${repoDetails.repo}...`,
       toolEvent: { name: "fetch_recent_commits", detail: `${repoDetails.owner}/${repoDetails.repo}`, usageUnits: 1 },
       commitFreshnessLabel: `Commits checked: ${snapshot.data.freshness.label}`,
@@ -1116,16 +1254,24 @@ async function resolveToolCall(
         created_at: repo.created_at,
         stargazers_count: repo.stargazers_count,
       }));
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: 1,
+      });
       return {
-        functionResponseData: { repos: journeyRepos, mode: "journey" },
+        functionResponseData: withGitHubCallPolicy({ repos: journeyRepos, mode: "journey" }, policy),
         statusMessage: "Fetching repository journey timeline...",
         toolEvent: { name: "fetch_repos_by_age", detail: "journey", usageUnits: 1 },
       };
     }
 
     const repos = await getUserReposByAge(repoDetails.owner, mode === "newest" ? "newest" : "oldest", 10);
+    const policy = buildGitHubCallPolicy({
+      functionName: callName,
+      callsUsed: 1,
+    });
     return {
-      functionResponseData: { repos, mode },
+      functionResponseData: withGitHubCallPolicy({ repos, mode }, policy),
       statusMessage: mode === "newest" ? "Fetching newest repositories..." : "Fetching oldest repositories...",
       toolEvent: { name: "fetch_repos_by_age", detail: mode, usageUnits: 1 },
     };
@@ -1136,31 +1282,82 @@ async function resolveToolCall(
     const resolved = resolveRepositoryForTool(args.repository, repoDetails);
     if (resolved) {
       const snapshot = await getRepoReleasesSnapshot(resolved.owner, resolved.repo, limit);
+      const repositoryScope = `${resolved.owner}/${resolved.repo}`;
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: 1,
+        sampledRepositories: [repositoryScope],
+      });
       if (!snapshot.success) {
         return {
-          functionResponseData: { error: snapshot.error, releases: [] },
+          functionResponseData: withGitHubCallPolicy({ error: snapshot.error, releases: [] }, policy),
           statusMessage: "Failed to fetch releases.",
           toolEvent: { name: "fetch_repo_releases", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
         };
       }
       return {
-        functionResponseData: { releases: snapshot.data, scope: "repository", repository: `${resolved.owner}/${resolved.repo}` },
+        functionResponseData: withGitHubCallPolicy({
+          releases: snapshot.data,
+          scope: "repository",
+          repository: repositoryScope,
+        }, policy),
         statusMessage: `Fetching latest releases from ${resolved.owner}/${resolved.repo}...`,
         toolEvent: { name: "fetch_repo_releases", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
       };
     }
 
-    const snapshot = await getProfileReleasesSnapshot(repoDetails.owner, limit);
+    const sample = await sampleProfileRepositories(repoDetails.owner);
+    if (sample.error) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: sample.callsUsed,
+      });
+      return {
+        functionResponseData: withGitHubCallPolicy({ error: sample.error, releases: [] }, policy),
+        statusMessage: "Failed to fetch profile releases.",
+        toolEvent: { name: "fetch_repo_releases", detail: "overall", usageUnits: 1 },
+      };
+    }
+    const sampledRepo = sample.sampledRepositories[0];
+    if (!sampledRepo) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: sample.callsUsed,
+        totalCandidateRepositories: sample.totalRepositories,
+      });
+      return {
+        functionResponseData: withGitHubCallPolicy({ releases: [], scope: "overall", sampledRepositories: [] }, policy),
+        statusMessage: "No repositories available for release timeline.",
+        toolEvent: { name: "fetch_repo_releases", detail: "overall", usageUnits: 1 },
+      };
+    }
+    const snapshot = await getRepoReleasesSnapshot(repoDetails.owner, sampledRepo, limit);
+    const sampledScope = `${repoDetails.owner}/${sampledRepo}`;
+    const policy = buildGitHubCallPolicy({
+      functionName: callName,
+      callsUsed: sample.callsUsed + 1,
+      sampledRepositories: [sampledScope],
+      totalCandidateRepositories: sample.totalRepositories,
+    });
     if (!snapshot.success) {
       return {
-        functionResponseData: { error: snapshot.error, releases: [] },
+        functionResponseData: withGitHubCallPolicy({
+          error: snapshot.error,
+          releases: [],
+          scope: "overall",
+          sampledRepositories: [sampledScope],
+        }, policy),
         statusMessage: "Failed to fetch profile releases.",
         toolEvent: { name: "fetch_repo_releases", detail: "overall", usageUnits: 1 },
       };
     }
     return {
-      functionResponseData: { releases: snapshot.data, scope: "overall" },
-      statusMessage: "Fetching release timeline across repositories...",
+      functionResponseData: withGitHubCallPolicy({
+        releases: snapshot.data,
+        scope: "overall",
+        sampledRepositories: [sampledScope],
+      }, policy),
+      statusMessage: `Fetching release timeline from sampled repository ${sampledScope}...`,
       toolEvent: { name: "fetch_repo_releases", detail: "overall", usageUnits: 1 },
     };
   }
@@ -1174,31 +1371,82 @@ async function resolveToolCall(
 
     if (resolved) {
       const snapshot = await getRepoPullRequestsSnapshot(resolved.owner, resolved.repo, state, limit, since);
+      const repositoryScope = `${resolved.owner}/${resolved.repo}`;
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: 1,
+        sampledRepositories: [repositoryScope],
+      });
       if (!snapshot.success) {
         return {
-          functionResponseData: { error: snapshot.error, pullRequests: [] },
+          functionResponseData: withGitHubCallPolicy({ error: snapshot.error, pullRequests: [] }, policy),
           statusMessage: "Failed to fetch pull requests.",
           toolEvent: { name: "fetch_pull_requests", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
         };
       }
       return {
-        functionResponseData: { pullRequests: snapshot.data, scope: "repository", repository: `${resolved.owner}/${resolved.repo}` },
+        functionResponseData: withGitHubCallPolicy({
+          pullRequests: snapshot.data,
+          scope: "repository",
+          repository: repositoryScope,
+        }, policy),
         statusMessage: `Fetching pull requests from ${resolved.owner}/${resolved.repo}...`,
         toolEvent: { name: "fetch_pull_requests", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
       };
     }
 
-    const snapshot = await getProfilePullRequestsSnapshot(repoDetails.owner, state, limit, since);
+    const sample = await sampleProfileRepositories(repoDetails.owner);
+    if (sample.error) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: sample.callsUsed,
+      });
+      return {
+        functionResponseData: withGitHubCallPolicy({ error: sample.error, pullRequests: [] }, policy),
+        statusMessage: "Failed to fetch profile pull requests.",
+        toolEvent: { name: "fetch_pull_requests", detail: "overall", usageUnits: 1 },
+      };
+    }
+    const sampledRepo = sample.sampledRepositories[0];
+    if (!sampledRepo) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: sample.callsUsed,
+        totalCandidateRepositories: sample.totalRepositories,
+      });
+      return {
+        functionResponseData: withGitHubCallPolicy({ pullRequests: [], scope: "overall", sampledRepositories: [] }, policy),
+        statusMessage: "No repositories available for pull request activity.",
+        toolEvent: { name: "fetch_pull_requests", detail: "overall", usageUnits: 1 },
+      };
+    }
+    const snapshot = await getRepoPullRequestsSnapshot(repoDetails.owner, sampledRepo, state, limit, since);
+    const sampledScope = `${repoDetails.owner}/${sampledRepo}`;
+    const policy = buildGitHubCallPolicy({
+      functionName: callName,
+      callsUsed: sample.callsUsed + 1,
+      sampledRepositories: [sampledScope],
+      totalCandidateRepositories: sample.totalRepositories,
+    });
     if (!snapshot.success) {
       return {
-        functionResponseData: { error: snapshot.error, pullRequests: [] },
+        functionResponseData: withGitHubCallPolicy({
+          error: snapshot.error,
+          pullRequests: [],
+          scope: "overall",
+          sampledRepositories: [sampledScope],
+        }, policy),
         statusMessage: "Failed to fetch profile pull requests.",
         toolEvent: { name: "fetch_pull_requests", detail: "overall", usageUnits: 1 },
       };
     }
     return {
-      functionResponseData: { pullRequests: snapshot.data, scope: "overall" },
-      statusMessage: "Fetching pull request activity across repositories...",
+      functionResponseData: withGitHubCallPolicy({
+        pullRequests: snapshot.data,
+        scope: "overall",
+        sampledRepositories: [sampledScope],
+      }, policy),
+      statusMessage: `Fetching pull request activity from sampled repository ${sampledScope}...`,
       toolEvent: { name: "fetch_pull_requests", detail: "overall", usageUnits: 1 },
     };
   }
@@ -1212,31 +1460,82 @@ async function resolveToolCall(
 
     if (resolved) {
       const snapshot = await getRepoIssuesSnapshot(resolved.owner, resolved.repo, state, limit, since);
+      const repositoryScope = `${resolved.owner}/${resolved.repo}`;
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: 1,
+        sampledRepositories: [repositoryScope],
+      });
       if (!snapshot.success) {
         return {
-          functionResponseData: { error: snapshot.error, issues: [] },
+          functionResponseData: withGitHubCallPolicy({ error: snapshot.error, issues: [] }, policy),
           statusMessage: "Failed to fetch issues.",
           toolEvent: { name: "fetch_issue_activity", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
         };
       }
       return {
-        functionResponseData: { issues: snapshot.data, scope: "repository", repository: `${resolved.owner}/${resolved.repo}` },
+        functionResponseData: withGitHubCallPolicy({
+          issues: snapshot.data,
+          scope: "repository",
+          repository: repositoryScope,
+        }, policy),
         statusMessage: `Fetching issue activity from ${resolved.owner}/${resolved.repo}...`,
         toolEvent: { name: "fetch_issue_activity", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
       };
     }
 
-    const snapshot = await getProfileIssuesSnapshot(repoDetails.owner, state, limit, since);
+    const sample = await sampleProfileRepositories(repoDetails.owner);
+    if (sample.error) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: sample.callsUsed,
+      });
+      return {
+        functionResponseData: withGitHubCallPolicy({ error: sample.error, issues: [] }, policy),
+        statusMessage: "Failed to fetch profile issues.",
+        toolEvent: { name: "fetch_issue_activity", detail: "overall", usageUnits: 1 },
+      };
+    }
+    const sampledRepo = sample.sampledRepositories[0];
+    if (!sampledRepo) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: sample.callsUsed,
+        totalCandidateRepositories: sample.totalRepositories,
+      });
+      return {
+        functionResponseData: withGitHubCallPolicy({ issues: [], scope: "overall", sampledRepositories: [] }, policy),
+        statusMessage: "No repositories available for issue activity.",
+        toolEvent: { name: "fetch_issue_activity", detail: "overall", usageUnits: 1 },
+      };
+    }
+    const snapshot = await getRepoIssuesSnapshot(repoDetails.owner, sampledRepo, state, limit, since);
+    const sampledScope = `${repoDetails.owner}/${sampledRepo}`;
+    const policy = buildGitHubCallPolicy({
+      functionName: callName,
+      callsUsed: sample.callsUsed + 1,
+      sampledRepositories: [sampledScope],
+      totalCandidateRepositories: sample.totalRepositories,
+    });
     if (!snapshot.success) {
       return {
-        functionResponseData: { error: snapshot.error, issues: [] },
+        functionResponseData: withGitHubCallPolicy({
+          error: snapshot.error,
+          issues: [],
+          scope: "overall",
+          sampledRepositories: [sampledScope],
+        }, policy),
         statusMessage: "Failed to fetch profile issues.",
         toolEvent: { name: "fetch_issue_activity", detail: "overall", usageUnits: 1 },
       };
     }
     return {
-      functionResponseData: { issues: snapshot.data, scope: "overall" },
-      statusMessage: "Fetching issue activity across repositories...",
+      functionResponseData: withGitHubCallPolicy({
+        issues: snapshot.data,
+        scope: "overall",
+        sampledRepositories: [sampledScope],
+      }, policy),
+      statusMessage: `Fetching issue activity from sampled repository ${sampledScope}...`,
       toolEvent: { name: "fetch_issue_activity", detail: "overall", usageUnits: 1 },
     };
   }
@@ -1247,31 +1546,82 @@ async function resolveToolCall(
 
     if (resolved) {
       const snapshot = await getRepoCommitFrequencySnapshot(resolved.owner, resolved.repo, weeks);
+      const repositoryScope = `${resolved.owner}/${resolved.repo}`;
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: 1,
+        sampledRepositories: [repositoryScope],
+      });
       if (!snapshot.success) {
         return {
-          functionResponseData: { error: snapshot.error, weeklyCommits: [] },
+          functionResponseData: withGitHubCallPolicy({ error: snapshot.error, weeklyCommits: [] }, policy),
           statusMessage: "Failed to fetch commit frequency.",
           toolEvent: { name: "fetch_commit_frequency", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
         };
       }
       return {
-        functionResponseData: { weeklyCommits: snapshot.data, scope: "repository", repository: `${resolved.owner}/${resolved.repo}` },
+        functionResponseData: withGitHubCallPolicy({
+          weeklyCommits: snapshot.data,
+          scope: "repository",
+          repository: repositoryScope,
+        }, policy),
         statusMessage: `Fetching ${weeks}-week commit frequency for ${resolved.owner}/${resolved.repo}...`,
         toolEvent: { name: "fetch_commit_frequency", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
       };
     }
 
-    const snapshot = await getProfileCommitFrequencySnapshot(repoDetails.owner, weeks);
+    const sample = await sampleProfileRepositories(repoDetails.owner);
+    if (sample.error) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: sample.callsUsed,
+      });
+      return {
+        functionResponseData: withGitHubCallPolicy({ error: sample.error, weeklyCommits: [] }, policy),
+        statusMessage: "Failed to fetch profile commit frequency.",
+        toolEvent: { name: "fetch_commit_frequency", detail: "overall", usageUnits: 1 },
+      };
+    }
+    const sampledRepo = sample.sampledRepositories[0];
+    if (!sampledRepo) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: sample.callsUsed,
+        totalCandidateRepositories: sample.totalRepositories,
+      });
+      return {
+        functionResponseData: withGitHubCallPolicy({ weeklyCommits: [], scope: "overall", sampledRepositories: [] }, policy),
+        statusMessage: "No repositories available for commit frequency.",
+        toolEvent: { name: "fetch_commit_frequency", detail: "overall", usageUnits: 1 },
+      };
+    }
+    const snapshot = await getRepoCommitFrequencySnapshot(repoDetails.owner, sampledRepo, weeks);
+    const sampledScope = `${repoDetails.owner}/${sampledRepo}`;
+    const policy = buildGitHubCallPolicy({
+      functionName: callName,
+      callsUsed: sample.callsUsed + 1,
+      sampledRepositories: [sampledScope],
+      totalCandidateRepositories: sample.totalRepositories,
+    });
     if (!snapshot.success) {
       return {
-        functionResponseData: { error: snapshot.error, weeklyCommits: [] },
+        functionResponseData: withGitHubCallPolicy({
+          error: snapshot.error,
+          weeklyCommits: [],
+          scope: "overall",
+          sampledRepositories: [sampledScope],
+        }, policy),
         statusMessage: "Failed to fetch profile commit frequency.",
         toolEvent: { name: "fetch_commit_frequency", detail: "overall", usageUnits: 1 },
       };
     }
     return {
-      functionResponseData: { weeklyCommits: snapshot.data, scope: "overall" },
-      statusMessage: `Fetching ${weeks}-week commit frequency across repositories...`,
+      functionResponseData: withGitHubCallPolicy({
+        weeklyCommits: snapshot.data,
+        scope: "overall",
+        sampledRepositories: [sampledScope],
+      }, policy),
+      statusMessage: `Fetching ${weeks}-week commit frequency from sampled repository ${sampledScope}...`,
       toolEvent: { name: "fetch_commit_frequency", detail: "overall", usageUnits: 1 },
     };
   }
@@ -1282,31 +1632,82 @@ async function resolveToolCall(
 
     if (resolved) {
       const snapshot = await getRepoContributorsSnapshot(resolved.owner, resolved.repo, limit);
+      const repositoryScope = `${resolved.owner}/${resolved.repo}`;
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: 1,
+        sampledRepositories: [repositoryScope],
+      });
       if (!snapshot.success) {
         return {
-          functionResponseData: { error: snapshot.error, contributors: [] },
+          functionResponseData: withGitHubCallPolicy({ error: snapshot.error, contributors: [] }, policy),
           statusMessage: "Failed to fetch contributors.",
           toolEvent: { name: "fetch_contributors", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
         };
       }
       return {
-        functionResponseData: { contributors: snapshot.data, scope: "repository", repository: `${resolved.owner}/${resolved.repo}` },
+        functionResponseData: withGitHubCallPolicy({
+          contributors: snapshot.data,
+          scope: "repository",
+          repository: repositoryScope,
+        }, policy),
         statusMessage: `Fetching top contributors for ${resolved.owner}/${resolved.repo}...`,
         toolEvent: { name: "fetch_contributors", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
       };
     }
 
-    const snapshot = await getProfileContributorsSnapshot(repoDetails.owner, limit);
+    const sample = await sampleProfileRepositories(repoDetails.owner);
+    if (sample.error) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: sample.callsUsed,
+      });
+      return {
+        functionResponseData: withGitHubCallPolicy({ error: sample.error, contributors: [] }, policy),
+        statusMessage: "Failed to fetch profile contributors.",
+        toolEvent: { name: "fetch_contributors", detail: "overall", usageUnits: 1 },
+      };
+    }
+    const sampledRepo = sample.sampledRepositories[0];
+    if (!sampledRepo) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: sample.callsUsed,
+        totalCandidateRepositories: sample.totalRepositories,
+      });
+      return {
+        functionResponseData: withGitHubCallPolicy({ contributors: [], scope: "overall", sampledRepositories: [] }, policy),
+        statusMessage: "No repositories available for contributor insights.",
+        toolEvent: { name: "fetch_contributors", detail: "overall", usageUnits: 1 },
+      };
+    }
+    const snapshot = await getRepoContributorsSnapshot(repoDetails.owner, sampledRepo, limit);
+    const sampledScope = `${repoDetails.owner}/${sampledRepo}`;
+    const policy = buildGitHubCallPolicy({
+      functionName: callName,
+      callsUsed: sample.callsUsed + 1,
+      sampledRepositories: [sampledScope],
+      totalCandidateRepositories: sample.totalRepositories,
+    });
     if (!snapshot.success) {
       return {
-        functionResponseData: { error: snapshot.error, contributors: [] },
+        functionResponseData: withGitHubCallPolicy({
+          error: snapshot.error,
+          contributors: [],
+          scope: "overall",
+          sampledRepositories: [sampledScope],
+        }, policy),
         statusMessage: "Failed to fetch profile contributors.",
         toolEvent: { name: "fetch_contributors", detail: "overall", usageUnits: 1 },
       };
     }
     return {
-      functionResponseData: { contributors: snapshot.data, scope: "overall" },
-      statusMessage: "Fetching top contributors across repositories...",
+      functionResponseData: withGitHubCallPolicy({
+        contributors: snapshot.data,
+        scope: "overall",
+        sampledRepositories: [sampledScope],
+      }, policy),
+      statusMessage: `Fetching top contributors from sampled repository ${sampledScope}...`,
       toolEvent: { name: "fetch_contributors", detail: "overall", usageUnits: 1 },
     };
   }
@@ -1314,8 +1715,12 @@ async function resolveToolCall(
   if (callName === "fetch_file_history") {
     const path = parseOptionalString(args.path);
     if (!path) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: 0,
+      });
       return {
-        functionResponseData: { error: "Missing required argument: path", fileHistory: [] },
+        functionResponseData: withGitHubCallPolicy({ error: "Missing required argument: path", fileHistory: [] }, policy),
         statusMessage: "Missing required file path for history lookup.",
         toolEvent: { name: "fetch_file_history", detail: "missing-path", usageUnits: 1 },
       };
@@ -1323,22 +1728,38 @@ async function resolveToolCall(
     const limit = parseLimit(args.limit, 10, 20);
     const resolved = resolveRepositoryForTool(args.repository, repoDetails);
     if (!resolved) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: 0,
+      });
       return {
-        functionResponseData: { error: "Repository is required for file history in profile mode.", fileHistory: [] },
+        functionResponseData: withGitHubCallPolicy({
+          error: "Repository is required for file history in profile mode.",
+          fileHistory: [],
+        }, policy),
         statusMessage: "Specify a repository to fetch file history in profile mode.",
         toolEvent: { name: "fetch_file_history", detail: "missing-repository", usageUnits: 1 },
       };
     }
     const snapshot = await getRepoFileHistorySnapshot(resolved.owner, resolved.repo, path, limit);
+    const repositoryScope = `${resolved.owner}/${resolved.repo}`;
+    const policy = buildGitHubCallPolicy({
+      functionName: callName,
+      callsUsed: 1,
+      sampledRepositories: [repositoryScope],
+    });
     if (!snapshot.success) {
       return {
-        functionResponseData: { error: snapshot.error, fileHistory: [] },
+        functionResponseData: withGitHubCallPolicy({ error: snapshot.error, fileHistory: [] }, policy),
         statusMessage: "Failed to fetch file history.",
         toolEvent: { name: "fetch_file_history", detail: `${resolved.owner}/${resolved.repo}:${path}`, usageUnits: 1 },
       };
     }
     return {
-      functionResponseData: { fileHistory: snapshot.data, repository: `${resolved.owner}/${resolved.repo}` },
+      functionResponseData: withGitHubCallPolicy({
+        fileHistory: snapshot.data,
+        repository: repositoryScope,
+      }, policy),
       statusMessage: `Fetching file history for ${path}...`,
       toolEvent: { name: "fetch_file_history", detail: `${resolved.owner}/${resolved.repo}:${path}`, usageUnits: 1 },
     };
@@ -1348,30 +1769,53 @@ async function resolveToolCall(
     const base = parseOptionalString(args.base);
     const head = parseOptionalString(args.head);
     if (!base || !head) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: 0,
+      });
       return {
-        functionResponseData: { error: "Missing required arguments: base and/or head", comparison: null },
+        functionResponseData: withGitHubCallPolicy({
+          error: "Missing required arguments: base and/or head",
+          comparison: null,
+        }, policy),
         statusMessage: "Missing base/head refs for compare.",
         toolEvent: { name: "compare_refs", detail: "missing-refs", usageUnits: 1 },
       };
     }
     const resolved = resolveRepositoryForTool(args.repository, repoDetails);
     if (!resolved) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: 0,
+      });
       return {
-        functionResponseData: { error: "Repository is required for compare_refs in profile mode.", comparison: null },
+        functionResponseData: withGitHubCallPolicy({
+          error: "Repository is required for compare_refs in profile mode.",
+          comparison: null,
+        }, policy),
         statusMessage: "Specify a repository to compare refs in profile mode.",
         toolEvent: { name: "compare_refs", detail: "missing-repository", usageUnits: 1 },
       };
     }
     const snapshot = await compareRepoRefsSnapshot(resolved.owner, resolved.repo, base, head);
+    const repositoryScope = `${resolved.owner}/${resolved.repo}`;
+    const policy = buildGitHubCallPolicy({
+      functionName: callName,
+      callsUsed: 1,
+      sampledRepositories: [repositoryScope],
+    });
     if (!snapshot.success) {
       return {
-        functionResponseData: { error: snapshot.error, comparison: null },
+        functionResponseData: withGitHubCallPolicy({ error: snapshot.error, comparison: null }, policy),
         statusMessage: "Failed to compare refs.",
         toolEvent: { name: "compare_refs", detail: `${resolved.owner}/${resolved.repo}:${base}...${head}`, usageUnits: 1 },
       };
     }
     return {
-      functionResponseData: { comparison: snapshot.data, repository: `${resolved.owner}/${resolved.repo}` },
+      functionResponseData: withGitHubCallPolicy({
+        comparison: snapshot.data,
+        repository: repositoryScope,
+      }, policy),
       statusMessage: `Comparing ${base}...${head}...`,
       toolEvent: { name: "compare_refs", detail: `${resolved.owner}/${resolved.repo}:${base}...${head}`, usageUnits: 1 },
     };
@@ -1385,31 +1829,82 @@ async function resolveToolCall(
 
     if (resolved) {
       const snapshot = await getRepoWorkflowRunsSnapshot(resolved.owner, resolved.repo, limit, status, branch);
+      const repositoryScope = `${resolved.owner}/${resolved.repo}`;
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: 1,
+        sampledRepositories: [repositoryScope],
+      });
       if (!snapshot.success) {
         return {
-          functionResponseData: { error: snapshot.error, workflowRuns: [] },
+          functionResponseData: withGitHubCallPolicy({ error: snapshot.error, workflowRuns: [] }, policy),
           statusMessage: "Failed to fetch workflow runs.",
           toolEvent: { name: "fetch_workflow_runs", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
         };
       }
       return {
-        functionResponseData: { workflowRuns: snapshot.data, scope: "repository", repository: `${resolved.owner}/${resolved.repo}` },
+        functionResponseData: withGitHubCallPolicy({
+          workflowRuns: snapshot.data,
+          scope: "repository",
+          repository: repositoryScope,
+        }, policy),
         statusMessage: `Fetching workflow runs from ${resolved.owner}/${resolved.repo}...`,
         toolEvent: { name: "fetch_workflow_runs", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
       };
     }
 
-    const repos = await getUserRepos(repoDetails.owner);
-    const topRepos = repos.slice(0, 5).map((r) => r.name);
-    const perRepoLimit = Math.max(1, Math.ceil(limit / Math.max(1, topRepos.length)));
-    const batches = await Promise.all(topRepos.map(async (repo) => {
-      const snapshot = await getRepoWorkflowRunsSnapshot(repoDetails.owner, repo, perRepoLimit, status, branch);
-      return snapshot.success ? snapshot.data : [];
-    }));
-    const merged = batches.flat().sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).slice(0, limit);
+    const sample = await sampleProfileRepositories(repoDetails.owner);
+    if (sample.error) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: sample.callsUsed,
+      });
+      return {
+        functionResponseData: withGitHubCallPolicy({ error: sample.error, workflowRuns: [] }, policy),
+        statusMessage: "Failed to fetch workflow runs across repositories.",
+        toolEvent: { name: "fetch_workflow_runs", detail: "overall", usageUnits: 1 },
+      };
+    }
+    const sampledRepo = sample.sampledRepositories[0];
+    if (!sampledRepo) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: sample.callsUsed,
+        totalCandidateRepositories: sample.totalRepositories,
+      });
+      return {
+        functionResponseData: withGitHubCallPolicy({ workflowRuns: [], scope: "overall", sampledRepositories: [] }, policy),
+        statusMessage: "No repositories available for workflow insights.",
+        toolEvent: { name: "fetch_workflow_runs", detail: "overall", usageUnits: 1 },
+      };
+    }
+    const snapshot = await getRepoWorkflowRunsSnapshot(repoDetails.owner, sampledRepo, limit, status, branch);
+    const sampledScope = `${repoDetails.owner}/${sampledRepo}`;
+    const policy = buildGitHubCallPolicy({
+      functionName: callName,
+      callsUsed: sample.callsUsed + 1,
+      sampledRepositories: [sampledScope],
+      totalCandidateRepositories: sample.totalRepositories,
+    });
+    if (!snapshot.success) {
+      return {
+        functionResponseData: withGitHubCallPolicy({
+          error: snapshot.error,
+          workflowRuns: [],
+          scope: "overall",
+          sampledRepositories: [sampledScope],
+        }, policy),
+        statusMessage: "Failed to fetch workflow runs across repositories.",
+        toolEvent: { name: "fetch_workflow_runs", detail: "overall", usageUnits: 1 },
+      };
+    }
     return {
-      functionResponseData: { workflowRuns: merged, scope: "overall" },
-      statusMessage: "Fetching workflow runs across repositories...",
+      functionResponseData: withGitHubCallPolicy({
+        workflowRuns: snapshot.data,
+        scope: "overall",
+        sampledRepositories: [sampledScope],
+      }, policy),
+      statusMessage: `Fetching workflow runs from sampled repository ${sampledScope}...`,
       toolEvent: { name: "fetch_workflow_runs", detail: "overall", usageUnits: 1 },
     };
   }
@@ -1418,42 +1913,81 @@ async function resolveToolCall(
     const resolved = resolveRepositoryForTool(args.repository, repoDetails);
     if (resolved) {
       const snapshot = await getRepoLanguagesSnapshot(resolved.owner, resolved.repo);
+      const repositoryScope = `${resolved.owner}/${resolved.repo}`;
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: 1,
+        sampledRepositories: [repositoryScope],
+      });
       if (!snapshot.success) {
         return {
-          functionResponseData: { error: snapshot.error, languages: [] },
+          functionResponseData: withGitHubCallPolicy({ error: snapshot.error, languages: [] }, policy),
           statusMessage: "Failed to fetch repository languages.",
           toolEvent: { name: "fetch_repo_languages", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
         };
       }
       return {
-        functionResponseData: { languages: snapshot.data.languages, repository: `${resolved.owner}/${resolved.repo}` },
+        functionResponseData: withGitHubCallPolicy({
+          languages: snapshot.data.languages,
+          repository: repositoryScope,
+        }, policy),
         statusMessage: `Fetching language distribution for ${resolved.owner}/${resolved.repo}...`,
         toolEvent: { name: "fetch_repo_languages", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
       };
     }
 
-    const repos = await getUserRepos(repoDetails.owner);
-    const topRepos = repos.slice(0, 8).map((r) => r.name);
-    const languageBuckets = new Map<string, number>();
-    for (const repo of topRepos) {
-      const snapshot = await getRepoLanguagesSnapshot(repoDetails.owner, repo);
-      if (!snapshot.success) continue;
-      for (const lang of snapshot.data.languages) {
-        languageBuckets.set(lang.name, (languageBuckets.get(lang.name) ?? 0) + lang.bytes);
-      }
+    const sample = await sampleProfileRepositories(repoDetails.owner);
+    if (sample.error) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: sample.callsUsed,
+      });
+      return {
+        functionResponseData: withGitHubCallPolicy({ error: sample.error, languages: [] }, policy),
+        statusMessage: "Failed to fetch language distribution across repositories.",
+        toolEvent: { name: "fetch_repo_languages", detail: "overall", usageUnits: 1 },
+      };
     }
-    const total = Array.from(languageBuckets.values()).reduce((sum, bytes) => sum + bytes, 0);
-    const languages = Array.from(languageBuckets.entries())
-      .map(([name, bytes]) => ({
-        name,
-        bytes,
-        percentage: total > 0 ? Number(((bytes / total) * 100).toFixed(2)) : 0,
-      }))
-      .sort((a, b) => b.bytes - a.bytes)
-      .slice(0, 20);
+    const sampledRepo = sample.sampledRepositories[0];
+    if (!sampledRepo) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: sample.callsUsed,
+        totalCandidateRepositories: sample.totalRepositories,
+      });
+      return {
+        functionResponseData: withGitHubCallPolicy({ languages: [], scope: "overall", sampledRepositories: [] }, policy),
+        statusMessage: "No repositories available for language distribution.",
+        toolEvent: { name: "fetch_repo_languages", detail: "overall", usageUnits: 1 },
+      };
+    }
+    const snapshot = await getRepoLanguagesSnapshot(repoDetails.owner, sampledRepo);
+    const sampledScope = `${repoDetails.owner}/${sampledRepo}`;
+    const policy = buildGitHubCallPolicy({
+      functionName: callName,
+      callsUsed: sample.callsUsed + 1,
+      sampledRepositories: [sampledScope],
+      totalCandidateRepositories: sample.totalRepositories,
+    });
+    if (!snapshot.success) {
+      return {
+        functionResponseData: withGitHubCallPolicy({
+          error: snapshot.error,
+          languages: [],
+          scope: "overall",
+          sampledRepositories: [sampledScope],
+        }, policy),
+        statusMessage: "Failed to fetch language distribution across repositories.",
+        toolEvent: { name: "fetch_repo_languages", detail: "overall", usageUnits: 1 },
+      };
+    }
     return {
-      functionResponseData: { languages, scope: "overall" },
-      statusMessage: "Fetching language distribution across repositories...",
+      functionResponseData: withGitHubCallPolicy({
+        languages: snapshot.data.languages,
+        scope: "overall",
+        sampledRepositories: [sampledScope],
+      }, policy),
+      statusMessage: `Fetching language distribution from sampled repository ${sampledScope}...`,
       toolEvent: { name: "fetch_repo_languages", detail: "overall", usageUnits: 1 },
     };
   }
@@ -1464,37 +1998,88 @@ async function resolveToolCall(
 
     if (resolved) {
       const snapshot = await getRepoDependencyAlertsSnapshot(resolved.owner, resolved.repo, limit);
+      const repositoryScope = `${resolved.owner}/${resolved.repo}`;
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: 1,
+        sampledRepositories: [repositoryScope],
+      });
       if (!snapshot.success) {
         return {
-          functionResponseData: { error: snapshot.error, dependencyAlerts: [] },
+          functionResponseData: withGitHubCallPolicy({ error: snapshot.error, dependencyAlerts: [] }, policy),
           statusMessage: "Failed to fetch dependency alerts.",
           toolEvent: { name: "fetch_dependency_updates", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
         };
       }
       return {
-        functionResponseData: { dependencyAlerts: snapshot.data, scope: "repository", repository: `${resolved.owner}/${resolved.repo}` },
+        functionResponseData: withGitHubCallPolicy({
+          dependencyAlerts: snapshot.data,
+          scope: "repository",
+          repository: repositoryScope,
+        }, policy),
         statusMessage: `Fetching dependency alerts from ${resolved.owner}/${resolved.repo}...`,
         toolEvent: { name: "fetch_dependency_updates", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
       };
     }
 
-    const repos = await getUserRepos(repoDetails.owner);
-    const topRepos = repos.slice(0, 6).map((r) => r.name);
-    const perRepoLimit = Math.max(1, Math.ceil(limit / Math.max(1, topRepos.length)));
-    const batches = await Promise.all(topRepos.map(async (repo) => {
-      const snapshot = await getRepoDependencyAlertsSnapshot(repoDetails.owner, repo, perRepoLimit);
-      return snapshot.success ? snapshot.data : [];
-    }));
-    const merged = batches.flat().slice(0, limit);
+    const sample = await sampleProfileRepositories(repoDetails.owner);
+    if (sample.error) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: sample.callsUsed,
+      });
+      return {
+        functionResponseData: withGitHubCallPolicy({ error: sample.error, dependencyAlerts: [] }, policy),
+        statusMessage: "Failed to fetch dependency alerts across repositories.",
+        toolEvent: { name: "fetch_dependency_updates", detail: "overall", usageUnits: 1 },
+      };
+    }
+    const sampledRepo = sample.sampledRepositories[0];
+    if (!sampledRepo) {
+      const policy = buildGitHubCallPolicy({
+        functionName: callName,
+        callsUsed: sample.callsUsed,
+        totalCandidateRepositories: sample.totalRepositories,
+      });
+      return {
+        functionResponseData: withGitHubCallPolicy({ dependencyAlerts: [], scope: "overall", sampledRepositories: [] }, policy),
+        statusMessage: "No repositories available for dependency alerts.",
+        toolEvent: { name: "fetch_dependency_updates", detail: "overall", usageUnits: 1 },
+      };
+    }
+    const snapshot = await getRepoDependencyAlertsSnapshot(repoDetails.owner, sampledRepo, limit);
+    const sampledScope = `${repoDetails.owner}/${sampledRepo}`;
+    const policy = buildGitHubCallPolicy({
+      functionName: callName,
+      callsUsed: sample.callsUsed + 1,
+      sampledRepositories: [sampledScope],
+      totalCandidateRepositories: sample.totalRepositories,
+    });
+    if (!snapshot.success) {
+      return {
+        functionResponseData: withGitHubCallPolicy({
+          error: snapshot.error,
+          dependencyAlerts: [],
+          scope: "overall",
+          sampledRepositories: [sampledScope],
+        }, policy),
+        statusMessage: "Failed to fetch dependency alerts across repositories.",
+        toolEvent: { name: "fetch_dependency_updates", detail: "overall", usageUnits: 1 },
+      };
+    }
     return {
-      functionResponseData: { dependencyAlerts: merged, scope: "overall" },
-      statusMessage: "Fetching dependency alerts across repositories...",
+      functionResponseData: withGitHubCallPolicy({
+        dependencyAlerts: snapshot.data,
+        scope: "overall",
+        sampledRepositories: [sampledScope],
+      }, policy),
+      statusMessage: `Fetching dependency alerts from sampled repository ${sampledScope}...`,
       toolEvent: { name: "fetch_dependency_updates", detail: "overall", usageUnits: 1 },
     };
   }
 
   return {
-    functionResponseData: { error: "Unsupported tool call." },
+    functionResponseData: withGitHubCallPolicy({ error: "Unsupported tool call." }, defaultPolicy),
   };
 }
 

@@ -274,12 +274,84 @@ describe("answerWithContextStream", () => {
                             repository: "widget",
                             limitExceeded: false,
                             maxAllowed: 10,
+                            githubCallPolicy: {
+                                functionName: "fetch_recent_commits",
+                                maxConsecutiveCalls: 2,
+                                callsUsed: 1,
+                                limitedByCap: false,
+                                note: undefined,
+                                sampledRepositories: ["acme/widget"],
+                            },
                         },
                     },
                 },
             },
         ]);
         expect(chunks).toContain("Final answer");
+    });
+
+    it("caps profile-overall tool fetches to two GitHub calls and returns transparency metadata", async () => {
+        getUserReposMock.mockResolvedValue([
+            { name: "repo-one" },
+            { name: "repo-two" },
+        ]);
+        getRepoPullRequestsSnapshotMock.mockResolvedValue({
+            success: true,
+            data: [{ repo: "repo-one", number: 1, title: "PR", state: "open", draft: false, created_at: "2026-03-17T00:00:00Z", updated_at: "2026-03-17T00:00:00Z", merged_at: null, html_url: "https://example.com/pr/1", author: "alice" }],
+        });
+
+        const sendMessageStreamMock = vi.fn()
+            .mockResolvedValueOnce({
+                stream: toAsyncStream([
+                    {
+                        functionCalls: () => [{ name: "fetch_pull_requests", args: { state: "all", limit: 5 } }],
+                        candidates: [{ content: { parts: [] } }],
+                    },
+                ]),
+                response: Promise.resolve({
+                    functionCalls: () => [{ name: "fetch_pull_requests", args: { state: "all", limit: 5 } }],
+                    candidates: [{ content: { parts: [] } }],
+                }),
+            })
+            .mockResolvedValueOnce({
+                stream: toAsyncStream([
+                    {
+                        candidates: [{ content: { parts: [{ text: "Final answer" }] } }],
+                    },
+                ]),
+                response: Promise.resolve({
+                    functionCalls: () => [],
+                }),
+            });
+
+        getGenerativeModelMock.mockReturnValue({
+            startChat: () => ({
+                sendMessageStream: sendMessageStreamMock,
+            }),
+        });
+
+        for await (const chunk of answerWithContextStream(
+            "Show overall PR activity",
+            "profile context",
+            { owner: "acme", repo: "profile" }
+        )) {
+            void chunk;
+        }
+
+        expect(getUserReposMock).toHaveBeenCalledWith("acme");
+        expect(getRepoPullRequestsSnapshotMock).toHaveBeenCalledTimes(1);
+        expect(getRepoPullRequestsSnapshotMock).toHaveBeenCalledWith("acme", "repo-one", "all", 5, undefined);
+
+        const secondCallArgs = sendMessageStreamMock.mock.calls[1][0];
+        const content = secondCallArgs[0]?.functionResponse?.response?.content;
+        expect(content.githubCallPolicy).toMatchObject({
+            functionName: "fetch_pull_requests",
+            maxConsecutiveCalls: 2,
+            callsUsed: 2,
+            limitedByCap: true,
+            sampledRepositories: ["acme/repo-one"],
+        });
+        expect(typeof content.githubCallPolicy.note).toBe("string");
     });
 });
 
