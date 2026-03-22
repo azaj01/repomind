@@ -172,7 +172,7 @@ describe("generateMermaidFromJSON", () => {
                 edges: [{ from: "A", to: "B" }],
             },
         });
-        expect(result).toContain("flowchart TD");
+        expect(result).toContain("flowchart LR");
         expect(result).toContain("Start");
         expect(result).toContain("End");
     });
@@ -186,7 +186,7 @@ describe("generateMermaidFromJSON", () => {
             edges: [{ from: "A", to: "B" }],
         });
 
-        expect(result).toContain("flowchart TD");
+        expect(result).toContain("flowchart LR");
         expect(result).toContain("Start");
         expect(result).toContain("End");
     });
@@ -215,6 +215,21 @@ describe("generateMermaidFromJSON", () => {
             },
         });
         expect(result).toContain("depends on");
+    });
+
+    it("rewrites direct flowchart self-loops through an intermediate helper node", () => {
+        const result = generateMermaidFromJSON({
+            diagramType: "flowchart",
+            payload: {
+                nodes: [{ id: "A", label: "Validate" }],
+                edges: [{ from: "A", to: "A", label: "retry" }],
+            },
+        });
+
+        expect(result).toContain("A_loop_");
+        expect(result).toContain("A --> A_loop_");
+        expect(result).toContain("A_loop_");
+        expect(result).not.toMatch(/\n\s*A\s*-->\s*A\s*(\n|$)/);
     });
 
     it("handles different node shapes", () => {
@@ -247,7 +262,7 @@ describe("generateMermaidFromJSON", () => {
             },
         });
         expect(result).toContain("sequenceDiagram");
-        expect(result).toContain("actor user as User");
+        expect(result).toContain('actor user as "User"');
         expect(result).toContain("user->>api: Request");
     });
 
@@ -263,9 +278,9 @@ describe("generateMermaidFromJSON", () => {
         });
 
         expect(result).toContain("sequenceDiagram");
-        expect(result).toContain("participant user as user");
-        expect(result).toContain("participant api as api");
-        expect(result).toContain("participant db as db");
+        expect(result).toContain('participant user as "user"');
+        expect(result).toContain('participant api as "api"');
+        expect(result).toContain('participant db as "db"');
         expect(result).toContain("api->>db: Query");
     });
 
@@ -282,8 +297,21 @@ describe("generateMermaidFromJSON", () => {
         });
 
         expect(result).toContain("sequenceDiagram");
-        expect(result).toContain("actor Frontend as Frontend");
+        expect(result).toContain('actor Frontend as "Frontend"');
         expect(result).toContain("Backend-->>Frontend: 200 OK");
+    });
+
+    it("accepts 'sequence' as a mermaid-json diagramType alias", () => {
+        const result = generateMermaidFromJSON({
+            diagramType: "sequence",
+            payload: {
+                participants: [{ id: "u", label: "User", kind: "actor" }, { id: "s", label: "Service" }],
+                messages: [{ from: "u", to: "s", text: "Call" }],
+            },
+        });
+
+        expect(result).toContain("sequenceDiagram");
+        expect(result).toContain('actor u as "User"');
     });
 
     it("generates a typed mindmap", () => {
@@ -324,6 +352,21 @@ describe("generateMermaidFromJSON", () => {
         expect(result).toContain("[*] --> idle");
         expect(result).toContain("done --> [*]");
         expect(result?.match(/\[\*\] --> idle/g)?.length).toBe(1);
+    });
+
+    it("rewrites direct state self-loops through an intermediate state", () => {
+        const result = generateMermaidFromJSON({
+            diagramType: "stateDiagram-v2",
+            payload: {
+                states: [{ id: "active", label: "Active", kind: "start" }],
+                transitions: [{ from: "active", to: "active", label: "retry" }],
+            },
+        });
+
+        expect(result).toContain("active_loop_");
+        expect(result).toContain("active --> active_loop_");
+        expect(result).toContain("active_loop_1 --> active");
+        expect(result).not.toContain("active --> active: retry");
     });
 
     it("formats gantt tasks with a computed duration", () => {

@@ -84,6 +84,12 @@ export interface QueryPipelineDeps {
 
 function classifyPipelineError(error: unknown): { message: string; code?: string } {
     const message = error instanceof Error ? error.message : "An unexpected error occurred";
+    if (/missing a thought_signature|thought_signature/i.test(message)) {
+        return {
+            message: "AI tool-call handoff failed while streaming (missing thought signature). Please retry.",
+            code: "AI_MISSING_THOUGHT_SIGNATURE",
+        };
+    }
     if (/function response turn comes immediately after a function call turn/i.test(message)) {
         return {
             message: "AI tool-call handoff failed while streaming. Please retry.",
@@ -387,9 +393,10 @@ export async function* executeRepoQueryStream(
             }
         }
         answerMs = Date.now() - answerStartMs;
+        const nonWebToolsUsed = Array.from(toolsUsed).filter((tool) => tool !== "googleSearch");
         const sourceScope = toolsUsed.has("googleSearch")
-            ? (toolsUsed.has("fetch_recent_commits") ? "Repository + commits + web snapshot" : "Repository + web snapshot")
-            : (toolsUsed.has("fetch_recent_commits") ? "Repository + commits" : "Repository only");
+            ? (nonWebToolsUsed.length > 0 ? "Repository + GitHub tools + web snapshot" : "Repository + web snapshot")
+            : (nonWebToolsUsed.length > 0 ? "Repository + GitHub tools" : "Repository only");
         const processingSummary = [
             `Selection: ${selectionMs}ms`,
             `File fetch: ${fileFetchMs}ms`,

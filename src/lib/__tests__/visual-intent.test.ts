@@ -14,19 +14,26 @@ describe("visual-intent", () => {
         expect(isVisualDiagramIntentQuery("Draw a diagram")).toBe(false);
     });
 
-    it("auto-promotes flash visual queries to thinking for authenticated users", () => {
+    it("keeps flash for visual queries when flash is explicitly selected", () => {
         const decision = resolveVisualModelPreference("flash", "build an svg pipeline diagram", true);
-        expect(decision.effectiveModelPreference).toBe("thinking");
-        expect(decision.autoPromotedToThinking).toBe(true);
+        expect(decision.effectiveModelPreference).toBe("flash");
+        expect(decision.autoPromotedToThinking).toBe(false);
         expect(decision.fellBackToFlashForAnonymous).toBe(false);
     });
 
-    it("falls back to flash for anonymous visual requests", () => {
+    it("keeps flash for anonymous visual requests when flash is selected", () => {
         const decision = resolveVisualModelPreference("flash", "animated flowchart please", false);
         expect(decision.effectiveModelPreference).toBe("flash");
         expect(decision.autoPromotedToThinking).toBe(false);
-        expect(decision.fellBackToFlashForAnonymous).toBe(true);
+        expect(decision.fellBackToFlashForAnonymous).toBe(false);
         expect(decision.visualIntent).toBe(true);
+    });
+
+    it("falls back to flash only when thinking is explicitly requested without access", () => {
+        const decision = resolveVisualModelPreference("thinking", "animated flowchart please", false);
+        expect(decision.effectiveModelPreference).toBe("flash");
+        expect(decision.autoPromotedToThinking).toBe(false);
+        expect(decision.fellBackToFlashForAnonymous).toBe(true);
     });
 
     it("returns complexity targets by query detail", () => {

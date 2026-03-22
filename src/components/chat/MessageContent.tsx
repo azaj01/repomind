@@ -144,7 +144,7 @@ function MessageContentBase({
                     }
                 }
 
-                if (isStreamingMessage && isMermaidJson) {
+                if (isStreamingMessage && (isMermaidJson || isJsonLanguage || looksLikeMermaidJsonPayload)) {
                     return (
                         <div className="flex items-center gap-2 p-4 bg-zinc-900/50 rounded-lg border border-white/10">
                             <Loader2 className="w-4 h-4 animate-spin text-zinc-400" />

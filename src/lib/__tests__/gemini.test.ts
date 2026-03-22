@@ -11,6 +11,21 @@ const {
     getRecentProfileCommitsSnapshotMock,
     getUserReposMock,
     getUserReposByAgeMock,
+    getRepoReleasesSnapshotMock,
+    getProfileReleasesSnapshotMock,
+    getRepoPullRequestsSnapshotMock,
+    getProfilePullRequestsSnapshotMock,
+    getRepoIssuesSnapshotMock,
+    getProfileIssuesSnapshotMock,
+    getRepoCommitFrequencySnapshotMock,
+    getProfileCommitFrequencySnapshotMock,
+    getRepoContributorsSnapshotMock,
+    getProfileContributorsSnapshotMock,
+    getRepoFileHistorySnapshotMock,
+    compareRepoRefsSnapshotMock,
+    getRepoWorkflowRunsSnapshotMock,
+    getRepoLanguagesSnapshotMock,
+    getRepoDependencyAlertsSnapshotMock,
 } = vi.hoisted(() => ({
     getGenAIMock: vi.fn(),
     getGenerativeModelMock: vi.fn(),
@@ -22,6 +37,21 @@ const {
     getRecentProfileCommitsSnapshotMock: vi.fn(),
     getUserReposMock: vi.fn(),
     getUserReposByAgeMock: vi.fn(),
+    getRepoReleasesSnapshotMock: vi.fn(),
+    getProfileReleasesSnapshotMock: vi.fn(),
+    getRepoPullRequestsSnapshotMock: vi.fn(),
+    getProfilePullRequestsSnapshotMock: vi.fn(),
+    getRepoIssuesSnapshotMock: vi.fn(),
+    getProfileIssuesSnapshotMock: vi.fn(),
+    getRepoCommitFrequencySnapshotMock: vi.fn(),
+    getProfileCommitFrequencySnapshotMock: vi.fn(),
+    getRepoContributorsSnapshotMock: vi.fn(),
+    getProfileContributorsSnapshotMock: vi.fn(),
+    getRepoFileHistorySnapshotMock: vi.fn(),
+    compareRepoRefsSnapshotMock: vi.fn(),
+    getRepoWorkflowRunsSnapshotMock: vi.fn(),
+    getRepoLanguagesSnapshotMock: vi.fn(),
+    getRepoDependencyAlertsSnapshotMock: vi.fn(),
 }));
 
 vi.mock("@/lib/ai-client", () => ({
@@ -46,6 +76,21 @@ vi.mock("@/lib/github", () => ({
     getRecentProfileCommitsSnapshot: getRecentProfileCommitsSnapshotMock,
     getUserRepos: getUserReposMock,
     getUserReposByAge: getUserReposByAgeMock,
+    getRepoReleasesSnapshot: getRepoReleasesSnapshotMock,
+    getProfileReleasesSnapshot: getProfileReleasesSnapshotMock,
+    getRepoPullRequestsSnapshot: getRepoPullRequestsSnapshotMock,
+    getProfilePullRequestsSnapshot: getProfilePullRequestsSnapshotMock,
+    getRepoIssuesSnapshot: getRepoIssuesSnapshotMock,
+    getProfileIssuesSnapshot: getProfileIssuesSnapshotMock,
+    getRepoCommitFrequencySnapshot: getRepoCommitFrequencySnapshotMock,
+    getProfileCommitFrequencySnapshot: getProfileCommitFrequencySnapshotMock,
+    getRepoContributorsSnapshot: getRepoContributorsSnapshotMock,
+    getProfileContributorsSnapshot: getProfileContributorsSnapshotMock,
+    getRepoFileHistorySnapshot: getRepoFileHistorySnapshotMock,
+    compareRepoRefsSnapshot: compareRepoRefsSnapshotMock,
+    getRepoWorkflowRunsSnapshot: getRepoWorkflowRunsSnapshotMock,
+    getRepoLanguagesSnapshot: getRepoLanguagesSnapshotMock,
+    getRepoDependencyAlertsSnapshot: getRepoDependencyAlertsSnapshotMock,
 }));
 
 import { analyzeFileSelection, answerWithContextStream } from "@/lib/gemini";
@@ -70,6 +115,21 @@ describe("answerWithContextStream", () => {
         getRecentProfileCommitsSnapshotMock.mockReset();
         getUserReposMock.mockReset();
         getUserReposByAgeMock.mockReset();
+        getRepoReleasesSnapshotMock.mockReset();
+        getProfileReleasesSnapshotMock.mockReset();
+        getRepoPullRequestsSnapshotMock.mockReset();
+        getProfilePullRequestsSnapshotMock.mockReset();
+        getRepoIssuesSnapshotMock.mockReset();
+        getProfileIssuesSnapshotMock.mockReset();
+        getRepoCommitFrequencySnapshotMock.mockReset();
+        getProfileCommitFrequencySnapshotMock.mockReset();
+        getRepoContributorsSnapshotMock.mockReset();
+        getProfileContributorsSnapshotMock.mockReset();
+        getRepoFileHistorySnapshotMock.mockReset();
+        compareRepoRefsSnapshotMock.mockReset();
+        getRepoWorkflowRunsSnapshotMock.mockReset();
+        getRepoLanguagesSnapshotMock.mockReset();
+        getRepoDependencyAlertsSnapshotMock.mockReset();
 
         buildRepoMindPromptMock.mockReturnValue("prompt");
         formatHistoryTextMock.mockReturnValue("history");

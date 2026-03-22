@@ -107,7 +107,7 @@ function getErrorStatus(error: unknown): number | undefined {
 }
 
 function getUserFacingAnalysisError(error: unknown, code?: string): string {
-    if (code === "AI_FUNCTION_TURN_ORDER") {
+    if (code === "AI_FUNCTION_TURN_ORDER" || code === "AI_MISSING_THOUGHT_SIGNATURE") {
         return "AI tool handoff failed during streaming. Please retry.";
     }
 
@@ -122,7 +122,30 @@ function getUserFacingAnalysisError(error: unknown, code?: string): string {
         return "AI tool handoff failed during streaming. Please retry.";
     }
 
+    if (/missing a thought_signature|thought_signature/i.test(cleaned)) {
+        return "AI tool handoff failed during streaming. Please retry.";
+    }
+
     return cleaned.length > 220 ? `${cleaned.slice(0, 217)}...` : cleaned;
+}
+
+function normalizeStreamingLabel(message: string): string {
+    return message.replace(/[ \t]*(?:\.{3}|…)+\s*$/g, "").trim();
+}
+
+function formatToolStatusLabel(name: string, detail?: string): string {
+    if (name === "googleSearch") {
+        return detail ? `Searching Google for ${detail}` : "Searching Google";
+    }
+
+    if (detail) {
+        if (detail.startsWith(`${name}(`)) {
+            return `Calling ${detail}`;
+        }
+        return `Calling ${name}: ${detail}`;
+    }
+
+    return `Calling ${name}`;
 }
 
 export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: ChatInterfaceProps) {
@@ -451,7 +474,7 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
             reasoningSteps: [],
             relevantFiles: [],
             modelUsed: selectedModelPreference,
-            streamStatus: "Selecting relevant files...",
+            streamStatus: "Selecting relevant files",
             streamProgress: 5,
         }]);
         return modelMsgId;
@@ -555,32 +578,33 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
 
             for (const chunk of parsedChunk.updates) {
                 if (chunk.type === "status") {
+                    const normalizedStatus = normalizeStreamingLabel(chunk.message);
                     setMessages((prev) => prev.map((message) =>
                         message.id === modelMsgId
                             ? {
                                 ...message,
-                                reasoningSteps: isThinkingStream ? [...(accumulatedReasoning.concat(chunk.message))] : message.reasoningSteps,
-                                streamStatus: chunk.message,
+                                reasoningSteps: isThinkingStream ? [...(accumulatedReasoning.concat(normalizedStatus))] : message.reasoningSteps,
+                                streamStatus: normalizedStatus,
                                 streamProgress: chunk.progress,
                             }
                             : message
                     ));
                     if (isThinkingStream) {
-                        accumulatedReasoning.push(chunk.message);
+                        accumulatedReasoning.push(normalizedStatus);
                     }
                 } else if (chunk.type === "tool") {
-                    const toolText = chunk.detail ? `${chunk.name}: ${chunk.detail}` : chunk.name;
+                    const toolStatus = formatToolStatusLabel(chunk.name, chunk.detail);
                     setMessages((prev) => prev.map((message) =>
                         message.id === modelMsgId
                             ? {
                                 ...message,
-                                reasoningSteps: isThinkingStream ? [...(accumulatedReasoning.concat(`Tool: ${toolText}`))] : message.reasoningSteps,
-                                streamStatus: `Using ${toolText}...`,
+                                reasoningSteps: isThinkingStream ? [...(accumulatedReasoning.concat(`Tool: ${toolStatus}`))] : message.reasoningSteps,
+                                streamStatus: toolStatus,
                             }
                             : message
                     ));
                     if (isThinkingStream) {
-                        accumulatedReasoning.push(`Tool: ${toolText}`);
+                        accumulatedReasoning.push(`Tool: ${toolStatus}`);
                     }
                 } else if (chunk.type === "thought") {
                     if (!isThinkingStream) {
@@ -672,8 +696,7 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
 
         const isQuickScan = submitMode === "quick_scan" || isQuickSecurityScanPrompt(trimmedInput);
         const isDeepScan = submitMode === "deep_scan" || isDeepSecurityScanPrompt(trimmedInput);
-        const isArchitecturePrompt = trimmedInput.toLowerCase() === ARCHITECTURE_PROMPT.toLowerCase();
-        const selectedModelPreference: ModelPreference = isArchitecturePrompt ? "thinking" : modelPreference;
+        const selectedModelPreference: ModelPreference = modelPreference;
 
         // Check token limit
         if (totalTokens >= MAX_TOKENS) {
@@ -1139,7 +1162,7 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
                                             )}
                                         </div>
                                     )}
-                                    {msg.role === "model" && !loading && (msg.commitFreshnessLabel || (msg.toolsUsed && msg.toolsUsed.length > 0) || msg.sourceScope || (msg.processingSummary && msg.processingSummary.length > 0)) && (
+                                    {msg.role === "model" && (msg.commitFreshnessLabel || (msg.toolsUsed && msg.toolsUsed.length > 0) || msg.sourceScope || (msg.processingSummary && msg.processingSummary.length > 0)) && (
                                         <div className="text-[11px] text-zinc-500 pl-1">
                                             {msg.sourceScope && <span>Scope: {msg.sourceScope}</span>}
                                             {msg.commitFreshnessLabel && <span>{msg.commitFreshnessLabel}</span>}

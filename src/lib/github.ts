@@ -74,6 +74,10 @@ export function getErrorStatus(error: unknown): number | undefined {
   return undefined;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
 export function isErrorWithMessage(error: unknown): error is { message: string } {
   return Boolean(
     error &&
@@ -202,6 +206,103 @@ export interface CommitFreshness {
   isCached: boolean;
   ageMinutes: number;
   label: string;
+}
+
+export interface RepoReleaseSnapshot {
+  repo: string;
+  tag_name: string;
+  name: string | null;
+  published_at: string | null;
+  prerelease: boolean;
+  draft: boolean;
+  html_url: string;
+}
+
+export interface PullRequestSnapshot {
+  repo: string;
+  number: number;
+  title: string;
+  state: string;
+  draft: boolean;
+  created_at: string;
+  updated_at: string;
+  merged_at: string | null;
+  html_url: string;
+  author: string | null;
+}
+
+export interface IssueSnapshot {
+  repo: string;
+  number: number;
+  title: string;
+  state: string;
+  created_at: string;
+  updated_at: string;
+  closed_at: string | null;
+  html_url: string;
+  author: string | null;
+}
+
+export interface WeeklyCommitPoint {
+  weekStart: string;
+  total: number;
+}
+
+export interface ContributorSnapshot {
+  repo: string;
+  login: string;
+  contributions: number;
+  html_url: string;
+}
+
+export interface FileHistorySnapshot {
+  repo: string;
+  path: string;
+  sha: string;
+  message: string;
+  date: string | null;
+  author: string | null;
+}
+
+export interface CompareRefsSnapshot {
+  repo: string;
+  status: string;
+  ahead_by: number;
+  behind_by: number;
+  total_commits: number;
+  html_url: string;
+  commits: Array<{ sha: string; message: string; date: string | null; author: string | null }>;
+  files: Array<{ filename: string; status: string; additions: number; deletions: number; changes: number }>;
+}
+
+export interface WorkflowRunSnapshot {
+  repo: string;
+  id: number;
+  name: string | null;
+  status: string | null;
+  conclusion: string | null;
+  event: string;
+  branch: string;
+  created_at: string;
+  updated_at: string;
+  html_url: string;
+}
+
+export interface RepoLanguageSnapshot {
+  repo: string;
+  languages: Array<{ name: string; bytes: number; percentage: number }>;
+}
+
+export interface DependencyAlertSnapshot {
+  repo: string;
+  number: number;
+  state: string;
+  severity: string | null;
+  ecosystem: string | null;
+  package_name: string | null;
+  manifest_path: string | null;
+  created_at: string | null;
+  html_url: string | null;
 }
 
 export interface FileNode {
@@ -948,5 +1049,504 @@ export async function getUserReposByAge(username: string, sortDirection: 'oldest
   } catch (error) {
     console.error(`Failed to fetch repos by age for ${username}:`, error);
     return [];
+  }
+}
+
+interface OwnerRepoRef {
+  owner: string;
+  repo: string;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+async function listProfileRepoRefs(username: string, limit: number): Promise<OwnerRepoRef[]> {
+  const repos = await getUserRepos(username);
+  return repos.slice(0, limit).map((repo) => ({ owner: username, repo: repo.name }));
+}
+
+function toIsoWeekStart(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toISOString();
+}
+
+export async function getRepoReleasesSnapshot(
+  owner: string,
+  repo: string,
+  limit: number = 10
+): Promise<Result<RepoReleaseSnapshot[]>> {
+  try {
+    const { data } = await octokit.rest.repos.listReleases({
+      owner,
+      repo,
+      per_page: clamp(limit, 1, 30),
+    });
+    return {
+      success: true,
+      data: data.slice(0, clamp(limit, 1, 30)).map((release) => ({
+        repo,
+        tag_name: release.tag_name,
+        name: release.name,
+        published_at: release.published_at,
+        prerelease: Boolean(release.prerelease),
+        draft: Boolean(release.draft),
+        html_url: release.html_url,
+      })),
+    };
+  } catch (error) {
+    console.error(`Failed to fetch releases for ${owner}/${repo}:`, error);
+    return { success: false, error: "Failed to fetch releases.", status: getErrorStatus(error) };
+  }
+}
+
+export async function getProfileReleasesSnapshot(
+  username: string,
+  limit: number = 10,
+  repoLimit: number = 8
+): Promise<Result<RepoReleaseSnapshot[]>> {
+  try {
+    const refs = await listProfileRepoRefs(username, clamp(repoLimit, 1, 20));
+    const batches = await Promise.all(refs.map(async ({ owner, repo }) => {
+      const snapshot = await getRepoReleasesSnapshot(owner, repo, 3);
+      return snapshot.success ? snapshot.data : [];
+    }));
+    const merged = batches.flat().sort((a, b) =>
+      new Date(b.published_at ?? 0).getTime() - new Date(a.published_at ?? 0).getTime()
+    );
+    return { success: true, data: merged.slice(0, clamp(limit, 1, 30)) };
+  } catch (error) {
+    console.error(`Failed to fetch profile releases for ${username}:`, error);
+    return { success: false, error: "Failed to fetch profile releases.", status: getErrorStatus(error) };
+  }
+}
+
+export async function getRepoPullRequestsSnapshot(
+  owner: string,
+  repo: string,
+  state: "open" | "closed" | "all" = "all",
+  limit: number = 20,
+  since?: string
+): Promise<Result<PullRequestSnapshot[]>> {
+  try {
+    const { data } = await octokit.rest.pulls.list({
+      owner,
+      repo,
+      state,
+      sort: "updated",
+      direction: "desc",
+      per_page: clamp(limit, 1, 50),
+    });
+    const cutoff = since ? new Date(since).getTime() : null;
+    const filtered = data.filter((pr) => {
+      if (!cutoff || Number.isNaN(cutoff)) return true;
+      return new Date(pr.updated_at).getTime() >= cutoff;
+    });
+    return {
+      success: true,
+      data: filtered.slice(0, clamp(limit, 1, 50)).map((pr) => ({
+        repo,
+        number: pr.number,
+        title: pr.title,
+        state: pr.state,
+        draft: Boolean(pr.draft),
+        created_at: pr.created_at,
+        updated_at: pr.updated_at,
+        merged_at: pr.merged_at,
+        html_url: pr.html_url,
+        author: pr.user?.login ?? null,
+      })),
+    };
+  } catch (error) {
+    console.error(`Failed to fetch pull requests for ${owner}/${repo}:`, error);
+    return { success: false, error: "Failed to fetch pull requests.", status: getErrorStatus(error) };
+  }
+}
+
+export async function getProfilePullRequestsSnapshot(
+  username: string,
+  state: "open" | "closed" | "all" = "all",
+  limit: number = 20,
+  since?: string,
+  repoLimit: number = 6
+): Promise<Result<PullRequestSnapshot[]>> {
+  try {
+    const refs = await listProfileRepoRefs(username, clamp(repoLimit, 1, 20));
+    const eachLimit = clamp(Math.ceil(limit / Math.max(1, refs.length)), 1, 10);
+    const batches = await Promise.all(refs.map(async ({ owner, repo }) => {
+      const snapshot = await getRepoPullRequestsSnapshot(owner, repo, state, eachLimit, since);
+      return snapshot.success ? snapshot.data : [];
+    }));
+    const merged = batches.flat().sort((a, b) =>
+      new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    );
+    return { success: true, data: merged.slice(0, clamp(limit, 1, 50)) };
+  } catch (error) {
+    console.error(`Failed to fetch profile pull requests for ${username}:`, error);
+    return { success: false, error: "Failed to fetch profile pull requests.", status: getErrorStatus(error) };
+  }
+}
+
+export async function getRepoIssuesSnapshot(
+  owner: string,
+  repo: string,
+  state: "open" | "closed" | "all" = "all",
+  limit: number = 20,
+  since?: string
+): Promise<Result<IssueSnapshot[]>> {
+  try {
+    const { data } = await octokit.rest.issues.listForRepo({
+      owner,
+      repo,
+      state,
+      since,
+      sort: "updated",
+      direction: "desc",
+      per_page: clamp(limit, 1, 50),
+    });
+    const issuesOnly = data.filter((issue) => !issue.pull_request);
+    return {
+      success: true,
+      data: issuesOnly.slice(0, clamp(limit, 1, 50)).map((issue) => ({
+        repo,
+        number: issue.number,
+        title: issue.title,
+        state: issue.state,
+        created_at: issue.created_at,
+        updated_at: issue.updated_at,
+        closed_at: issue.closed_at,
+        html_url: issue.html_url,
+        author: issue.user?.login ?? null,
+      })),
+    };
+  } catch (error) {
+    console.error(`Failed to fetch issues for ${owner}/${repo}:`, error);
+    return { success: false, error: "Failed to fetch issues.", status: getErrorStatus(error) };
+  }
+}
+
+export async function getProfileIssuesSnapshot(
+  username: string,
+  state: "open" | "closed" | "all" = "all",
+  limit: number = 20,
+  since?: string,
+  repoLimit: number = 6
+): Promise<Result<IssueSnapshot[]>> {
+  try {
+    const refs = await listProfileRepoRefs(username, clamp(repoLimit, 1, 20));
+    const eachLimit = clamp(Math.ceil(limit / Math.max(1, refs.length)), 1, 10);
+    const batches = await Promise.all(refs.map(async ({ owner, repo }) => {
+      const snapshot = await getRepoIssuesSnapshot(owner, repo, state, eachLimit, since);
+      return snapshot.success ? snapshot.data : [];
+    }));
+    const merged = batches.flat().sort((a, b) =>
+      new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    );
+    return { success: true, data: merged.slice(0, clamp(limit, 1, 50)) };
+  } catch (error) {
+    console.error(`Failed to fetch profile issues for ${username}:`, error);
+    return { success: false, error: "Failed to fetch profile issues.", status: getErrorStatus(error) };
+  }
+}
+
+async function getRepoCommitActivity(owner: string, repo: string): Promise<WeeklyCommitPoint[]> {
+  try {
+    const response = await octokit.rest.repos.getCommitActivityStats({ owner, repo });
+    const data = response.data;
+    if (!Array.isArray(data)) return [];
+    return data.map((point) => ({
+      weekStart: toIsoWeekStart(point.week),
+      total: point.total,
+    }));
+  } catch (error) {
+    const status = getErrorStatus(error);
+    if (status === 202) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+export async function getRepoCommitFrequencySnapshot(
+  owner: string,
+  repo: string,
+  weeks: number = 8
+): Promise<Result<WeeklyCommitPoint[]>> {
+  try {
+    const activity = await getRepoCommitActivity(owner, repo);
+    const trimmed = activity.slice(-clamp(weeks, 1, 52));
+    return { success: true, data: trimmed };
+  } catch (error) {
+    console.error(`Failed to fetch commit frequency for ${owner}/${repo}:`, error);
+    return { success: false, error: "Failed to fetch commit frequency.", status: getErrorStatus(error) };
+  }
+}
+
+export async function getProfileCommitFrequencySnapshot(
+  username: string,
+  weeks: number = 8,
+  repoLimit: number = 6
+): Promise<Result<WeeklyCommitPoint[]>> {
+  try {
+    const refs = await listProfileRepoRefs(username, clamp(repoLimit, 1, 20));
+    const series = await Promise.all(refs.map(async ({ owner, repo }) => getRepoCommitActivity(owner, repo)));
+    const targetWeeks = clamp(weeks, 1, 52);
+    const buckets = new Map<string, number>();
+
+    for (const points of series) {
+      const recent = points.slice(-targetWeeks);
+      for (const point of recent) {
+        buckets.set(point.weekStart, (buckets.get(point.weekStart) ?? 0) + point.total);
+      }
+    }
+
+    const merged = Array.from(buckets.entries())
+      .map(([weekStart, total]) => ({ weekStart, total }))
+      .sort((a, b) => new Date(a.weekStart).getTime() - new Date(b.weekStart).getTime())
+      .slice(-targetWeeks);
+
+    return { success: true, data: merged };
+  } catch (error) {
+    console.error(`Failed to fetch profile commit frequency for ${username}:`, error);
+    return { success: false, error: "Failed to fetch profile commit frequency.", status: getErrorStatus(error) };
+  }
+}
+
+export async function getRepoContributorsSnapshot(
+  owner: string,
+  repo: string,
+  limit: number = 20
+): Promise<Result<ContributorSnapshot[]>> {
+  try {
+    const { data } = await octokit.rest.repos.listContributors({
+      owner,
+      repo,
+      per_page: clamp(limit, 1, 50),
+    });
+    return {
+      success: true,
+      data: data.slice(0, clamp(limit, 1, 50)).map((contributor) => ({
+        repo,
+        login: contributor.login ?? "unknown",
+        contributions: contributor.contributions ?? 0,
+        html_url: contributor.html_url ?? "",
+      })),
+    };
+  } catch (error) {
+    console.error(`Failed to fetch contributors for ${owner}/${repo}:`, error);
+    return { success: false, error: "Failed to fetch contributors.", status: getErrorStatus(error) };
+  }
+}
+
+export async function getProfileContributorsSnapshot(
+  username: string,
+  limit: number = 20,
+  repoLimit: number = 6
+): Promise<Result<ContributorSnapshot[]>> {
+  try {
+    const refs = await listProfileRepoRefs(username, clamp(repoLimit, 1, 20));
+    const eachLimit = clamp(Math.ceil(limit / Math.max(1, refs.length)), 1, 15);
+    const batches = await Promise.all(refs.map(async ({ owner, repo }) => {
+      const snapshot = await getRepoContributorsSnapshot(owner, repo, eachLimit);
+      return snapshot.success ? snapshot.data : [];
+    }));
+    const aggregate = new Map<string, ContributorSnapshot>();
+
+    for (const contributor of batches.flat()) {
+      const key = contributor.login;
+      const prev = aggregate.get(key);
+      if (!prev) {
+        aggregate.set(key, { ...contributor, repo: "multiple" });
+      } else {
+        prev.contributions += contributor.contributions;
+      }
+    }
+
+    const merged = Array.from(aggregate.values())
+      .sort((a, b) => b.contributions - a.contributions)
+      .slice(0, clamp(limit, 1, 50));
+
+    return { success: true, data: merged };
+  } catch (error) {
+    console.error(`Failed to fetch profile contributors for ${username}:`, error);
+    return { success: false, error: "Failed to fetch profile contributors.", status: getErrorStatus(error) };
+  }
+}
+
+export async function getRepoFileHistorySnapshot(
+  owner: string,
+  repo: string,
+  path: string,
+  limit: number = 10
+): Promise<Result<FileHistorySnapshot[]>> {
+  try {
+    const { data } = await octokit.rest.repos.listCommits({
+      owner,
+      repo,
+      path,
+      per_page: clamp(limit, 1, 30),
+    });
+    return {
+      success: true,
+      data: data.slice(0, clamp(limit, 1, 30)).map((commit) => ({
+        repo,
+        path,
+        sha: commit.sha.slice(0, 7),
+        message: commit.commit.message,
+        date: commit.commit.author?.date ?? null,
+        author: commit.author?.login ?? commit.commit.author?.name ?? null,
+      })),
+    };
+  } catch (error) {
+    console.error(`Failed to fetch file history for ${owner}/${repo}:${path}:`, error);
+    return { success: false, error: "Failed to fetch file history.", status: getErrorStatus(error) };
+  }
+}
+
+export async function compareRepoRefsSnapshot(
+  owner: string,
+  repo: string,
+  base: string,
+  head: string,
+  commitLimit: number = 20,
+  fileLimit: number = 50
+): Promise<Result<CompareRefsSnapshot>> {
+  try {
+    const { data } = await octokit.rest.repos.compareCommits({
+      owner,
+      repo,
+      base,
+      head,
+      per_page: clamp(commitLimit, 1, 100),
+    });
+    return {
+      success: true,
+      data: {
+        repo,
+        status: data.status,
+        ahead_by: data.ahead_by,
+        behind_by: data.behind_by,
+        total_commits: data.total_commits,
+        html_url: data.html_url,
+        commits: (data.commits ?? []).slice(0, clamp(commitLimit, 1, 100)).map((commit) => ({
+          sha: commit.sha.slice(0, 7),
+          message: commit.commit.message,
+          date: commit.commit.author?.date ?? null,
+          author: commit.author?.login ?? commit.commit.author?.name ?? null,
+        })),
+        files: (data.files ?? []).slice(0, clamp(fileLimit, 1, 200)).map((file) => ({
+          filename: file.filename,
+          status: file.status ?? "modified",
+          additions: file.additions ?? 0,
+          deletions: file.deletions ?? 0,
+          changes: file.changes ?? 0,
+        })),
+      },
+    };
+  } catch (error) {
+    console.error(`Failed to compare refs for ${owner}/${repo} ${base}...${head}:`, error);
+    return { success: false, error: "Failed to compare refs.", status: getErrorStatus(error) };
+  }
+}
+
+export async function getRepoWorkflowRunsSnapshot(
+  owner: string,
+  repo: string,
+  limit: number = 20,
+  status?: string,
+  branch?: string
+): Promise<Result<WorkflowRunSnapshot[]>> {
+  try {
+    const { data } = await octokit.rest.actions.listWorkflowRunsForRepo({
+      owner,
+      repo,
+      per_page: clamp(limit, 1, 50),
+      status: status as unknown as "queued" | "in_progress" | "completed" | "action_required" | "cancelled" | "failure" | "neutral" | "skipped" | "stale" | "success" | "timed_out" | "requested" | "waiting" | "pending" | undefined,
+      branch,
+    });
+    return {
+      success: true,
+      data: (data.workflow_runs ?? []).slice(0, clamp(limit, 1, 50)).map((run) => ({
+        repo,
+        id: run.id,
+        name: run.name ?? null,
+        status: run.status ?? null,
+        conclusion: run.conclusion ?? null,
+        event: run.event,
+        branch: run.head_branch ?? "",
+        created_at: run.created_at,
+        updated_at: run.updated_at,
+        html_url: run.html_url,
+      })),
+    };
+  } catch (error) {
+    console.error(`Failed to fetch workflow runs for ${owner}/${repo}:`, error);
+    return { success: false, error: "Failed to fetch workflow runs.", status: getErrorStatus(error) };
+  }
+}
+
+export async function getRepoLanguagesSnapshot(
+  owner: string,
+  repo: string
+): Promise<Result<RepoLanguageSnapshot>> {
+  try {
+    const { data } = await octokit.rest.repos.listLanguages({ owner, repo });
+    const entries = Object.entries(data);
+    const total = entries.reduce((sum, [, bytes]) => sum + Number(bytes), 0);
+    const languages = entries
+      .map(([name, bytes]) => ({
+        name,
+        bytes: Number(bytes),
+        percentage: total > 0 ? Number(((Number(bytes) / total) * 100).toFixed(2)) : 0,
+      }))
+      .sort((a, b) => b.bytes - a.bytes);
+
+    return {
+      success: true,
+      data: {
+        repo,
+        languages,
+      },
+    };
+  } catch (error) {
+    console.error(`Failed to fetch languages for ${owner}/${repo}:`, error);
+    return { success: false, error: "Failed to fetch repository languages.", status: getErrorStatus(error) };
+  }
+}
+
+export async function getRepoDependencyAlertsSnapshot(
+  owner: string,
+  repo: string,
+  limit: number = 20
+): Promise<Result<DependencyAlertSnapshot[]>> {
+  try {
+    const response = await octokit.request("GET /repos/{owner}/{repo}/dependabot/alerts", {
+      owner,
+      repo,
+      per_page: clamp(limit, 1, 50),
+    });
+    const data = Array.isArray(response.data) ? response.data : [];
+    return {
+      success: true,
+      data: data.slice(0, clamp(limit, 1, 50)).map((rawAlert) => {
+        const alert = asRecord(rawAlert);
+        const advisory = asRecord(alert.security_advisory);
+        const dependency = asRecord(alert.dependency);
+        const pkg = asRecord(dependency.package);
+        return {
+          repo,
+          number: Number(alert.number ?? 0),
+          state: String(alert.state ?? "unknown"),
+          severity: String(advisory.severity ?? "") || null,
+          ecosystem: String(pkg.ecosystem ?? "") || null,
+          package_name: String(pkg.name ?? "") || null,
+          manifest_path: String(alert.manifest_path ?? "") || null,
+          created_at: String(alert.created_at ?? "") || null,
+          html_url: String(alert.html_url ?? "") || null,
+        };
+      }),
+    };
+  } catch (error) {
+    console.error(`Failed to fetch dependency alerts for ${owner}/${repo}:`, error);
+    return { success: false, error: "Failed to fetch dependency alerts.", status: getErrorStatus(error) };
   }
 }

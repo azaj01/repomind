@@ -156,6 +156,7 @@ export function getMermaidDeclarationToken(source: string): string | null {
 function normalizeMermaidDeclarationToken(token: string): string {
     if (token === "graph") return "flowchart";
     if (token === "xychart-beta") return "xychart";
+    if (token === "sequence") return "sequenceDiagram";
     return token;
 }
 
@@ -389,7 +390,7 @@ export function sanitizeMermaidCode(code: string): string {
         }
 
         if (isFlowchartDeclaration(firstLine)) {
-            const direction = firstLine.split(/\s+/)[1] ?? "TD";
+            const direction = firstLine.split(/\s+/)[1] ?? "LR";
             return normalized.replace(firstLine, `flowchart ${direction}`);
         }
 
@@ -450,7 +451,7 @@ export function sanitizeMermaidCode(code: string): string {
 
         // Normalize legacy "graph" declaration to canonical "flowchart".
         if (isFlowchartDeclaration(trimmed)) {
-            const direction = trimmed.split(/\s+/)[1] ?? "TD";
+            const direction = trimmed.split(/\s+/)[1] ?? "LR";
             return `flowchart ${direction}`;
         }
 
@@ -882,12 +883,22 @@ function firstArray(...values: unknown[]): unknown[] {
 }
 
 function normalizeDiagramType(value: unknown): MermaidJsonDiagramType | "flowchart" | null {
+    const lower = typeof value === "string" ? value.trim().toLowerCase() : "";
+
     if (value === "graph" || value === "flowchart" || value == null) {
         return "flowchart";
     }
 
     if (value === "xychart" || value === "xychart-beta") {
         return "xychart";
+    }
+
+    if (lower === "sequence" || lower === "sequence-diagram") {
+        return "sequenceDiagram";
+    }
+
+    if (lower === "state" || lower === "statediagram" || lower === "state-diagram") {
+        return "stateDiagram-v2";
     }
 
     if (
@@ -945,9 +956,23 @@ function getFlowchartEdge(type?: string, label?: string) {
     }
 }
 
+function compactDiagramText(value: string, maxLength: number): string {
+    const compact = cleanLabel(value).replace(/\s+/g, " ").trim();
+    if (compact.length <= maxLength) {
+        return compact;
+    }
+
+    if (maxLength <= 3) {
+        return compact.slice(0, Math.max(0, maxLength));
+    }
+
+    return `${compact.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
 function compileFlowchartDiagram(data: MermaidFlowchartDiagramData | Record<string, unknown>): MermaidJsonCompileResult {
     const source = data as MermaidFlowchartDiagramData | Record<string, unknown>;
-    const direction = typeof source.direction === "string" ? source.direction : "TD";
+    const directionCandidate = typeof source.direction === "string" ? source.direction.toUpperCase() : "LR";
+    const direction = ["TB", "TD", "BT", "RL", "LR"].includes(directionCandidate) ? directionCandidate : "LR";
     const nodes = Array.isArray(source.nodes) ? source.nodes : [];
     const edges = Array.isArray(source.edges) ? source.edges : [];
 
@@ -955,22 +980,73 @@ function compileFlowchartDiagram(data: MermaidFlowchartDiagramData | Record<stri
         return { valid: false, diagramType: "flowchart", error: "Flowchart JSON must include at least one node." };
     }
 
-    const lines = [
-        `flowchart ${direction}`,
-        ...nodes.map((node) => {
+    const nodeLines = nodes
+        .map((node) => {
             const entry = node as MermaidNode;
             if (!entry.id || !entry.label) {
                 return null;
             }
             return `  ${getFlowchartShape(entry.id, entry.label, entry.shape)}`;
-        }).filter((line): line is string => Boolean(line)),
-        ...edges.map((edge) => {
+        })
+        .filter((line): line is string => Boolean(line));
+
+    const existingIds = new Set<string>(
+        nodes
+            .map((node) => (node as MermaidNode).id)
+            .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+            .map(cleanId)
+    );
+
+    const normalizedEdges = edges
+        .map((edge) => {
             const entry = edge as MermaidEdge;
             if (!entry.from || !entry.to) {
                 return null;
             }
-            return `  ${cleanId(entry.from)} ${getFlowchartEdge(entry.type, entry.label)} ${cleanId(entry.to)}`;
-        }).filter((line): line is string => Boolean(line))
+
+            return {
+                from: cleanId(entry.from),
+                to: cleanId(entry.to),
+                label: entry.label ? compactDiagramText(entry.label, 28) : undefined,
+                type: entry.type,
+            };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+    const labeledEdgeCount = normalizedEdges.filter((edge) => Boolean(edge.label)).length;
+    const denseEdgeLabels = labeledEdgeCount > Math.max(3, Math.ceil(normalizedEdges.length * 0.55));
+    let helperIndex = 1;
+    const helperNodeLines: string[] = [];
+    const edgeLines: string[] = [];
+
+    for (let index = 0; index < normalizedEdges.length; index += 1) {
+        const edge = normalizedEdges[index];
+        const normalizedLabel = edge.label && denseEdgeLabels && index % 2 === 1 ? undefined : edge.label;
+
+        if (edge.from === edge.to) {
+            let helperId = `${edge.from}_loop_${helperIndex}`;
+            while (existingIds.has(helperId)) {
+                helperIndex += 1;
+                helperId = `${edge.from}_loop_${helperIndex}`;
+            }
+            existingIds.add(helperId);
+            helperIndex += 1;
+
+            const helperLabel = normalizedLabel ? compactDiagramText(normalizedLabel, 18) : "Loopback";
+            helperNodeLines.push(`  ${helperId}["${helperLabel}"]`);
+            edgeLines.push(`  ${edge.from} --> ${helperId}`);
+            edgeLines.push(`  ${helperId} --> ${edge.from}`);
+            continue;
+        }
+
+        edgeLines.push(`  ${edge.from} ${getFlowchartEdge(edge.type, normalizedLabel)} ${edge.to}`);
+    }
+
+    const lines = [
+        `flowchart ${direction}`,
+        ...nodeLines,
+        ...helperNodeLines,
+        ...edgeLines,
     ];
 
     if (lines.length <= 1) {
@@ -996,9 +1072,9 @@ function compileSequenceDiagram(data: MermaidSequenceDiagramData): MermaidJsonCo
 
     for (const participant of data.participants) {
         if (!participant.id) continue;
-        const label = cleanLabel(participant.label || participant.id);
+        const label = compactDiagramText(participant.label || participant.id, 30);
         const prefix = participant.kind && participant.kind !== "participant" ? `${participant.kind} ` : "participant ";
-        lines.push(`  ${prefix}${cleanId(participant.id)} as ${label}`);
+        lines.push(`  ${prefix}${cleanId(participant.id)} as "${label}"`);
     }
 
     const arrowForKind = (kind?: MermaidSequenceMessage["kind"]) => {
@@ -1019,7 +1095,7 @@ function compileSequenceDiagram(data: MermaidSequenceDiagramData): MermaidJsonCo
 
     for (const message of data.messages) {
         if (!message.from || !message.to || !message.text) continue;
-        lines.push(`  ${cleanId(message.from)}${arrowForKind(message.kind)}${cleanId(message.to)}: ${cleanLabel(message.text)}`);
+        lines.push(`  ${cleanId(message.from)}${arrowForKind(message.kind)}${cleanId(message.to)}: ${compactDiagramText(message.text, 46)}`);
     }
 
     return { valid: true, diagramType: "sequenceDiagram", mermaid: lines.join("\n") };
@@ -1086,10 +1162,24 @@ function compileStateDiagram(data: MermaidStateDiagramData): MermaidJsonCompileR
         return { valid: false, diagramType: "stateDiagram-v2", error: "State JSON must include at least one transition." };
     }
 
+    let loopStateIndex = 1;
     for (const transition of data.transitions) {
         if (!transition.from || !transition.to) continue;
-        const label = transition.label ? `: ${cleanLabel(transition.label)}` : "";
-        lines.push(`  ${cleanId(transition.from)} --> ${cleanId(transition.to)}${label}`);
+        const from = cleanId(transition.from);
+        const to = cleanId(transition.to);
+        const label = transition.label ? compactDiagramText(transition.label, 26) : "";
+
+        if (from === to) {
+            const loopNodeId = `${from}_loop_${loopStateIndex}`;
+            loopStateIndex += 1;
+            lines.push(`  state "${label || "Re-enter"}" as ${loopNodeId}`);
+            lines.push(`  ${from} --> ${loopNodeId}`);
+            lines.push(`  ${loopNodeId} --> ${from}`);
+            continue;
+        }
+
+        const transitionLabel = label ? `: ${label}` : "";
+        lines.push(`  ${from} --> ${to}${transitionLabel}`);
     }
 
     return { valid: true, diagramType: "stateDiagram-v2", mermaid: lines.join("\n") };
@@ -1274,17 +1364,16 @@ function compileClassDiagram(data: MermaidClassDiagramData): MermaidJsonCompileR
     for (const classDef of data.classes) {
         if (!classDef.name) continue;
         const classId = cleanId(classDef.name);
-        lines.push(`  class ${classId} {`);
+        lines.push(`  class ${classId}`);
         for (const attribute of classDef.attributes ?? []) {
             if (!attribute.name) continue;
             const typePart = attribute.type ? `${cleanLabel(attribute.type)} ` : "";
-            lines.push(`    ${typePart}${cleanLabel(attribute.name)}`);
+            lines.push(`  ${classId} : ${typePart}${cleanLabel(attribute.name)}`);
         }
         for (const method of classDef.methods ?? []) {
             if (!method.signature) continue;
-            lines.push(`    ${cleanLabel(method.signature)}`);
+            lines.push(`  ${classId} : ${cleanLabel(method.signature)}`);
         }
-        lines.push("  }");
     }
 
     for (const relation of data.relations ?? []) {

@@ -324,6 +324,16 @@ function buildVisualContract(question: string): string {
 ${diagramSchema}
 \`\`\`
               - Keep labels concise and relationships explicit.
+              - Layout quality rules:
+                - Avoid long single-lane chains like \`A -> B -> C -> D -> ...\` when node count is high; prefer branched or lane-based layouts.
+                - For flowcharts, default to left-to-right (\`LR\`) unless the user explicitly asks for top-down.
+                - Use subgraphs/branching to create compact readable structure instead of very tall diagrams.
+              - Edge readability rules:
+                - Keep edge labels short (ideally <= 4 words) and do not label every edge.
+                - Avoid placing labels on two adjacent edges when that causes overlap.
+                - Do not draw direct self-loop edges (\`A -> A\`); use an intermediate node (\`A -> loop node -> A\`).
+              - Output hygiene:
+                - Never include meta text like "Fixing diagram", "Generating diagram", or status narration inside the answer body.
               - Use markdown tables instead of diagrams when a table communicates the answer more clearly.
               - If the request is not clearly visual, answer in text only.
               - Prefer the routed topology and avoid generic flowchart repetition.

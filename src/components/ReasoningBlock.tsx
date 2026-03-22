@@ -113,7 +113,6 @@ export function ReasoningBlock({ steps, isStreaming }: ReasoningBlockProps) {
                 {!isExpanded && currentStep && (
                     <div className="text-xs text-zinc-500 truncate flex-1 min-w-0 pr-4">
                         {getCurrentStepTitle(currentStep)}
-                        {isStreaming && <span className="ml-1 tracking-widest opacity-60">...</span>}
                     </div>
                 )}
             </button>

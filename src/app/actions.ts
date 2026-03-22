@@ -105,6 +105,12 @@ function getErrorMessage(error: unknown): string {
 
 function classifyStreamError(error: unknown): { message: string; code?: string } {
     const message = getErrorMessage(error) || "An error occurred";
+    if (/missing a thought_signature|thought_signature/i.test(message)) {
+        return {
+            message: "AI tool-call handoff failed while streaming (missing thought signature). Please retry.",
+            code: "AI_MISSING_THOUGHT_SIGNATURE",
+        };
+    }
     if (/function response turn comes immediately after a function call turn/i.test(message)) {
         return {
             message: "AI tool-call handoff failed while streaming. Please retry.",
@@ -742,12 +748,13 @@ export async function* processProfileQueryStream(
             yield mapped;
         }
         answerMs = Date.now() - answerStartMs;
-        const hasTools = toolsUsed.size > 0;
+        const nonWebToolsUsed = Array.from(toolsUsed).filter((tool) => tool !== "googleSearch");
+        const hasTools = nonWebToolsUsed.length > 0;
         const sourceScope = toolsUsed.has("googleSearch")
-            ? (crossRepoSelectedFiles > 0 ? "Profile + cross-repo + tools + web snapshot" : "Profile + tools + web snapshot")
+            ? (crossRepoSelectedFiles > 0 ? "Profile + cross-repo + GitHub tools + web snapshot" : "Profile + GitHub tools + web snapshot")
             : (crossRepoSelectedFiles > 0
-                ? (hasTools ? "Profile + cross-repo + tools" : "Profile + cross-repo")
-                : (hasTools ? "Profile + tools" : "Profile context only"));
+                ? (hasTools ? "Profile + cross-repo + GitHub tools" : "Profile + cross-repo")
+                : (hasTools ? "Profile + GitHub tools" : "Profile context only"));
         const processingSummary = [
             `Profile context: ${contextBuildMs}ms`,
             ...(crossRepoSelectedFiles > 0 ? [`Cross-repo context: ${crossRepoMs}ms (${crossRepoSelectedFiles} files)`] : []),

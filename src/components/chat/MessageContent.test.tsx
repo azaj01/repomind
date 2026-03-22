@@ -43,7 +43,7 @@ describe("MessageContent", () => {
         );
 
         expect(html).toContain('data-testid="mermaid"');
-        expect(html).toContain("flowchart TD");
+        expect(html).toContain("flowchart LR");
         expect(html).toContain("Start");
     });
 
@@ -59,7 +59,7 @@ describe("MessageContent", () => {
 
         expect(html).toContain('data-testid="mermaid"');
         expect(html).toContain("sequenceDiagram");
-        expect(html).toContain("actor user as User");
+        expect(html).toContain('actor user as &quot;User&quot;');
     });
 
     it("converts typed sequence diagram json blocks into mermaid", () => {
@@ -74,7 +74,7 @@ describe("MessageContent", () => {
 
         expect(html).toContain('data-testid="mermaid"');
         expect(html).toContain("sequenceDiagram");
-        expect(html).toContain("actor u as User");
+        expect(html).toContain('actor u as &quot;User&quot;');
     });
 
     it("converts unlabeled sequence diagram json blocks into mermaid", () => {

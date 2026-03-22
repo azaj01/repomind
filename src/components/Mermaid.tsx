@@ -27,7 +27,6 @@ interface MermaidProps {
     isStreaming?: boolean;
 }
 
-const MAX_ROUTE_BEADS = 2;
 const MAX_ANIMATED_PATHS = 24;
 const MAX_ANIMATED_NODES = 24;
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -46,6 +45,39 @@ function prefersReducedMotion(): boolean {
         return false;
     }
     return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+async function requestFixedMermaidCode(code: string, timeoutMs = 8000): Promise<string | null> {
+    if (typeof window === "undefined") {
+        return null;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+        const response = await fetch('/api/fix-mermaid', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code }),
+            signal: controller.signal,
+        });
+
+        if (!response.ok) {
+            return null;
+        }
+
+        const payload = await response.json() as { fixed?: unknown };
+        return typeof payload.fixed === "string" && payload.fixed.trim().length > 0 ? payload.fixed : null;
+    } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+            console.warn("Mermaid fix request timed out");
+            return null;
+        }
+        throw error;
+    } finally {
+        window.clearTimeout(timeoutId);
+    }
 }
 
 /**
@@ -100,8 +132,10 @@ function normalizeMermaidSvg(svgString: string): string {
         svgEl.style.width = '100%';
         svgEl.style.height = 'auto';
         svgEl.style.overflow = 'hidden';
+        svgEl.style.maxWidth = '100%';
         svgEl.style.maxHeight = '100%';
         svgEl.style.fontFamily = APP_FONT_STACK;
+        svgEl.style.backgroundColor = 'transparent';
 
         const existingStyle = doc.querySelector('style[data-repomind-font]');
         if (!existingStyle) {
@@ -136,8 +170,10 @@ function applyResponsiveSvgSizing(svgElement: SVGSVGElement): void {
     svgElement.style.width = '100%';
     svgElement.style.height = 'auto';
     svgElement.style.overflow = 'hidden';
+    svgElement.style.maxWidth = '100%';
     svgElement.style.maxHeight = '100%';
     svgElement.style.fontFamily = APP_FONT_STACK;
+    svgElement.style.backgroundColor = 'transparent';
 }
 
 function resetAnimatedSvgStyles(svgElement: SVGSVGElement): void {
@@ -163,7 +199,8 @@ function resetAnimatedSvgStyles(svgElement: SVGSVGElement): void {
 }
 
 function addRouteBeads(svgElement: SVGSVGElement, routePaths: SVGPathElement[], chart: string): void {
-    const beadCount = resolveRouteBeadCount(chart, routePaths.length, MAX_ROUTE_BEADS);
+    // Animate one bead per connection path so direction is visible on every line.
+    const beadCount = resolveRouteBeadCount(chart, routePaths.length, routePaths.length);
     if (beadCount <= 0) return;
 
     const layer = document.createElementNS(SVG_NS, "g");
@@ -201,6 +238,8 @@ function addRouteBeads(svgElement: SVGSVGElement, routePaths: SVGPathElement[], 
 
 function runMermaidEntranceAnimations(svgElement: SVGSVGElement, chart: string, enableLoopingBeads: boolean): Animation[] {
     const runningAnimations: Animation[] = [];
+    const declaration = getCanonicalMermaidDeclaration(chart ?? "");
+    const isMindmap = declaration === "mindmap";
 
     const routePaths = Array.from(
         svgElement.querySelectorAll<SVGPathElement>("path.edgePath path, path.flowchart-link, .sequence-diagram path, .stateDiagram path")
@@ -229,14 +268,21 @@ function runMermaidEntranceAnimations(svgElement: SVGSVGElement, chart: string, 
     const nodes = Array.from(svgElement.querySelectorAll<SVGElement>(".node, .actor, .state, .class-name")).slice(0, MAX_ANIMATED_NODES);
     nodes.forEach((node, i) => {
         const stagger = Math.min(i * 10, 120);
-        const animation = node.animate([
-            { opacity: 0 },
-            { opacity: 1 }
-        ], {
-            duration: 240,
+        const keyframes = isMindmap
+            ? [
+                { opacity: 0, transform: "scale(0.82)" },
+                { opacity: 1, transform: "scale(1.06)" },
+                { opacity: 1, transform: "scale(1)" },
+            ]
+            : [
+                { opacity: 0 },
+                { opacity: 1 },
+            ];
+        const animation = node.animate(keyframes, {
+            duration: isMindmap ? 420 : 240,
             delay: stagger,
             fill: "none",
-            easing: "ease-out"
+            easing: isMindmap ? "cubic-bezier(0.2, 1.2, 0.2, 1)" : "ease-out",
         });
         runningAnimations.push(animation);
     });
@@ -262,6 +308,7 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
     const streamAnimationPlayedRef = useRef(false);
     const prevStreamingRef = useRef(isStreaming);
     const isGenerating = isFixing || isStreaming;
+    const isUnsupportedTypeError = Boolean(error && error.startsWith("Unsupported Mermaid diagram type"));
     // During streaming, we don't want to show the full-screen blurring overlay because it makes it
     // look like the UI is blocked. Only show it if we are fixing the diagram or if we have no SVG at all
     // and are NOT in the middle of a stream (i.e. first render or explicit generation).
@@ -278,6 +325,7 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
         }
         return `mermaid-${Math.abs(hash).toString(36)}`;
     }, [chart]);
+    const fixedCacheKey = useMemo(() => `repomind:fixed-mermaid:${id}`, [id]);
 
     useEffect(() => {
         setIsBrowser(true);
@@ -292,15 +340,27 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
 
         const renderDiagram = async (retryCount = 0) => {
             try {
-                let codeToRender = chart;
+                let persistedFixedCode: string | null = null;
+                if (typeof window !== "undefined") {
+                    try {
+                        const cached = window.localStorage.getItem(fixedCacheKey);
+                        if (cached && cached.trim().length > 0) {
+                            persistedFixedCode = cached;
+                        }
+                    } catch {
+                        // Ignore localStorage read issues.
+                    }
+                }
+
+                let codeToRender = persistedFixedCode ?? chart;
                 let isTypedMermaidJson = false;
 
                 // Check if the content is JSON (starts with {)
                 // This handles cases where the LLM uses ```mermaid for JSON content
-                if (chart.trim().startsWith('{')) {
+                if (!persistedFixedCode && codeToRender.trim().startsWith('{')) {
                     try {
                         console.log('🔍 Detected JSON content in Mermaid block, converting...');
-                        const data = JSON.parse(chart);
+                        const data = JSON.parse(codeToRender);
                         const compiled = compileMermaidFromJSON(data);
                         if (!compiled.valid || !compiled.mermaid) {
                             if (mounted) {
@@ -379,25 +439,25 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
                         setError(null); // Clear error while fixing
 
                         try {
-                            const response = await fetch('/api/fix-mermaid', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ code: sanitized })
-                            });
+                            const fixed = await requestFixedMermaidCode(sanitized);
 
-                            if (response.ok) {
-                                const { fixed } = await response.json();
-                                if (fixed) {
-                                    console.log('✅ AI Fix received, retrying render...');
-                                    const { svg: fixedSvg } = await mermaid.render(id + '-autofixed', fixed);
-                                    if (mounted) {
-                                        setSvg(normalizeMermaidSvg(fixedSvg));
-                                        setRenderedChart(fixed);
-                                        setError(null);
-                                        setIsFixing(false);
+                            if (fixed) {
+                                console.log('✅ AI Fix received, retrying render...');
+                                const { svg: fixedSvg } = await mermaid.render(id + '-autofixed', fixed);
+                                if (mounted) {
+                                    setSvg(normalizeMermaidSvg(fixedSvg));
+                                    setRenderedChart(fixed);
+                                    setError(null);
+                                    setIsFixing(false);
+                                    if (typeof window !== "undefined") {
+                                        try {
+                                            window.localStorage.setItem(fixedCacheKey, fixed);
+                                        } catch {
+                                            // Ignore localStorage write issues.
+                                        }
                                     }
-                                    return;
                                 }
+                                return;
                             }
                         } catch (aiError) {
                             console.warn('⚠️ Auto-fix failed:', aiError);
@@ -433,7 +493,7 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
             mounted = false;
             clearTimeout(timer);
         };
-    }, [chart, id, isStreaming]);
+    }, [chart, id, isStreaming, fixedCacheKey]);
 
     useEffect(() => {
         if (isStreaming && !prevStreamingRef.current) {
@@ -461,6 +521,13 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
                     setSvg(normalizeMermaidSvg(svg));
                     setRenderedChart(codeToRender);
                     setError(null);
+                    if (typeof window !== "undefined") {
+                        try {
+                            window.localStorage.setItem(fixedCacheKey, codeToRender);
+                        } catch {
+                            // Ignore localStorage write issues.
+                        }
+                    }
                     console.log('✅ Layer 3 successful: Typed Mermaid JSON re-rendered');
                     return;
                 } catch (e: unknown) {
@@ -479,22 +546,22 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
                 return;
             }
 
-            const response = await fetch('/api/fix-mermaid', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code: sanitized })
-            });
+            const fixed = await requestFixedMermaidCode(sanitized);
 
-            if (response.ok) {
-                const { fixed } = await response.json();
-                if (fixed) {
-                    const { svg } = await mermaid.render(id + '-manualfixed', fixed);
-                    setSvg(normalizeMermaidSvg(svg));
-                    setRenderedChart(fixed);
-                    setError(null);
-                    console.log('✅ Layer 3 successful: Manual AI fix worked');
-                    return;
+            if (fixed) {
+                const { svg } = await mermaid.render(id + '-manualfixed', fixed);
+                setSvg(normalizeMermaidSvg(svg));
+                setRenderedChart(fixed);
+                setError(null);
+                if (typeof window !== "undefined") {
+                    try {
+                        window.localStorage.setItem(fixedCacheKey, fixed);
+                    } catch {
+                        // Ignore localStorage write issues.
+                    }
                 }
+                console.log('✅ Layer 3 successful: Manual AI fix worked');
+                return;
             }
             setError("Could not automatically fix the diagram. Please try asking again.");
         } catch (e: unknown) {
@@ -612,10 +679,25 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
             >
                 <div
                     ref={diagramRef}
-                    className="overflow-x-auto overflow-y-auto max-h-[28rem] md:max-h-[36rem] bg-zinc-950/50 p-4 md:p-8 rounded-lg border border-white/5 hover:border-white/10 transition-colors flex justify-center min-w-0"
+                    className="diagram-inline-content overflow-hidden max-h-[80vh] p-2 md:p-4 rounded-lg border border-white/5 hover:border-white/10 transition-colors flex items-center justify-center min-w-0"
                     dangerouslySetInnerHTML={{ __html: svg }}
                     style={{ minHeight: svg ? 'auto' : '200px' }}
                 />
+                <style>{`
+                    .diagram-inline-content svg {
+                        width: auto !important;
+                        height: auto !important;
+                        max-width: 100% !important;
+                        max-height: calc(80vh - 2rem) !important;
+                        display: block;
+                        margin: 0 auto;
+                    }
+                    @media (min-width: 768px) {
+                        .diagram-inline-content svg {
+                            max-height: calc(80vh - 4rem) !important;
+                        }
+                    }
+                `}</style>
 
                 {/* Overlay controls */}
                 {!isGenerating && svg && (
@@ -637,7 +719,7 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
                 )}
 
                 {showOverlay && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900/50 backdrop-blur-sm rounded-lg z-10">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950/55 backdrop-blur-sm rounded-lg z-10">
                         <div className="flex items-center gap-2 text-zinc-400">
                             <Sparkles className="w-5 h-5 animate-pulse text-purple-400" />
                             <span className="text-sm font-medium">
@@ -650,16 +732,18 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
                 {error && !isFixing && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900/90 backdrop-blur-sm rounded-lg p-4 text-center z-10">
                         <p className="text-red-400 text-sm mb-3 max-w-[90%] break-words">{error}</p>
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                handleRetry();
-                            }}
-                            className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-sm transition-colors flex items-center gap-2"
-                        >
-                            <Sparkles className="w-4 h-4" />
-                            Fix Diagram
-                        </button>
+                        {!isUnsupportedTypeError && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRetry();
+                                }}
+                                className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-sm transition-colors flex items-center gap-2"
+                            >
+                                <Sparkles className="w-4 h-4" />
+                                Fix Diagram
+                            </button>
+                        )}
                     </div>
                 )}
             </div>
@@ -679,11 +763,11 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
                                 initial={{ scale: 0.9, opacity: 0 }}
                                 animate={{ scale: 1, opacity: 1 }}
                                 exit={{ scale: 0.9, opacity: 0 }}
-                                className="relative isolate w-[min(96vw,1440px)] h-[min(92vh,980px)] bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col"
+                                className="relative isolate w-[min(96vw,1440px)] h-[min(92vh,980px)] rounded-2xl overflow-hidden flex flex-col bg-transparent"
                                 onClick={(e) => e.stopPropagation()}
                             >
                                 {/* Header */}
-                                <div className="flex shrink-0 items-center justify-between p-4 border-b border-white/10 bg-zinc-900/50">
+                                <div className="flex shrink-0 items-center justify-between p-4 bg-transparent">
                                     <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
                                         <ZoomIn className="w-4 h-4" />
                                         Diagram Preview
@@ -709,28 +793,38 @@ export const Mermaid = ({ chart, isStreaming = false }: MermaidProps) => {
                                 </div>
 
                                 {/* Content */}
-                                <div className="flex-1 min-h-0 overflow-hidden bg-zinc-950/50 relative custom-scrollbar diagram-modal-content">
+                                <div className="flex-1 min-h-0 overflow-hidden relative diagram-modal-content">
                                     <style>{`
+                                        .diagram-modal-content {
+                                            display: flex;
+                                            align-items: center;
+                                            justify-content: center;
+                                            overflow: hidden;
+                                            padding: 12px;
+                                        }
                                         .diagram-modal-content svg {
-                                            width: min(100%, 1100px) !important;
+                                            width: auto !important;
                                             height: auto !important;
                                             max-width: 100% !important;
-                                            max-height: min(72vh, 860px) !important;
+                                            max-height: 100% !important;
                                             overflow: hidden !important;
                                             color-scheme: dark;
                                             display: block;
-                                            margin: 0 auto;
+                                            margin: auto !important;
+                                            background: transparent !important;
                                         }
                                     `}</style>
-                                    <div className="h-full w-full overflow-auto p-3 md:p-6">
-                                        <motion.div
-                                            initial={{ opacity: 0, y: 20 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            transition={{ delay: 0.2 }}
-                                            ref={modalRef}
-                                            className="mx-auto max-w-full max-h-full overflow-auto bg-zinc-900/40 p-4 md:p-6 rounded-2xl border border-white/10 backdrop-blur-md shadow-2xl"
-                                            dangerouslySetInnerHTML={{ __html: svg }}
-                                        />
+                                    <div className="h-full w-full overflow-hidden">
+                                        <div className="h-full w-full grid place-items-center">
+                                            <motion.div
+                                                initial={{ opacity: 0, y: 20 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                transition={{ delay: 0.2 }}
+                                                ref={modalRef}
+                                                className="h-full w-full flex items-center justify-center overflow-hidden"
+                                                dangerouslySetInnerHTML={{ __html: svg }}
+                                            />
+                                        </div>
                                     </div>
                                 </div>
                             </motion.div>

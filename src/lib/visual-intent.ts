@@ -209,38 +209,19 @@ export function resolveVisualModelPreference(
     const route = routeMermaidDiagram(query);
     const visualIntent = isVisualDiagramIntentQuery(query);
     const profile = getVisualDiagramProfile(query);
-
-    if (!visualIntent || requestedModelPreference === "thinking") {
-        return {
-            visualIntent,
-            effectiveModelPreference: requestedModelPreference,
-            autoPromotedToThinking: false,
-            fellBackToFlashForAnonymous: false,
-            visualFamily: visualIntent ? route.family : profile.family,
-            preferredVisualFormat: visualIntent ? route.renderMode : profile.preferredFormat,
-            preferredMermaidDiagram: visualIntent ? route.diagramType : profile.preferredMermaidDiagram,
-        };
-    }
-
-    if (canUseThinking) {
-        return {
-            visualIntent: true,
-            effectiveModelPreference: "thinking",
-            autoPromotedToThinking: true,
-            fellBackToFlashForAnonymous: false,
-            visualFamily: route.family,
-            preferredVisualFormat: route.renderMode,
-            preferredMermaidDiagram: route.diagramType,
-        };
-    }
+    const requestedThinking = requestedModelPreference === "thinking";
+    const canHonorRequestedThinking = !requestedThinking || canUseThinking;
+    const effectiveModelPreference: ModelPreference = canHonorRequestedThinking
+        ? requestedModelPreference
+        : "flash";
 
     return {
-        visualIntent: true,
-        effectiveModelPreference: "flash",
+        visualIntent,
+        effectiveModelPreference,
         autoPromotedToThinking: false,
-        fellBackToFlashForAnonymous: true,
-        visualFamily: route.family,
-        preferredVisualFormat: route.renderMode,
-        preferredMermaidDiagram: route.diagramType,
+        fellBackToFlashForAnonymous: requestedThinking && !canUseThinking,
+        visualFamily: visualIntent ? route.family : profile.family,
+        preferredVisualFormat: visualIntent ? route.renderMode : profile.preferredFormat,
+        preferredMermaidDiagram: visualIntent ? route.diagramType : profile.preferredMermaidDiagram,
     };
 }

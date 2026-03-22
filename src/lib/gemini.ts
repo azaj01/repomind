@@ -5,6 +5,7 @@ import {
   getChatModelForPreference,
   type ModelPreference,
 } from "./ai-client";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { buildRepoMindPrompt, formatHistoryText } from "./prompt-builder";
 import { cacheQuerySelection, getCachedQuerySelection } from "./cache";
 import type { FileCachePolicy } from "./cache";
@@ -15,12 +16,27 @@ import {
   getRecentRepoCommitsSnapshot,
   getUserRepos,
   getUserReposByAge,
+  getRepoReleasesSnapshot,
+  getProfileReleasesSnapshot,
+  getRepoPullRequestsSnapshot,
+  getProfilePullRequestsSnapshot,
+  getRepoIssuesSnapshot,
+  getProfileIssuesSnapshot,
+  getRepoCommitFrequencySnapshot,
+  getProfileCommitFrequencySnapshot,
+  getRepoContributorsSnapshot,
+  getProfileContributorsSnapshot,
+  getRepoFileHistorySnapshot,
+  compareRepoRefsSnapshot,
+  getRepoWorkflowRunsSnapshot,
+  getRepoLanguagesSnapshot,
+  getRepoDependencyAlertsSnapshot,
 } from "./github";
 import type { GenerationConfig } from "@google/generative-ai";
 
 type JsonObject = Record<string, unknown>;
 type GeminiTool = Record<string, unknown>;
-type ChunkPart = { text?: string; thought?: boolean };
+type ChunkPart = { text?: string; thought?: boolean; functionCall?: { name?: string; args?: unknown }; [key: string]: unknown };
 type FunctionCallShape = { name?: string; args?: unknown };
 type StreamChunkShape = {
   candidates?: Array<{
@@ -36,9 +52,23 @@ type StreamChunkShape = {
 const MAX_REPO_COMMITS = 10;
 const MAX_PROFILE_COMMITS = 20;
 const SUPPORT_EMAIL = "pieisnot22by7@gmail.com";
+let _modernGenAI: GoogleGenAI | null = null;
 
 function asObject(value: unknown): JsonObject {
   return value && typeof value === "object" ? (value as JsonObject) : {};
+}
+
+function getModernGenAI(): GoogleGenAI {
+  if (_modernGenAI) return _modernGenAI;
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "[RepoMind] GEMINI_API_KEY environment variable is not set. " +
+      "Add it to your .env.local file or deployment environment secrets."
+    );
+  }
+  _modernGenAI = new GoogleGenAI({ apiKey });
+  return _modernGenAI;
 }
 
 function getStringArray(value: unknown): string[] {
@@ -47,6 +77,182 @@ function getStringArray(value: unknown): string[] {
 
 function normalizeFunctionName(name: unknown): string {
   return typeof name === "string" && name.trim().length > 0 ? name : "unknown_tool";
+}
+
+function resolveRepositoryForTool(
+  repositoryArg: unknown,
+  repoDetails: { owner: string; repo: string }
+): { owner: string; repo: string } | null {
+  const repository = typeof repositoryArg === "string" ? repositoryArg.trim() : "";
+  if (repository.includes("/")) {
+    const [owner, repo] = repository.split("/", 2);
+    if (owner && repo) return { owner, repo };
+  }
+  if (repository) {
+    return { owner: repoDetails.owner, repo: repository };
+  }
+  if (repoDetails.repo && repoDetails.repo !== "profile") {
+    return { owner: repoDetails.owner, repo: repoDetails.repo };
+  }
+  return null;
+}
+
+function parseLimit(value: unknown, fallback: number, max: number): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return Math.min(fallback, max);
+  return Math.max(1, Math.min(Math.floor(n), max));
+}
+
+function parseOptionalString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function isFunctionTurnOrderError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /function response turn comes immediately after a function call turn/i.test(message);
+}
+
+function isMissingThoughtSignatureError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /missing a thought_signature|thought_signature/i.test(message);
+}
+
+function extractFunctionCallPartsFromResponse(response: unknown): Array<Record<string, unknown>> {
+  const root = asObject(response);
+  const candidates = Array.isArray(root.candidates) ? root.candidates : [];
+  if (candidates.length === 0) return [];
+  const firstCandidate = asObject(candidates[0]);
+  const content = asObject(firstCandidate.content);
+  const parts = Array.isArray(content.parts) ? content.parts : [];
+  return parts
+    .filter((part): part is Record<string, unknown> => !!part && typeof part === "object")
+    .filter((part) => {
+      const maybeFunctionCall = (part as JsonObject).functionCall;
+      return !!maybeFunctionCall && typeof maybeFunctionCall === "object";
+    });
+}
+
+function extractFunctionCallsFromParts(parts: Array<Record<string, unknown>>): FunctionCallShape[] {
+  const calls: FunctionCallShape[] = [];
+  for (const part of parts) {
+    const maybeFunctionCall = asObject((part as JsonObject).functionCall);
+    if (typeof maybeFunctionCall.name === "string" && maybeFunctionCall.name.trim().length > 0) {
+      calls.push({
+        name: maybeFunctionCall.name,
+        args: maybeFunctionCall.args,
+      });
+    }
+  }
+  return calls;
+}
+
+function readFunctionCalls(response: unknown): FunctionCallShape[] {
+  const responseObj = asObject(response) as {
+    functionCalls?: unknown;
+  };
+  const direct = responseObj.functionCalls;
+  if (Array.isArray(direct)) {
+    const calls: FunctionCallShape[] = [];
+    for (const item of direct) {
+      const normalized = asObject(item);
+      if (typeof normalized.name === "string" && normalized.name.trim().length > 0) {
+        calls.push({ name: normalized.name, args: normalized.args });
+      }
+    }
+    return calls;
+  }
+
+  const maybeFn = (responseObj as { functionCalls?: (() => unknown) }).functionCalls;
+  if (typeof maybeFn === "function") {
+    const fnValue = maybeFn();
+    if (Array.isArray(fnValue)) {
+      const calls: FunctionCallShape[] = [];
+      for (const item of fnValue) {
+        const normalized = asObject(item);
+        if (typeof normalized.name === "string" && normalized.name.trim().length > 0) {
+          calls.push({ name: normalized.name, args: normalized.args });
+        }
+      }
+      return calls;
+    }
+  }
+  return [];
+}
+
+function readResponseText(response: unknown): string {
+  const value = (response as { text?: unknown }).text;
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "function") {
+    const text = value();
+    return typeof text === "string" ? text : "";
+  }
+  return "";
+}
+
+function serializeCallKey(call: FunctionCallShape): string {
+  const args = asObject(call.args);
+  return `${normalizeFunctionName(call.name)}::${JSON.stringify(args)}`;
+}
+
+function getThinkingLevel(modelPreference: ModelPreference): ThinkingLevel {
+  return modelPreference === "thinking" ? ThinkingLevel.HIGH : ThinkingLevel.LOW;
+}
+
+async function recoverWithModernChat(
+  prompt: string,
+  modelName: string,
+  tools: GeminiTool[],
+  modelPreference: ModelPreference,
+  repoDetails: { owner: string; repo: string },
+  baselineCalls: FunctionCallShape[],
+  baselineResponses: Array<{ functionResponseData: Record<string, unknown> }>
+): Promise<string> {
+  const baselineResponseByCall = new Map<string, { functionResponseData: Record<string, unknown> }[]>();
+  baselineCalls.forEach((call, index) => {
+    const key = serializeCallKey(call);
+    const existing = baselineResponseByCall.get(key) ?? [];
+    existing.push(baselineResponses[index]);
+    baselineResponseByCall.set(key, existing);
+  });
+
+  const chat = getModernGenAI().chats.create({
+    model: modelName,
+    config: {
+      tools: tools as unknown as Array<Record<string, unknown>>,
+      thinkingConfig: {
+        includeThoughts: modelPreference === "thinking",
+        thinkingLevel: getThinkingLevel(modelPreference),
+      },
+    },
+  });
+
+  let response = await chat.sendMessage({ message: prompt });
+  let pendingCalls = readFunctionCalls(response);
+  let guard = 0;
+
+  while (pendingCalls.length > 0 && guard < 4) {
+    const resolved = await Promise.all(pendingCalls.map(async (call) => {
+      const key = serializeCallKey(call);
+      const fromBaseline = baselineResponseByCall.get(key)?.shift();
+      if (fromBaseline) {
+        return fromBaseline;
+      }
+      return resolveToolCall(call, repoDetails);
+    }));
+
+    const toolResponseParts = buildFunctionResponseParts(pendingCalls, resolved);
+    response = await chat.sendMessage({
+      message: toolResponseParts as unknown as Array<Record<string, unknown>>,
+    });
+    pendingCalls = readFunctionCalls(response);
+    guard += 1;
+  }
+
+  return stripEmojiCharacters(readResponseText(response).trim());
 }
 
 function buildFunctionResponseParts(
@@ -67,6 +273,161 @@ function buildFunctionResponseParts(
   });
 }
 
+function countFunctionDeclarations(tools: GeminiTool[]): number {
+  return tools.reduce((count, tool) => {
+    const declarations = (tool as { functionDeclarations?: unknown }).functionDeclarations;
+    return count + (Array.isArray(declarations) ? declarations.length : 0);
+  }, 0);
+}
+
+function buildGithubFunctionDeclarations(repoDetails: { owner: string; repo: string }) {
+  const isProfileContext = repoDetails.repo === "profile";
+  const commitLimitDescription = isProfileContext
+    ? "Commit limit (MAX 20 for overall, 10 for specific repo)."
+    : "Commit limit (MAX 10).";
+
+  return [
+    {
+      name: "fetch_recent_commits",
+      description: "Fetch recent commits. Provide a specific repository name, or leave empty (or use 'overall') for commits across all repositories.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          repository: { type: "STRING", description: "Optional repository name for repo-specific commits." },
+          limit: { type: "NUMBER", description: commitLimitDescription },
+        }
+      }
+    },
+    {
+      name: "fetch_repos_by_age",
+      description: "Fetch repositories by age mode: oldest, newest, or journey (even spacing).",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          mode: { type: "STRING", description: "oldest | newest | journey" },
+        }
+      }
+    },
+    {
+      name: "fetch_repo_releases",
+      description: "Fetch release history for a repository.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          repository: { type: "STRING", description: "Optional repository (name or owner/repo)." },
+          limit: { type: "NUMBER", description: "Release limit (MAX 20)." },
+        }
+      }
+    },
+    {
+      name: "fetch_pull_requests",
+      description: "Fetch pull requests for repository activity analysis.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          repository: { type: "STRING", description: "Optional repository (name or owner/repo)." },
+          state: { type: "STRING", description: "open | closed | all" },
+          since: { type: "STRING", description: "Optional ISO date cutoff." },
+          limit: { type: "NUMBER", description: "PR limit (MAX 30)." },
+        }
+      }
+    },
+    {
+      name: "fetch_issue_activity",
+      description: "Fetch issue activity for repository health analysis.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          repository: { type: "STRING", description: "Optional repository (name or owner/repo)." },
+          state: { type: "STRING", description: "open | closed | all" },
+          since: { type: "STRING", description: "Optional ISO date cutoff." },
+          limit: { type: "NUMBER", description: "Issue limit (MAX 30)." },
+        }
+      }
+    },
+    {
+      name: "fetch_commit_frequency",
+      description: "Fetch weekly commit frequency (timeseries) for charts.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          repository: { type: "STRING", description: "Optional repository (name or owner/repo)." },
+          weeks: { type: "NUMBER", description: "Weeks to return (MAX 52)." },
+        }
+      }
+    },
+    {
+      name: "fetch_contributors",
+      description: "Fetch top contributors for ownership and activity analysis.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          repository: { type: "STRING", description: "Optional repository (name or owner/repo)." },
+          limit: { type: "NUMBER", description: "Contributor limit (MAX 30)." },
+        }
+      }
+    },
+    {
+      name: "fetch_file_history",
+      description: "Fetch commit history for a specific file path.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          repository: { type: "STRING", description: "Optional repository (name or owner/repo)." },
+          path: { type: "STRING", description: "Repository file path (required)." },
+          limit: { type: "NUMBER", description: "History limit (MAX 20)." },
+        }
+      }
+    },
+    {
+      name: "compare_refs",
+      description: "Compare two refs (branches/tags/commits) in a repository.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          repository: { type: "STRING", description: "Optional repository (name or owner/repo)." },
+          base: { type: "STRING", description: "Base ref (required)." },
+          head: { type: "STRING", description: "Head ref (required)." },
+        }
+      }
+    },
+    {
+      name: "fetch_workflow_runs",
+      description: "Fetch GitHub Actions workflow runs for CI/CD health.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          repository: { type: "STRING", description: "Optional repository (name or owner/repo)." },
+          status: { type: "STRING", description: "Optional run status filter." },
+          branch: { type: "STRING", description: "Optional branch name." },
+          limit: { type: "NUMBER", description: "Run limit (MAX 30)." },
+        }
+      }
+    },
+    {
+      name: "fetch_repo_languages",
+      description: "Fetch language breakdown for a repository.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          repository: { type: "STRING", description: "Optional repository (name or owner/repo)." },
+        }
+      }
+    },
+    {
+      name: "fetch_dependency_updates",
+      description: "Fetch Dependabot/security dependency alerts for a repository.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          repository: { type: "STRING", description: "Optional repository (name or owner/repo)." },
+          limit: { type: "NUMBER", description: "Alert limit (MAX 30)." },
+        }
+      }
+    },
+  ];
+}
+
 function getThinkingGenerationConfig(includeThoughts: boolean, thinkingLevel: "HIGH" | "LOW" | "MINIMAL"): GenerationConfig {
   return {
     thinkingConfig: {
@@ -85,8 +446,16 @@ function shouldUseWebSearch(question: string): boolean {
 
 async function fetchWebSearchSnapshot(
   question: string,
-  modelPreference: ModelPreference
-): Promise<{ summary: string; queryHint: string }> {
+  modelPreference: ModelPreference,
+  repoDetails?: { owner: string; repo: string }
+): Promise<{ summary: string; searchQuery: string }> {
+  const trimmedQuestion = question.trim();
+  const searchQuery = repoDetails
+    ? (repoDetails.repo === "profile"
+      ? `${trimmedQuestion} (GitHub profile context: ${repoDetails.owner})`
+      : `${trimmedQuestion} (GitHub repository context: ${repoDetails.owner}/${repoDetails.repo})`)
+    : trimmedQuestion;
+
   const searchModel = getGenAI().getGenerativeModel({
     model: getChatModelForPreference(modelPreference),
     tools: [{ googleSearch: {} }] as unknown as GeminiTool[],
@@ -99,13 +468,12 @@ async function fetchWebSearchSnapshot(
       "Return 4-8 bullets with specific facts and source links where possible.",
       "Prefer recent updates and include dates when available.",
       "If nothing useful is found, return exactly: No useful external updates found.",
-      `Question: ${question}`,
+      `Question: ${searchQuery}`,
     ].join("\n")
   );
 
   const summary = result.response.text().trim();
-  const queryHint = question.length > 120 ? `${question.slice(0, 117)}...` : question;
-  return { summary, queryHint };
+  return { summary, searchQuery };
 }
 
 // ─── File Selection ────────────────────────────────────────────────────────────
@@ -298,7 +666,7 @@ export async function answerWithContext(
   let enrichedContext = context;
   if (shouldUseWebSearch(question)) {
     try {
-      const snapshot = await fetchWebSearchSnapshot(question, modelPreference);
+      const snapshot = await fetchWebSearchSnapshot(question, modelPreference, repoDetails);
       if (snapshot.summary && snapshot.summary !== "No useful external updates found.") {
         enrichedContext += `\n--- WEB SEARCH SNAPSHOT ---\n${snapshot.summary}\n`;
       }
@@ -313,11 +681,13 @@ export async function answerWithContext(
     prompt += `\n\n[PROFILE TOOLS MODE]:
     - Use \`fetch_recent_commits\` for coding activity. 
     - Limit: 20 commits for overall profile, 10 for specific repo mentions.
+    - Additional tools available: \`fetch_repos_by_age\`, \`fetch_repo_releases\`, \`fetch_pull_requests\`, \`fetch_issue_activity\`, \`fetch_commit_frequency\`, \`fetch_contributors\`, \`fetch_file_history\`, \`compare_refs\`, \`fetch_workflow_runs\`, \`fetch_repo_languages\`, \`fetch_dependency_updates\`.
     - **STRICT GROUNDING**: If the user asks for more than these limits, you MUST fetch the maximum (20 or 10) and explicitly state: "Note: Currently, the limit for fetching commits is \${maxAllowed}. Please contact **${SUPPORT_EMAIL}** if you need more usage. I will provide the answer on the basis of the latest \${maxAllowed} commits."
     - Do NOT summarize more than the tool returns. If only 10 are returned, you only describe 10.`;
   } else {
     prompt += `\n\n[REPO TOOLS MODE]:
     - Use \`fetch_recent_commits\` for history. Limit: 10 commits.
+    - Additional tools available: \`fetch_repos_by_age\`, \`fetch_repo_releases\`, \`fetch_pull_requests\`, \`fetch_issue_activity\`, \`fetch_commit_frequency\`, \`fetch_contributors\`, \`fetch_file_history\`, \`compare_refs\`, \`fetch_workflow_runs\`, \`fetch_repo_languages\`, \`fetch_dependency_updates\`.
     - **STRICT GROUNDING**: If the user asks for more than 10, you MUST fetch 10 and explicitly state: "Note: Currently, the limit for fetching commits is 10. Please contact **${SUPPORT_EMAIL}** if you need more usage. I will provide the answer on the basis of the latest 10 commits."
     - Do NOT hallucinate commits. Only use what the tool provides.`;
   }
@@ -361,22 +731,22 @@ export async function* answerWithContextStream(
   let enrichedContext = context;
   if (shouldUseWebSearch(question)) {
     try {
-      yield "STATUS:Searching Google for external context...";
-      const snapshot = await fetchWebSearchSnapshot(question, modelPreference);
+      const snapshot = await fetchWebSearchSnapshot(question, modelPreference, repoDetails);
+      yield `STATUS:Searching Google for ${snapshot.searchQuery}`;
       if (snapshot.summary && snapshot.summary !== "No useful external updates found.") {
         enrichedContext += `\n--- WEB SEARCH SNAPSHOT ---\n${snapshot.summary}\n`;
         yield `TOOL:${JSON.stringify({
           name: "googleSearch",
-          detail: snapshot.queryHint,
+          detail: snapshot.searchQuery,
           usageUnits: 1,
         })}`;
-        yield "STATUS:External context added. Preparing answer...";
+        yield "STATUS:External context added. Preparing answer";
       } else {
-        yield "STATUS:No useful external updates found. Preparing answer...";
+        yield "STATUS:No useful external updates found. Preparing answer";
       }
     } catch (error) {
       console.warn("Web search snapshot failed (non-fatal):", error);
-      yield "STATUS:Web search unavailable. Continuing with repository context...";
+      yield "STATUS:Web search unavailable. Continuing with repository context";
     }
   }
 
@@ -385,17 +755,25 @@ export async function* answerWithContextStream(
   if (isProfileContext) {
     prompt += `\n\n[PROFILE TOOLS MODE]:
     - Use \`fetch_recent_commits\` for coding activity. Limit: 20 (overall) or 10 (specific repo).
+    - Use \`fetch_repos_by_age\` for oldest/newest/journey timeline of repositories.
+    - Additional tools available: \`fetch_repo_releases\`, \`fetch_pull_requests\`, \`fetch_issue_activity\`, \`fetch_commit_frequency\`, \`fetch_contributors\`, \`fetch_file_history\`, \`compare_refs\`, \`fetch_workflow_runs\`, \`fetch_repo_languages\`, \`fetch_dependency_updates\`.
     - If user asks for more, you MUST fetch the max allowed and say: "Note: Currently, the limit for fetching commits is \${maxAllowed}. Please contact **${SUPPORT_EMAIL}** if you need more usage. I will provide the answer on the basis of the latest \${maxAllowed} commits."`;
   } else {
     prompt += `\n\n[REPO TOOLS MODE]: 
     - Use \`fetch_recent_commits\` for history. Limit: 10.
+    - Use \`fetch_repos_by_age\` for oldest/newest/journey timeline across the owner's repositories.
+    - Additional tools available: \`fetch_repo_releases\`, \`fetch_pull_requests\`, \`fetch_issue_activity\`, \`fetch_commit_frequency\`, \`fetch_contributors\`, \`fetch_file_history\`, \`compare_refs\`, \`fetch_workflow_runs\`, \`fetch_repo_languages\`, \`fetch_dependency_updates\`.
     - If user asks for more, you MUST fetch 10 and say: "Note: Currently, the limit for fetching commits is 10. Please contact **${SUPPORT_EMAIL}** if you need more usage. I will provide the answer on the basis of the latest 10 commits."`;
   }
 
   const tools = buildTools(repoDetails);
   const modelName = getChatModelForPreference(modelPreference);
+  const functionDeclarationCount = countFunctionDeclarations(tools);
 
-  console.log(`[answerWithContextStream] Initializing chat with model: ${modelName} (${tools.length} tools available)`);
+  console.log(
+    `[answerWithContextStream] Initializing chat with model: ${modelName} ` +
+    `(${tools.length} tool object(s), ${functionDeclarationCount} function declaration(s))`
+  );
 
   const model = getGenAI().getGenerativeModel({
     model: modelName,
@@ -408,6 +786,7 @@ export async function* answerWithContextStream(
   // --- Phase 1: Send message and stream to detect tool call or yield direct response ---
   const streamedCalls: FunctionCallShape[] = [];
   let calls: FunctionCallShape[] = [];
+  let finalizedFunctionCallParts: Array<Record<string, unknown>> = [];
 
   try {
     console.log(`[answerWithContextStream] Sending Phase 1 request stream...`);
@@ -435,19 +814,70 @@ export async function* answerWithContextStream(
     }
     // Finalize history and only trust calls from the finalized response.
     const firstResponse = await firstResult.response;
-    calls = (firstResponse.functionCalls?.() as unknown as FunctionCallShape[] | undefined) ?? [];
+    finalizedFunctionCallParts = extractFunctionCallPartsFromResponse(firstResponse);
+    calls = extractFunctionCallsFromParts(finalizedFunctionCallParts);
+    if (calls.length === 0) {
+      calls = readFunctionCalls(firstResponse);
+    }
     if (streamedCalls.length > 0 && calls.length === 0) {
       console.warn(`[answerWithContextStream] Ignoring ${streamedCalls.length} transient stream tool call(s); finalized response had no tool calls.`);
     }
     console.log(`[answerWithContextStream] Phase 1 stream complete and history finalized.`);
   } catch (error) {
     console.error(`[answerWithContextStream] Phase 1 sendMessageStream failed:`, error);
+    if (isMissingThoughtSignatureError(error) || isFunctionTurnOrderError(error)) {
+      yield "STATUS:Recovering tool handoff via compatibility path...";
+      try {
+        const recoveredAnswer = await answerWithContext(
+          question,
+          enrichedContext,
+          repoDetails,
+          _profileData,
+          history,
+          modelPreference
+        );
+        if (recoveredAnswer) {
+          yield recoveredAnswer;
+        }
+        return;
+      } catch (recoveryError) {
+        console.error(`[answerWithContextStream] Phase 1 recovery failed:`, recoveryError);
+      }
+    }
     yield `STATUS:Error during AI reasoning phase. Please try again.`;
     throw error;
   }
 
   // --- Phase 2: Resolve tool call(s) (if any) and stream the rest ---
   if (calls.length > 0) {
+    const stringifyArgValue = (value: unknown): string => {
+      if (typeof value === "string") return `"${value}"`;
+      if (typeof value === "number" || typeof value === "boolean") return String(value);
+      if (Array.isArray(value)) return `[${value.map(stringifyArgValue).join(", ")}]`;
+      if (value && typeof value === "object") return "{...}";
+      return "null";
+    };
+
+    const formatFunctionCall = (call: FunctionCallShape): string => {
+      const name = normalizeFunctionName(call.name);
+      const args = asObject(call.args);
+      const argPairs = Object.entries(args)
+        .filter(([key]) => key.trim().length > 0)
+        .map(([key, value]) => `${key}=${stringifyArgValue(value)}`);
+      const signature = `${name}(${argPairs.join(", ")})`;
+      return signature.length > 200 ? `${signature.slice(0, 197)}...` : signature;
+    };
+
+    for (const call of calls) {
+      const detail = formatFunctionCall(call);
+      yield `TOOL:${JSON.stringify({
+        name: normalizeFunctionName(call.name),
+        detail,
+        usageUnits: 1,
+      })}`;
+      yield `STATUS:Calling ${detail}`;
+    }
+
     const responses = await Promise.all(calls.map(c => resolveToolCall(c, repoDetails)));
 
     for (const res of responses) {
@@ -468,36 +898,63 @@ export async function* answerWithContextStream(
 
     try {
       const toolResponseParts = buildFunctionResponseParts(calls, responses);
+      let streamResult: Awaited<ReturnType<typeof chat.sendMessageStream>>;
+      try {
+        // Primary path: reuse the same chat so function-call metadata such as
+        // thought signatures remains intact.
+        streamResult = await chat.sendMessageStream(toolResponseParts);
+      } catch (primaryError) {
+        if (!isFunctionTurnOrderError(primaryError) && !isMissingThoughtSignatureError(primaryError)) {
+          throw primaryError;
+        }
 
-      // CRITICAL FIX: The Gemini API requires that a function-response turn comes
-      // immediately after a *pure* function-call turn (no text or thought parts).
-      // When a thinking/streaming model emits thoughts or partial text before
-      // deciding to call a tool, the SDK records a mixed turn (text + functionCall)
-      // in its internal chat history, which the API rejects in Phase 2.
-      //
-      // Fix: Rebuild the chat session from scratch for Phase 2, injecting a
-      // manually-constructed history where the model turn contains ONLY the
-      // functionCall parts — exactly what the API requires.
-      const phase2Chat = model.startChat({
-        history: [
-          {
-            role: "user",
-            parts: [{ text: prompt }],
-          },
-          {
-            // Pure function-call turn: no text/thought parts — satisfies the API constraint.
-            role: "model",
-            parts: calls.map((call) => ({
-              functionCall: {
-                name: normalizeFunctionName(call.name),
-                args: call.args ?? {},
+        // Fallback path: rebuild with a pure function-call model turn. Prefer
+        // the finalized function-call parts so metadata (e.g. thought signature)
+        // is preserved if present.
+        const pureFunctionCallParts = finalizedFunctionCallParts.length > 0
+          ? finalizedFunctionCallParts
+          : calls.map((call) => ({
+            functionCall: {
+              name: normalizeFunctionName(call.name),
+              args: call.args ?? {},
+            },
+          }));
+
+        try {
+          const phase2Chat = model.startChat({
+            history: [
+              {
+                role: "user",
+                parts: [{ text: prompt }],
               },
-            })),
-          },
-        ],
-      });
+              {
+                role: "model",
+                parts: pureFunctionCallParts as unknown as Array<Record<string, unknown>>,
+              },
+            ],
+          } as unknown as Parameters<typeof model.startChat>[0]);
 
-      const streamResult = await phase2Chat.sendMessageStream(toolResponseParts);
+          streamResult = await phase2Chat.sendMessageStream(toolResponseParts);
+        } catch (rebuildError) {
+          if (!isFunctionTurnOrderError(rebuildError) && !isMissingThoughtSignatureError(rebuildError)) {
+            throw rebuildError;
+          }
+          yield "STATUS:Recovering tool handoff via compatibility path...";
+          const recoveredText = await recoverWithModernChat(
+            prompt,
+            modelName,
+            tools,
+            modelPreference,
+            repoDetails,
+            calls,
+            responses,
+          );
+          if (recoveredText) {
+            yield recoveredText;
+          }
+          return;
+        }
+      }
 
       for await (const chunk of streamResult.stream) {
         const parts = ((chunk as unknown as StreamChunkShape).candidates?.[0]?.content?.parts ?? []);
@@ -512,6 +969,22 @@ export async function* answerWithContextStream(
       await streamResult.response;
     } catch (error) {
       console.error(`[answerWithContextStream] Phase 2 stream failed:`, error);
+      if (isMissingThoughtSignatureError(error) || isFunctionTurnOrderError(error)) {
+        yield "STATUS:Recovering tool handoff via compatibility path...";
+        const recoveredText = await recoverWithModernChat(
+          prompt,
+          modelName,
+          tools,
+          modelPreference,
+          repoDetails,
+          calls,
+          responses,
+        );
+        if (recoveredText) {
+          yield recoveredText;
+        }
+        return;
+      }
       throw error;
     }
     console.log(`[answerWithContextStream] Phase 2 stream complete.`);
@@ -519,51 +992,9 @@ export async function* answerWithContextStream(
 }
 
 function buildTools(repoDetails: { owner: string; repo: string }): GeminiTool[] {
-  const isProfileContext = repoDetails.repo === "profile";
-  if (isProfileContext) {
-    return [
-      {
-        functionDeclarations: [
-          {
-            name: "fetch_recent_commits",
-            description: "Fetch recent commits. Provide a specific repository name, or leave empty (or use 'overall') for commits across all repositories.",
-            parameters: {
-              type: "OBJECT",
-              properties: {
-                repository: { type: "STRING", description: "Optional repository name for repo-specific commits." },
-                limit: { type: "NUMBER", description: "Commit limit (MAX 20 for overall, 10 for specific repo)." },
-              }
-            }
-          },
-          {
-            name: "fetch_repos_by_age",
-            description: "Fetch repositories by age mode: oldest, newest, or journey (even spacing).",
-            parameters: {
-              type: "OBJECT",
-              properties: {
-                mode: { type: "STRING", description: "oldest | newest | journey" },
-              }
-            }
-          }
-        ]
-      },
-    ];
-  }
-
   return [
     {
-      functionDeclarations: [
-        {
-          name: "fetch_recent_commits",
-          description: "Fetch the latest commits for the current repository.",
-          parameters: {
-            type: "OBJECT",
-            properties: {
-              limit: { type: "NUMBER", description: "Commit limit (MAX 10)." },
-            }
-          }
-        },
-      ]
+      functionDeclarations: buildGithubFunctionDeclarations(repoDetails),
     },
   ];
 }
@@ -697,6 +1128,368 @@ async function resolveToolCall(
       functionResponseData: { repos, mode },
       statusMessage: mode === "newest" ? "Fetching newest repositories..." : "Fetching oldest repositories...",
       toolEvent: { name: "fetch_repos_by_age", detail: mode, usageUnits: 1 },
+    };
+  }
+
+  if (callName === "fetch_repo_releases") {
+    const limit = parseLimit(args.limit, 10, 20);
+    const resolved = resolveRepositoryForTool(args.repository, repoDetails);
+    if (resolved) {
+      const snapshot = await getRepoReleasesSnapshot(resolved.owner, resolved.repo, limit);
+      if (!snapshot.success) {
+        return {
+          functionResponseData: { error: snapshot.error, releases: [] },
+          statusMessage: "Failed to fetch releases.",
+          toolEvent: { name: "fetch_repo_releases", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
+        };
+      }
+      return {
+        functionResponseData: { releases: snapshot.data, scope: "repository", repository: `${resolved.owner}/${resolved.repo}` },
+        statusMessage: `Fetching latest releases from ${resolved.owner}/${resolved.repo}...`,
+        toolEvent: { name: "fetch_repo_releases", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
+      };
+    }
+
+    const snapshot = await getProfileReleasesSnapshot(repoDetails.owner, limit);
+    if (!snapshot.success) {
+      return {
+        functionResponseData: { error: snapshot.error, releases: [] },
+        statusMessage: "Failed to fetch profile releases.",
+        toolEvent: { name: "fetch_repo_releases", detail: "overall", usageUnits: 1 },
+      };
+    }
+    return {
+      functionResponseData: { releases: snapshot.data, scope: "overall" },
+      statusMessage: "Fetching release timeline across repositories...",
+      toolEvent: { name: "fetch_repo_releases", detail: "overall", usageUnits: 1 },
+    };
+  }
+
+  if (callName === "fetch_pull_requests") {
+    const stateRaw = typeof args.state === "string" ? args.state.toLowerCase() : "all";
+    const state = stateRaw === "open" || stateRaw === "closed" ? stateRaw : "all";
+    const since = parseOptionalString(args.since);
+    const limit = parseLimit(args.limit, 20, 30);
+    const resolved = resolveRepositoryForTool(args.repository, repoDetails);
+
+    if (resolved) {
+      const snapshot = await getRepoPullRequestsSnapshot(resolved.owner, resolved.repo, state, limit, since);
+      if (!snapshot.success) {
+        return {
+          functionResponseData: { error: snapshot.error, pullRequests: [] },
+          statusMessage: "Failed to fetch pull requests.",
+          toolEvent: { name: "fetch_pull_requests", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
+        };
+      }
+      return {
+        functionResponseData: { pullRequests: snapshot.data, scope: "repository", repository: `${resolved.owner}/${resolved.repo}` },
+        statusMessage: `Fetching pull requests from ${resolved.owner}/${resolved.repo}...`,
+        toolEvent: { name: "fetch_pull_requests", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
+      };
+    }
+
+    const snapshot = await getProfilePullRequestsSnapshot(repoDetails.owner, state, limit, since);
+    if (!snapshot.success) {
+      return {
+        functionResponseData: { error: snapshot.error, pullRequests: [] },
+        statusMessage: "Failed to fetch profile pull requests.",
+        toolEvent: { name: "fetch_pull_requests", detail: "overall", usageUnits: 1 },
+      };
+    }
+    return {
+      functionResponseData: { pullRequests: snapshot.data, scope: "overall" },
+      statusMessage: "Fetching pull request activity across repositories...",
+      toolEvent: { name: "fetch_pull_requests", detail: "overall", usageUnits: 1 },
+    };
+  }
+
+  if (callName === "fetch_issue_activity") {
+    const stateRaw = typeof args.state === "string" ? args.state.toLowerCase() : "all";
+    const state = stateRaw === "open" || stateRaw === "closed" ? stateRaw : "all";
+    const since = parseOptionalString(args.since);
+    const limit = parseLimit(args.limit, 20, 30);
+    const resolved = resolveRepositoryForTool(args.repository, repoDetails);
+
+    if (resolved) {
+      const snapshot = await getRepoIssuesSnapshot(resolved.owner, resolved.repo, state, limit, since);
+      if (!snapshot.success) {
+        return {
+          functionResponseData: { error: snapshot.error, issues: [] },
+          statusMessage: "Failed to fetch issues.",
+          toolEvent: { name: "fetch_issue_activity", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
+        };
+      }
+      return {
+        functionResponseData: { issues: snapshot.data, scope: "repository", repository: `${resolved.owner}/${resolved.repo}` },
+        statusMessage: `Fetching issue activity from ${resolved.owner}/${resolved.repo}...`,
+        toolEvent: { name: "fetch_issue_activity", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
+      };
+    }
+
+    const snapshot = await getProfileIssuesSnapshot(repoDetails.owner, state, limit, since);
+    if (!snapshot.success) {
+      return {
+        functionResponseData: { error: snapshot.error, issues: [] },
+        statusMessage: "Failed to fetch profile issues.",
+        toolEvent: { name: "fetch_issue_activity", detail: "overall", usageUnits: 1 },
+      };
+    }
+    return {
+      functionResponseData: { issues: snapshot.data, scope: "overall" },
+      statusMessage: "Fetching issue activity across repositories...",
+      toolEvent: { name: "fetch_issue_activity", detail: "overall", usageUnits: 1 },
+    };
+  }
+
+  if (callName === "fetch_commit_frequency") {
+    const weeks = parseLimit(args.weeks, 8, 52);
+    const resolved = resolveRepositoryForTool(args.repository, repoDetails);
+
+    if (resolved) {
+      const snapshot = await getRepoCommitFrequencySnapshot(resolved.owner, resolved.repo, weeks);
+      if (!snapshot.success) {
+        return {
+          functionResponseData: { error: snapshot.error, weeklyCommits: [] },
+          statusMessage: "Failed to fetch commit frequency.",
+          toolEvent: { name: "fetch_commit_frequency", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
+        };
+      }
+      return {
+        functionResponseData: { weeklyCommits: snapshot.data, scope: "repository", repository: `${resolved.owner}/${resolved.repo}` },
+        statusMessage: `Fetching ${weeks}-week commit frequency for ${resolved.owner}/${resolved.repo}...`,
+        toolEvent: { name: "fetch_commit_frequency", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
+      };
+    }
+
+    const snapshot = await getProfileCommitFrequencySnapshot(repoDetails.owner, weeks);
+    if (!snapshot.success) {
+      return {
+        functionResponseData: { error: snapshot.error, weeklyCommits: [] },
+        statusMessage: "Failed to fetch profile commit frequency.",
+        toolEvent: { name: "fetch_commit_frequency", detail: "overall", usageUnits: 1 },
+      };
+    }
+    return {
+      functionResponseData: { weeklyCommits: snapshot.data, scope: "overall" },
+      statusMessage: `Fetching ${weeks}-week commit frequency across repositories...`,
+      toolEvent: { name: "fetch_commit_frequency", detail: "overall", usageUnits: 1 },
+    };
+  }
+
+  if (callName === "fetch_contributors") {
+    const limit = parseLimit(args.limit, 20, 30);
+    const resolved = resolveRepositoryForTool(args.repository, repoDetails);
+
+    if (resolved) {
+      const snapshot = await getRepoContributorsSnapshot(resolved.owner, resolved.repo, limit);
+      if (!snapshot.success) {
+        return {
+          functionResponseData: { error: snapshot.error, contributors: [] },
+          statusMessage: "Failed to fetch contributors.",
+          toolEvent: { name: "fetch_contributors", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
+        };
+      }
+      return {
+        functionResponseData: { contributors: snapshot.data, scope: "repository", repository: `${resolved.owner}/${resolved.repo}` },
+        statusMessage: `Fetching top contributors for ${resolved.owner}/${resolved.repo}...`,
+        toolEvent: { name: "fetch_contributors", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
+      };
+    }
+
+    const snapshot = await getProfileContributorsSnapshot(repoDetails.owner, limit);
+    if (!snapshot.success) {
+      return {
+        functionResponseData: { error: snapshot.error, contributors: [] },
+        statusMessage: "Failed to fetch profile contributors.",
+        toolEvent: { name: "fetch_contributors", detail: "overall", usageUnits: 1 },
+      };
+    }
+    return {
+      functionResponseData: { contributors: snapshot.data, scope: "overall" },
+      statusMessage: "Fetching top contributors across repositories...",
+      toolEvent: { name: "fetch_contributors", detail: "overall", usageUnits: 1 },
+    };
+  }
+
+  if (callName === "fetch_file_history") {
+    const path = parseOptionalString(args.path);
+    if (!path) {
+      return {
+        functionResponseData: { error: "Missing required argument: path", fileHistory: [] },
+        statusMessage: "Missing required file path for history lookup.",
+        toolEvent: { name: "fetch_file_history", detail: "missing-path", usageUnits: 1 },
+      };
+    }
+    const limit = parseLimit(args.limit, 10, 20);
+    const resolved = resolveRepositoryForTool(args.repository, repoDetails);
+    if (!resolved) {
+      return {
+        functionResponseData: { error: "Repository is required for file history in profile mode.", fileHistory: [] },
+        statusMessage: "Specify a repository to fetch file history in profile mode.",
+        toolEvent: { name: "fetch_file_history", detail: "missing-repository", usageUnits: 1 },
+      };
+    }
+    const snapshot = await getRepoFileHistorySnapshot(resolved.owner, resolved.repo, path, limit);
+    if (!snapshot.success) {
+      return {
+        functionResponseData: { error: snapshot.error, fileHistory: [] },
+        statusMessage: "Failed to fetch file history.",
+        toolEvent: { name: "fetch_file_history", detail: `${resolved.owner}/${resolved.repo}:${path}`, usageUnits: 1 },
+      };
+    }
+    return {
+      functionResponseData: { fileHistory: snapshot.data, repository: `${resolved.owner}/${resolved.repo}` },
+      statusMessage: `Fetching file history for ${path}...`,
+      toolEvent: { name: "fetch_file_history", detail: `${resolved.owner}/${resolved.repo}:${path}`, usageUnits: 1 },
+    };
+  }
+
+  if (callName === "compare_refs") {
+    const base = parseOptionalString(args.base);
+    const head = parseOptionalString(args.head);
+    if (!base || !head) {
+      return {
+        functionResponseData: { error: "Missing required arguments: base and/or head", comparison: null },
+        statusMessage: "Missing base/head refs for compare.",
+        toolEvent: { name: "compare_refs", detail: "missing-refs", usageUnits: 1 },
+      };
+    }
+    const resolved = resolveRepositoryForTool(args.repository, repoDetails);
+    if (!resolved) {
+      return {
+        functionResponseData: { error: "Repository is required for compare_refs in profile mode.", comparison: null },
+        statusMessage: "Specify a repository to compare refs in profile mode.",
+        toolEvent: { name: "compare_refs", detail: "missing-repository", usageUnits: 1 },
+      };
+    }
+    const snapshot = await compareRepoRefsSnapshot(resolved.owner, resolved.repo, base, head);
+    if (!snapshot.success) {
+      return {
+        functionResponseData: { error: snapshot.error, comparison: null },
+        statusMessage: "Failed to compare refs.",
+        toolEvent: { name: "compare_refs", detail: `${resolved.owner}/${resolved.repo}:${base}...${head}`, usageUnits: 1 },
+      };
+    }
+    return {
+      functionResponseData: { comparison: snapshot.data, repository: `${resolved.owner}/${resolved.repo}` },
+      statusMessage: `Comparing ${base}...${head}...`,
+      toolEvent: { name: "compare_refs", detail: `${resolved.owner}/${resolved.repo}:${base}...${head}`, usageUnits: 1 },
+    };
+  }
+
+  if (callName === "fetch_workflow_runs") {
+    const limit = parseLimit(args.limit, 20, 30);
+    const status = parseOptionalString(args.status);
+    const branch = parseOptionalString(args.branch);
+    const resolved = resolveRepositoryForTool(args.repository, repoDetails);
+
+    if (resolved) {
+      const snapshot = await getRepoWorkflowRunsSnapshot(resolved.owner, resolved.repo, limit, status, branch);
+      if (!snapshot.success) {
+        return {
+          functionResponseData: { error: snapshot.error, workflowRuns: [] },
+          statusMessage: "Failed to fetch workflow runs.",
+          toolEvent: { name: "fetch_workflow_runs", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
+        };
+      }
+      return {
+        functionResponseData: { workflowRuns: snapshot.data, scope: "repository", repository: `${resolved.owner}/${resolved.repo}` },
+        statusMessage: `Fetching workflow runs from ${resolved.owner}/${resolved.repo}...`,
+        toolEvent: { name: "fetch_workflow_runs", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
+      };
+    }
+
+    const repos = await getUserRepos(repoDetails.owner);
+    const topRepos = repos.slice(0, 5).map((r) => r.name);
+    const perRepoLimit = Math.max(1, Math.ceil(limit / Math.max(1, topRepos.length)));
+    const batches = await Promise.all(topRepos.map(async (repo) => {
+      const snapshot = await getRepoWorkflowRunsSnapshot(repoDetails.owner, repo, perRepoLimit, status, branch);
+      return snapshot.success ? snapshot.data : [];
+    }));
+    const merged = batches.flat().sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).slice(0, limit);
+    return {
+      functionResponseData: { workflowRuns: merged, scope: "overall" },
+      statusMessage: "Fetching workflow runs across repositories...",
+      toolEvent: { name: "fetch_workflow_runs", detail: "overall", usageUnits: 1 },
+    };
+  }
+
+  if (callName === "fetch_repo_languages") {
+    const resolved = resolveRepositoryForTool(args.repository, repoDetails);
+    if (resolved) {
+      const snapshot = await getRepoLanguagesSnapshot(resolved.owner, resolved.repo);
+      if (!snapshot.success) {
+        return {
+          functionResponseData: { error: snapshot.error, languages: [] },
+          statusMessage: "Failed to fetch repository languages.",
+          toolEvent: { name: "fetch_repo_languages", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
+        };
+      }
+      return {
+        functionResponseData: { languages: snapshot.data.languages, repository: `${resolved.owner}/${resolved.repo}` },
+        statusMessage: `Fetching language distribution for ${resolved.owner}/${resolved.repo}...`,
+        toolEvent: { name: "fetch_repo_languages", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
+      };
+    }
+
+    const repos = await getUserRepos(repoDetails.owner);
+    const topRepos = repos.slice(0, 8).map((r) => r.name);
+    const languageBuckets = new Map<string, number>();
+    for (const repo of topRepos) {
+      const snapshot = await getRepoLanguagesSnapshot(repoDetails.owner, repo);
+      if (!snapshot.success) continue;
+      for (const lang of snapshot.data.languages) {
+        languageBuckets.set(lang.name, (languageBuckets.get(lang.name) ?? 0) + lang.bytes);
+      }
+    }
+    const total = Array.from(languageBuckets.values()).reduce((sum, bytes) => sum + bytes, 0);
+    const languages = Array.from(languageBuckets.entries())
+      .map(([name, bytes]) => ({
+        name,
+        bytes,
+        percentage: total > 0 ? Number(((bytes / total) * 100).toFixed(2)) : 0,
+      }))
+      .sort((a, b) => b.bytes - a.bytes)
+      .slice(0, 20);
+    return {
+      functionResponseData: { languages, scope: "overall" },
+      statusMessage: "Fetching language distribution across repositories...",
+      toolEvent: { name: "fetch_repo_languages", detail: "overall", usageUnits: 1 },
+    };
+  }
+
+  if (callName === "fetch_dependency_updates") {
+    const limit = parseLimit(args.limit, 20, 30);
+    const resolved = resolveRepositoryForTool(args.repository, repoDetails);
+
+    if (resolved) {
+      const snapshot = await getRepoDependencyAlertsSnapshot(resolved.owner, resolved.repo, limit);
+      if (!snapshot.success) {
+        return {
+          functionResponseData: { error: snapshot.error, dependencyAlerts: [] },
+          statusMessage: "Failed to fetch dependency alerts.",
+          toolEvent: { name: "fetch_dependency_updates", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
+        };
+      }
+      return {
+        functionResponseData: { dependencyAlerts: snapshot.data, scope: "repository", repository: `${resolved.owner}/${resolved.repo}` },
+        statusMessage: `Fetching dependency alerts from ${resolved.owner}/${resolved.repo}...`,
+        toolEvent: { name: "fetch_dependency_updates", detail: `${resolved.owner}/${resolved.repo}`, usageUnits: 1 },
+      };
+    }
+
+    const repos = await getUserRepos(repoDetails.owner);
+    const topRepos = repos.slice(0, 6).map((r) => r.name);
+    const perRepoLimit = Math.max(1, Math.ceil(limit / Math.max(1, topRepos.length)));
+    const batches = await Promise.all(topRepos.map(async (repo) => {
+      const snapshot = await getRepoDependencyAlertsSnapshot(repoDetails.owner, repo, perRepoLimit);
+      return snapshot.success ? snapshot.data : [];
+    }));
+    const merged = batches.flat().slice(0, limit);
+    return {
+      functionResponseData: { dependencyAlerts: merged, scope: "overall" },
+      statusMessage: "Fetching dependency alerts across repositories...",
+      toolEvent: { name: "fetch_dependency_updates", detail: "overall", usageUnits: 1 },
     };
   }
 
