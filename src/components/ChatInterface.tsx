@@ -1021,7 +1021,7 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
                             </h1>
                             <Link
                                 href={`/repo/${repoContext.owner}/${repoContext.repo}`}
-                                className="hidden lg:flex items-center text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-md bg-white/5 text-zinc-500 hover:bg-white/10 hover:text-white transition-all border border-white/5"
+                                className="hidden lg:flex items-center text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 hover:text-purple-300 transition-all border border-purple-500/20"
                             >
                                 Profile
                             </Link>
