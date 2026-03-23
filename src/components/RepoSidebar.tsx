@@ -98,6 +98,11 @@ function FileTreeNode({
     return (
         <div id={`sidebar-item-${node.path.replace(/\//g, '-')}`}>
             <div
+                draggable
+                onDragStart={(e) => {
+                    e.dataTransfer.setData("text/plain", node.path);
+                    e.dataTransfer.effectAllowed = "copy";
+                }}
                 className={cn(
                     "flex items-center gap-1.5 py-1 px-2 text-sm text-zinc-300 hover:text-white hover:bg-white/5 rounded cursor-pointer select-none transition-colors",
                     depth > 0 && "ml-3",

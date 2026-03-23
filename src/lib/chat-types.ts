@@ -9,6 +9,7 @@ export interface ChatMessageBase {
     role: ChatRole;
     content: string;
     relevantFiles?: string[];
+    taggedFiles?: string[];
     streamStatus?: string;
     streamProgress?: number;
     commitFreshnessLabel?: string;

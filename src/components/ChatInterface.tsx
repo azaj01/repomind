@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { FileCode, ChevronRight, ArrowLeft, Sparkles, Menu, MessageCircle, Shield, Download, Trash2, X, GitFork, Wrench } from "lucide-react";
+import { FileCode, ChevronRight, ArrowLeft, Sparkles, Menu, MessageCircle, Shield, Download, Trash2, X, GitFork, Wrench, Folder } from "lucide-react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { BotIcon } from "@/components/icons/BotIcon";
@@ -50,6 +50,7 @@ const REPO_SUGGESTIONS = [
 interface RepoFileNode {
     path: string;
     sha?: string;
+    type?: "blob" | "tree";
 }
 
 type OwnerProfile = Awaited<ReturnType<typeof fetchProfile>>;
@@ -183,6 +184,7 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
         },
     ]);
     const [input, setInput] = useState("");
+    const [taggedFiles, setTaggedFiles] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
     const [showSuggestions, setShowSuggestions] = useState(true);
     const [scanning, setScanning] = useState(false);
@@ -436,9 +438,11 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
     };
 
     const buildCombinedInput = (trimmedInput: string, selectedReferenceText: string) => {
-        return selectedReferenceText
-            ? `Reference:\n> ${selectedReferenceText.replace(/\n/g, "\n> ")}\n\n${trimmedInput || "Please continue."}`
-            : trimmedInput;
+        let base = trimmedInput || "Please continue.";
+        if (selectedReferenceText) {
+            base = `Reference:\n> ${selectedReferenceText.replace(/\n/g, "\n> ")}\n\n${base}`;
+        }
+        return base;
     };
 
     const isQuickSecurityScanPrompt = (text: string) => {
@@ -585,7 +589,13 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
                 .filter((file) => typeof file.sha === "string" && file.sha.length > 0)
                 .map((file) => [file.path, file.sha as string])
         );
-        const historyForServer = messages.slice(-8).map((message) => ({ role: message.role, content: message.content }));
+        const historyForServer = messages.slice(-8).map((message) => {
+            let content = message.content;
+            if (message.role === "user" && message.taggedFiles && message.taggedFiles.length > 0) {
+                content = `Focus on the following explicitly tagged files:\n${message.taggedFiles.map(f => `- ${f}`).join('\n')}\n\n${content}`;
+            }
+            return { role: message.role, content };
+        });
         setConnectionLost(false);
 
         const clientRequestId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
@@ -803,10 +813,12 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
             id: Date.now().toString(),
             role: "user",
             content: combinedInput,
+            taggedFiles: taggedFiles.length > 0 ? [...taggedFiles] : undefined,
         };
 
         setMessages((prev) => [...prev, userMsg]);
         setInput("");
+        setTaggedFiles([]);
         clearReference();
         setLoading(true);
 
@@ -826,7 +838,10 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
         const previousToolQuotaRemaining = toolQuota?.remaining ?? null;
         let modelMsgId: string | null = null;
         try {
-            const combinedInputForServer = getRepoQueryForServer(trimmedInput, combinedInput);
+            let combinedInputForServer = getRepoQueryForServer(trimmedInput, combinedInput);
+            if (taggedFiles.length > 0) {
+                combinedInputForServer = `Focus on the following explicitly tagged files:\n${taggedFiles.map(f => `- ${f}`).join('\n')}\n\n${combinedInputForServer}`;
+            }
             modelMsgId = startRepoStreamMessage(selectedModelPreference);
             await runRepoStreamingFlow(modelMsgId, combinedInputForServer, selectedModelPreference);
         } catch (error: unknown) {
@@ -1232,6 +1247,38 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
                                                         </span>
                                                     </div>
                                                 )}
+                                                {msg.role === "user" && msg.taggedFiles && msg.taggedFiles.length > 0 && (
+                                                    <div className="flex flex-wrap gap-1.5 mb-2 not-prose">
+                                                        {msg.taggedFiles.map(file => {
+                                                            const isFolder = repoContext.fileTree.find(f => f.path === file)?.type === "tree";
+                                                            return (
+                                                                <button
+                                                                    key={file}
+                                                                    onClick={() => {
+                                                                        if (isFolder) {
+                                                                            window.dispatchEvent(new CustomEvent("reveal-folder", { detail: file }));
+                                                                        } else {
+                                                                            window.dispatchEvent(new CustomEvent("open-file-preview", { detail: file }));
+                                                                        }
+                                                                    }}
+                                                                    className={cn(
+                                                                        "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors outline-none",
+                                                                        isFolder 
+                                                                            ? "bg-orange-500/20 text-orange-200 hover:bg-orange-500/30"
+                                                                            : "bg-white/20 text-white hover:bg-white/30"
+                                                                    )}
+                                                                >
+                                                                    {isFolder ? (
+                                                                        <Folder className="w-3 h-3 shrink-0" />
+                                                                    ) : (
+                                                                        <FileCode className="w-3 h-3 shrink-0" />
+                                                                    )}
+                                                                    <span className="truncate max-w-[200px]">{file}</span>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
                                                 {msg.content && (
                                                 <MessageContent
                                                     content={msg.content + (loading && isLatestMessage && !msg.scanStatus ? "▋" : "")}
@@ -1384,7 +1431,10 @@ export function ChatInterface({ repoContext, onToggleSidebar, initialPrompt }: C
                         }
                         disabled={totalTokens >= MAX_TOKENS}
                         loading={loading}
-                        allowEmptySubmit={Boolean(referenceText)}
+                        allowEmptySubmit={Boolean(referenceText) || taggedFiles.length > 0}
+                        repositoryFiles={repoContext.fileTree.map(f => ({ path: f.path, type: f.type || "blob" }))}
+                        taggedFiles={taggedFiles}
+                        onTaggedFilesChange={setTaggedFiles}
                         modelPreference={modelPreference}
                         setModelPreference={setModelPreference}
                         onRequireAuth={() => {

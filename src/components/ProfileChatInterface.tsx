@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { Github, Users, BookMarked, ArrowLeft, Sparkles, MessageCircle, Trash2, Download, X, Wrench } from "lucide-react";
+import { FileCode, ChevronRight, ArrowLeft, Sparkles, Menu, MessageCircle, Shield, Folder, Github, Users, BookMarked, Trash2, Download, X, Wrench } from "lucide-react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 
@@ -165,7 +165,13 @@ export function ProfileChatInterface({
             content: `Hello! I've analyzed **${profile.login}**'s GitHub profile${profileReadme ? ' and profile README' : ''}${repoReadmes.length > 0 ? `, along with ${repoReadmes.length} repository READMEs` : ''}. Ask me anything about their projects, skills, or contributions!`,
         },
     ]);
+    const messagesRef = useRef(messages);
+    useEffect(() => {
+        messagesRef.current = messages;
+    }, [messages]);
+
     const [input, setInput] = useState("");
+    const [taggedFiles, setTaggedFiles] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
     const [showSuggestions, setShowSuggestions] = useState(true);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -360,9 +366,11 @@ export function ProfileChatInterface({
     };
 
     const buildCombinedInput = (trimmedInput: string, selectedReferenceText: string) => {
-        return selectedReferenceText
-            ? `Reference:\n> ${selectedReferenceText.replace(/\n/g, "\n> ")}\n\n${trimmedInput || "Please continue."}`
-            : trimmedInput;
+        let base = trimmedInput || "Please continue.";
+        if (selectedReferenceText) {
+            base = `Reference:\n> ${selectedReferenceText.replace(/\n/g, "\n> ")}\n\n${base}`;
+        }
+        return base;
     };
 
     const startProfileStreamMessage = (selectedModelPreference: ModelPreference) => {
@@ -403,9 +411,18 @@ export function ProfileChatInterface({
         setMessages((prev) => prev.filter((message) => message.id !== targetMessageId));
     };
 
-    const runProfileStreamingFlow = async (modelMsgId: string, combinedInput: string) => {
-        const isThinkingStream = modelPreference === "thinking";
-        const historyForServer = messages.slice(-8).map((message) => ({ role: message.role, content: message.content }));
+    const runProfileStreamingFlow = async (modelMsgId: string, combinedInputForServer: string, selectedModelPreference: ModelPreference) => {
+        const isThinkingStream = selectedModelPreference === "thinking";
+        const serverMessages = messagesRef.current.slice(-10).map((m) => {
+            let content = m.content;
+            if (m.role === "user" && m.taggedFiles && m.taggedFiles.length > 0) {
+                content = `Focus on the following explicitly tagged repositories/files:\n${m.taggedFiles.map((f) => `- ${f}`).join("\n")}\n\n${content}`;
+            }
+            return {
+                role: m.role,
+                content: content,
+            };
+        });
         setConnectionLost(false);
 
         const clientRequestId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
@@ -431,7 +448,7 @@ export function ProfileChatInterface({
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                query: combinedInput,
+                query: combinedInputForServer,
                 profileContext: {
                     username: profile.login,
                     profile,
@@ -440,8 +457,8 @@ export function ProfileChatInterface({
                     recentCommits,
                     recentCommitFreshnessLabel,
                 },
-                history: historyForServer,
-                modelPreference,
+                history: serverMessages,
+                modelPreference: selectedModelPreference,
                 crossRepoEnabled,
                 runId,
             }),
@@ -459,8 +476,8 @@ export function ProfileChatInterface({
                 username: profile.login,
                 status: response.status,
                 statusText: response.statusText,
-                historyMessageCount: historyForServer.length,
-                queryPreview: combinedInput.slice(0, 160),
+                historyMessageCount: serverMessages.length,
+                queryPreview: combinedInputForServer.slice(0, 160),
                 errorMessage: parsedError.message,
                 errorCode: parsedError.code,
             });
@@ -611,18 +628,24 @@ export function ProfileChatInterface({
             id: Date.now().toString(),
             role: "user",
             content: combinedInput,
+            taggedFiles: taggedFiles.length > 0 ? [...taggedFiles] : undefined,
         };
 
         setMessages((prev) => [...prev, userMsg]);
         setInput("");
+        setTaggedFiles([]);
         clearReference();
         setLoading(true);
 
         const previousToolQuotaRemaining = toolQuota?.remaining ?? null;
         let modelMsgId: string | null = null;
         try {
+            let combinedInputForServer = combinedInput;
+            if (taggedFiles.length > 0) {
+                combinedInputForServer = `Focus on the following explicitly tagged repositories/files:\n${taggedFiles.map(f => `- ${f}`).join('\n')}\n\n${combinedInputForServer}`;
+            }
             modelMsgId = startProfileStreamMessage(modelPreference);
-            await runProfileStreamingFlow(modelMsgId, combinedInput);
+            await runProfileStreamingFlow(modelMsgId, combinedInputForServer, modelPreference);
         } catch (error: unknown) {
             console.error(error);
             const errorStatus = getErrorStatus(error);
@@ -952,6 +975,22 @@ export function ProfileChatInterface({
                                                 />
                                             </button>
                                         )}
+                                        {msg.role === "user" && msg.taggedFiles && msg.taggedFiles.length > 0 && (
+                                            <div className="flex flex-wrap gap-1.5 mb-2 not-prose">
+                                                {msg.taggedFiles.map(file => (
+                                                    <button
+                                                        key={file}
+                                                        onClick={() => {
+                                                            window.dispatchEvent(new CustomEvent("open-file-preview", { detail: file }));
+                                                        }}
+                                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors outline-none bg-white/20 text-white hover:bg-white/30"
+                                                    >
+                                                        <FileCode className="w-3 h-3 shrink-0" />
+                                                        <span className="truncate max-w-[200px]">{file}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
                                         <div className="prose prose-invert prose-sm max-w-none leading-relaxed break-words [overflow-wrap:anywhere] overflow-x-hidden w-full min-w-0">
                                             {msg.content && (
                                                 <MessageContent
@@ -1046,7 +1085,10 @@ export function ProfileChatInterface({
                         }
                         disabled={totalTokens >= MAX_TOKENS}
                         loading={loading}
-                        allowEmptySubmit={Boolean(referenceText)}
+                        allowEmptySubmit={Boolean(referenceText) || taggedFiles.length > 0}
+                        repositoryFiles={repoReadmes.map(r => ({ path: r.repo, type: "blob" as const }))}
+                        taggedFiles={taggedFiles}
+                        onTaggedFilesChange={setTaggedFiles}
                         modelPreference={modelPreference}
                         setModelPreference={setModelPreference}
                         onRequireAuth={() => {
