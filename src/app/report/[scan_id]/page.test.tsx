@@ -89,8 +89,7 @@ describe("private report page access", () => {
         const metadata = await generateMetadata({ params: Promise.resolve({ scan_id: "scan_1" }) });
         expect(metadata.title).toBe("Private Security Report");
         expect(metadata.robots?.index).toBe(false);
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("type=marketing");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("variant=security-scanner");
+        expect(metadata.openGraph?.images?.[0]?.url).toBe("/og/homepage.png");
     });
 
     it("builds detailed metadata for authorized scans", async () => {
@@ -102,9 +101,7 @@ describe("private report page access", () => {
         expect(metadata.title).toBe("Security Report: acme/widget");
         expect(metadata.description).toContain("1 critical, 0 high, 0 medium, 0 low");
         expect(metadata.robots?.index).toBe(false);
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("type=report");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("owner=acme");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("repo=widget");
+        expect(metadata.openGraph?.images?.[0]?.url).toBe("/og/security-scan-report.png");
     });
 
     it("calls notFound when unauthorized", async () => {

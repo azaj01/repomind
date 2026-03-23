@@ -66,15 +66,7 @@ export async function generateMetadata({
                 title,
                 description,
                 canonical: canonicalQuery,
-                ogImage: buildOgImageUrl("profile", {
-                    username: query,
-                    name: profile.name,
-                    bio: profile.bio,
-                    repos: profile.public_repos,
-                    followers: profile.followers,
-                    following: profile.following,
-                    mode: intent,
-                }),
+                ogImage: buildOgImageUrl("marketing", { variant: "home" }),
                 ogTitle: title,
                 ogDescription: description,
             });
@@ -87,10 +79,7 @@ export async function generateMetadata({
                 title,
                 description,
                 canonical: canonicalQuery,
-                ogImage: buildOgImageUrl("profile", {
-                    username: query,
-                    mode: intent,
-                }),
+                ogImage: buildOgImageUrl("marketing", { variant: "home" }),
                 ogTitle: title,
                 ogDescription: description,
             });
@@ -111,15 +100,7 @@ export async function generateMetadata({
             title,
             description,
             canonical: canonicalQuery,
-            ogImage: buildOgImageUrl("repo", {
-                owner,
-                repo,
-                description: repoData.description,
-                stars: repoData.stargazers_count,
-                forks: repoData.forks_count,
-                language: repoData.language,
-                mode: intent,
-            }),
+            ogImage: buildOgImageUrl("marketing", { variant: "home" }),
             ogTitle: title,
             ogDescription: description,
         });
@@ -132,11 +113,7 @@ export async function generateMetadata({
             title,
             description,
             canonical: canonicalQuery,
-            ogImage: buildOgImageUrl("repo", {
-                owner,
-                repo,
-                mode: intent,
-            }),
+            ogImage: buildOgImageUrl("marketing", { variant: "home" }),
             ogTitle: title,
             ogDescription: description,
         });

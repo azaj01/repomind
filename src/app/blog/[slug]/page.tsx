@@ -27,7 +27,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       title: "Post Not Found",
       description: "This blog post could not be found.",
       canonical: "/blog",
-      ogImage: buildOgImageUrl("marketing", { variant: "blog" }),
+      ogImage: buildOgImageUrl("marketing", { variant: "home" }),
       ogTitle: "Post Not Found",
       ogDescription: "This blog post could not be found.",
       noIndex: true,

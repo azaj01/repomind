@@ -11,7 +11,6 @@ describe("blog index metadata", () => {
         expect(metadata.title).toBe("Engineering Insights for Repository Analysis and Security");
         expect(metadata.description).toContain("GitHub repository analysis");
         expect(metadata.openGraph?.title).toBe("RepoMind Engineering Insights");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("type=marketing");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("variant=blog");
+        expect(metadata.openGraph?.images?.[0]?.url).toBe("/og/blogs.png");
     });
 });

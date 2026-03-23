@@ -34,8 +34,7 @@ describe("chat metadata", () => {
         expect(metadata.title).toBe("Chat");
         expect(metadata.robots?.index).toBe(false);
         expect(metadata.robots?.follow).toBe(true);
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("type=marketing");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("variant=home");
+        expect(metadata.openGraph?.images?.[0]?.url).toBe("/og/homepage.png");
     });
 
     it("builds profile metadata and honors the prompt intent", async () => {
@@ -58,9 +57,7 @@ describe("chat metadata", () => {
         expect(metadata.title).toBe("Ada Lovelace (@ada) Architecture");
         expect(metadata.description).toContain("Pioneer of computing");
         expect(metadata.description).toContain("explore projects, skills, and contributions");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("type=profile");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("username=ada");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("mode=architecture");
+        expect(metadata.openGraph?.images?.[0]?.url).toBe("/og/homepage.png");
     });
 
     it("builds repo metadata and biases the card from the prompt intent", async () => {
@@ -81,9 +78,6 @@ describe("chat metadata", () => {
         expect(metadata.title).toBe("acme/widget Security");
         expect(metadata.description).toContain("Surface risks");
         expect(metadata.description).toContain("Secure APIs for teams.");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("type=repo");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("owner=acme");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("repo=widget");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("mode=security");
+        expect(metadata.openGraph?.images?.[0]?.url).toBe("/og/homepage.png");
     });
 });

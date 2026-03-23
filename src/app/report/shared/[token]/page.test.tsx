@@ -77,8 +77,7 @@ describe("shared report page token resolution", () => {
 
         expect(metadata.title).toBe("Invalid Share Link");
         expect(metadata.robots?.index).toBe(false);
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("type=marketing");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("variant=security-scanner");
+        expect(metadata.openGraph?.images?.[0]?.url).toBe("/og/homepage.png");
     });
 
     it("builds detailed metadata for valid shared reports", async () => {
@@ -96,10 +95,7 @@ describe("shared report page token resolution", () => {
 
         expect(metadata.title).toBe("Shared Security Report: acme/widget");
         expect(metadata.robots?.index).toBe(false);
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("type=report");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("owner=acme");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("repo=widget");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("shared=true");
+        expect(metadata.openGraph?.images?.[0]?.url).toBe("/og/security-scan-report.png");
     });
 
     it("tracks invalid link events", async () => {

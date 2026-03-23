@@ -50,8 +50,6 @@ describe("repository metadata", () => {
 
         expect(metadata.title).toBe("acme/widget");
         expect(metadata.robots?.index).toBe(true);
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("type=repo");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("owner=acme");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("repo=widget");
+        expect(metadata.openGraph?.images?.[0]?.url).toBe("/og/repository-analysis.png");
     });
 });

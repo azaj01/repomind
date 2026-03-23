@@ -1,8 +1,8 @@
 import { Metadata } from 'next';
 import { headers } from 'next/headers';
 import type { GitHubRepo, RepoCommit, RepoLanguage } from '@/lib/github';
-import { getErrorStatus, getRepo, getRepoFullContext } from '@/lib/github';
-import { cacheRepoUnavailable, getCachedRepoUnavailable } from '@/lib/cache';
+import { getErrorStatus, getRepo, getRepoFullContext, getRepoReadme, isGitHubRepo } from '@/lib/github';
+import { cacheRepoUnavailable, getCachedRepoFullContext, getCachedRepoUnavailable } from '@/lib/cache';
 import { isCuratedRepo } from '@/lib/repo-catalog';
 import { ArrowLeft, Star, GitFork, AlertCircle, Clock, FileCode, Search, Lock, Home, Github } from 'lucide-react';
 import Link from 'next/link';
@@ -193,6 +193,9 @@ export default async function RepoPage({ params }: Props) {
         return <RepoUnavailableState owner={owner} repo={repo} />;
     }
 
+    const userAgent = (await headers()).get('user-agent') || '';
+    const isCrawler = isLikelyCrawler(userAgent);
+
     let repoData: GitHubRepo;
     try {
         repoData = await getRepo(owner, repo);
@@ -204,26 +207,32 @@ export default async function RepoPage({ params }: Props) {
         return <RepoUnavailableState owner={owner} repo={repo} />;
     }
 
-    const userAgent = (await headers()).get('user-agent') || '';
-    const isCrawler = isLikelyCrawler(userAgent);
-
     let detailsData: { languages: RepoLanguage[]; commits: RepoCommit[] } = { languages: [], commits: [] };
     let readmeContent: string | null = null;
 
-    const result = await getRepoFullContext(owner, repo);
-    
-    if (!result.success) {
-        if (result.status === 404) {
-            await cacheRepoUnavailable(owner, repo);
+    if (isCrawler) {
+        const cachedContext = await getCachedRepoFullContext(owner, repo);
+        if (cachedContext && isGitHubRepo(cachedContext.metadata)) {
+            readmeContent = typeof cachedContext.readme === "string" ? cachedContext.readme : null;
+        } else {
+            readmeContent = await getRepoReadme(owner, repo);
         }
-        console.error('Failed to load full repo context:', result.error);
-        return <RepoUnavailableState owner={owner} repo={repo} />;
-    }
+    } else {
+        const result = await getRepoFullContext(owner, repo);
 
-    const context = result.data;
-    repoData = context.metadata;
-    detailsData = { languages: context.languages, commits: context.commits };
-    readmeContent = context.readme;
+        if (!result.success) {
+            if (result.status === 404) {
+                await cacheRepoUnavailable(owner, repo);
+            }
+            console.error('Failed to load full repo context:', result.error);
+            return <RepoUnavailableState owner={owner} repo={repo} />;
+        }
+
+        const context = result.data;
+        repoData = context.metadata;
+        detailsData = { languages: context.languages, commits: context.commits };
+        readmeContent = context.readme;
+    }
 
     const fullReadme = normalizeReadmeForPreview(readmeContent);
     const crawlerReadmeExcerpt = isCrawler ? buildCrawlerReadmeExcerpt(fullReadme) : null;

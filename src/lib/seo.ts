@@ -8,6 +8,33 @@ const BRAND_NAME = "RepoMind";
 const BRAND_TWITTER_HANDLE = "@_sam2903";
 const OG_IMAGE_WIDTH = 1200;
 const OG_IMAGE_HEIGHT = 630;
+const STATIC_OG_FALLBACK = "/og/homepage.png";
+
+const STATIC_OG_VARIANTS: Record<string, string> = {
+    "home": "/og/homepage.png",
+    "coming-soon": "/og/coming-soon.png",
+    "security-scanner": "/og/security-scanner.png",
+    "about": "/og/about.png",
+    "solutions": "/og/solutions.png",
+    "ai-code-review-tool": "/og/ai-code-review-tool.png",
+    "compare": "/og/compare.png",
+    "faq": "/og/faq.png",
+    "explore": "/og/explore.png",
+    "trending": "/og/trending.png",
+    "github-repository-analysis": "/og/github-repository-analysis.png",
+    "blog": "/og/blogs.png",
+    "privacy": "/og/privacy.png",
+    "terms": "/og/terms.png",
+};
+
+const STATIC_OG_TYPES: Partial<Record<OgCardVariant, string>> = {
+    marketing: "/og/homepage.png",
+    repo: "/og/repository-analysis.png",
+    profile: "/og/homepage.png",
+    report: "/og/security-scan-report.png",
+    blog: "/og/blogs.png",
+    topic: "/og/trending-topics.png",
+};
 
 export function normalizeMetaText(value: string | null | undefined): string {
     return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
@@ -24,15 +51,12 @@ export function buildOgImageUrl(
     type: OgCardVariant,
     params: Record<string, string | number | boolean | null | undefined> = {}
 ): string {
-    const searchParams = new URLSearchParams();
-    searchParams.set("type", type);
-
-    for (const [key, value] of Object.entries(params)) {
-        if (value === null || value === undefined || value === "") continue;
-        searchParams.set(key, String(value));
+    const variant = typeof params.variant === "string" ? params.variant : undefined;
+    if (variant && STATIC_OG_VARIANTS[variant]) {
+        return STATIC_OG_VARIANTS[variant];
     }
 
-    return `/api/og?${searchParams.toString()}`;
+    return STATIC_OG_TYPES[type] ?? STATIC_OG_FALLBACK;
 }
 
 export function buildNoIndexRobots(): NonNullable<Metadata["robots"]> {

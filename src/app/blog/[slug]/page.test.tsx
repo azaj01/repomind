@@ -58,7 +58,7 @@ describe("blog post metadata", () => {
         expect(metadata.openGraph?.type).toBe("article");
         expect(metadata.openGraph?.publishedTime).toBe(post.publishedAt.toISOString());
         expect(metadata.openGraph?.modifiedTime).toBe(post.updatedAt.toISOString());
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("type=blog");
+        expect(metadata.openGraph?.images?.[0]?.url).toBe("/og/blogs.png");
         expect(metadata.twitter?.images?.[0]).toBe(post.image);
     });
 
@@ -71,7 +71,6 @@ describe("blog post metadata", () => {
 
         expect(metadata.title).toBe("Post Not Found");
         expect(metadata.robots?.index).toBe(false);
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("type=marketing");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("variant=blog");
+        expect(metadata.openGraph?.images?.[0]?.url).toBe("/og/homepage.png");
     });
 });

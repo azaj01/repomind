@@ -34,11 +34,7 @@ describe("topic metadata", () => {
 
         expect(metadata.title).toBe("Best Open Source Security Repositories");
         expect(metadata.robots?.index).toBe(true);
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("type=topic");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("topic=security");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("repos=2");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("stars=1200");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("topRepo=acme%2Fwidget");
+        expect(metadata.openGraph?.images?.[0]?.url).toBe("/og/trending-topics.png");
     });
 
     it("marks non-indexable topics as noindex", async () => {
@@ -50,7 +46,6 @@ describe("topic metadata", () => {
         });
 
         expect(metadata.robots?.index).toBe(false);
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("type=topic");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("topic=internal+tools");
+        expect(metadata.openGraph?.images?.[0]?.url).toBe("/og/trending-topics.png");
     });
 });

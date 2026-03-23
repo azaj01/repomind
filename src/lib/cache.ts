@@ -10,7 +10,7 @@ import { gzipSync, gunzipSync } from "node:zlib";
 // Cache TTLs (in seconds)
 const TTL_FILE = 3600; // 1 hour
 const TTL_FILE_ANON = 1800; // 30 minutes
-const TTL_REPO = 900; // 15 minutes
+const TTL_REPO = 3600; // 60 minutes
 const TTL_PROFILE = 1800; // 30 minutes
 const TTL_COMMIT_SNAPSHOT = 900; // 15 minutes
 const TTL_SCAN = 604800; // 7 days

@@ -18,11 +18,7 @@ function buildSharedLinkFailureMetadata(title: string, description: string, toke
         title,
         description,
         canonical: `/report/shared/${token}`,
-        ogImage: buildOgImageUrl("marketing", {
-            variant: "security-scanner",
-            title,
-            description,
-        }),
+        ogImage: buildOgImageUrl("marketing", { variant: "home" }),
         ogTitle: title,
         ogDescription: description,
         noIndex: true,

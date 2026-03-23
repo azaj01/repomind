@@ -623,7 +623,7 @@ export const getRepoFullContext = unstable_cache(
   async (owner: string, repo: string) => getRepoFullContextRaw(owner, repo),
   ['github-repo-full'],
   {
-    revalidate: 900, // 15 minutes
+    revalidate: 3600, // 60 minutes
     tags: ['repo-full']
   }
 );

@@ -12,12 +12,10 @@ describe("home page metadata", () => {
         expect(metadata.description).toContain("Analyze GitHub repositories with full-context AI");
         expect(metadata.openGraph?.title).toBe("GitHub Repository Analysis, Code Review & Security Scanning | RepoMind");
         expect(metadata.twitter?.title).toBe("GitHub Repository Analysis, Code Review & Security Scanning | RepoMind");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("type=marketing");
-        expect(metadata.openGraph?.images?.[0]?.url).toContain("variant=home");
+        expect(metadata.openGraph?.images?.[0]?.url).toBe("/og/homepage.png");
         expect(metadata.openGraph?.images?.[0]?.width).toBe(1200);
         expect(metadata.openGraph?.images?.[0]?.height).toBe(630);
-        expect(metadata.twitter?.images?.[0]).toContain("type=marketing");
-        expect(metadata.twitter?.images?.[0]).toContain("variant=home");
+        expect(metadata.twitter?.images?.[0]).toBe("/og/homepage.png");
         expect(metadata.twitter?.creator).toBe("@_sam2903");
         expect(metadata.twitter?.site).toBe("@_sam2903");
     });
