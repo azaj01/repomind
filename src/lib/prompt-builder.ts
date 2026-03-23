@@ -591,11 +591,12 @@ ${jsonSchema}
 \`\`\`
 
 OUTPUT CONTRACT:
-- Return only one code block (\`\`\`${output.primaryFormat}\`\`\`) unless fallback is required.
-- If using fallback, return one \`\`\`${output.fallbackFormat}\`\`\` block only.
-- Do not include explanations, status text, or extra prose outside the code block.
+- Return only one code block (\`\`\`\${output.primaryFormat}\`\`\`) unless fallback is required.
+- If using fallback, return one \`\`\`\${output.fallbackFormat}\`\`\` block only.
+- You MUST start your response with a brief, helpful text introduction or explanation before outputting the code block. Do NOT start the response directly with the visual code block.
+- Do not include unnecessary status messages (e.g., "Here is the diagram").
 - Do not include theme/style directives (\`style\`, \`classDef\`, \`class\`, \`linkStyle\`, \`%%{init...}%%\`).
-${unsupportedFallback ? `- If user requested unsupported Mermaid \`${unsupportedFallback.requestedTypeLabel}\`, begin with a single line note that RepoMind maps it to ${unsupportedFallback.fallbackType}, then emit the mapped diagram.` : ""}
+\${unsupportedFallback ? \`- If user requested unsupported Mermaid \\\`\${unsupportedFallback.requestedTypeLabel}\\\`, begin with a single line note that RepoMind maps it to \${unsupportedFallback.fallbackType}, then emit the mapped diagram.\` : ""}
 
 REPO GROUNDING:
 - Owner: ${repoDetails.owner}
@@ -633,8 +634,10 @@ function buildResponseStructureRules(question: string): string {
                 : ""}
 
             - **RESPONSE FORMAT**:
-              Output only the final answer and, if needed, a markdown table or ${allowTwoVisuals ? "up to two visual code blocks" : "a single visual code block"} (${visualBlockLanguage}).
-              Do not add commentary, status messages, or preambles.
+              You MUST start your response with a brief introductory text or explanation. 
+              Then, if needed, output a markdown table or ${allowTwoVisuals ? "up to two visual code blocks" : "a single visual code block"} (${visualBlockLanguage}).
+              Do NOT start the response directly with a visual code block.
+              Do not add unnecessary status messages (e.g., "Here is your diagram:").
 `;
   }
 
