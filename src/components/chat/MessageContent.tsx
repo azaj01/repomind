@@ -5,7 +5,8 @@ import { Mermaid } from "@/components/Mermaid";
 import { CodeBlock } from "@/components/CodeBlock";
 import { compileMermaidFromJSON } from "@/lib/diagram-utils";
 import { repairMarkdown } from "@/lib/markdown-utils";
-import { Loader2 } from "lucide-react";
+import { Loader2, ArrowUpRight } from "lucide-react";
+import { FolderIcon } from "@/components/FileIcon";
 
 interface MessageIdentity {
     id: string;
@@ -181,7 +182,7 @@ function MessageContentBase({
             }
 
             // Detect if this is likely a file or folder path
-            const hasExtension = /\.(ts|tsx|js|jsx|py|md|css|json|yaml|yml|sh|html|go|rs|java|c|cpp|h|sql|env|json)$/.test(childrenStr);
+            const hasExtension = /\.(ts|tsx|js|jsx|py|md|css|json|yaml|yml|sh|html|go|rs|java|c|cpp|h|sql|env|toml)$/.test(childrenStr);
             const hasSlash = childrenStr.includes('/');
             const isKnownFolder = ['src', 'lib', 'app', 'components', 'pages', 'public', 'tests', 'docs'].includes(childrenStr.toLowerCase());
 
@@ -203,11 +204,11 @@ function MessageContentBase({
                                 e.preventDefault();
                                 window.dispatchEvent(new CustomEvent('open-file-preview', { detail: fullPath }));
                             }}
-                            className="bg-zinc-800/30 hover:bg-zinc-700/50 px-1.5 py-0.5 rounded border border-white/5 text-sm font-mono text-purple-300 hover:text-purple-200 transition-all cursor-pointer group"
+                            className="inline-flex items-baseline gap-1 underline decoration-dashed decoration-zinc-500/50 underline-offset-[3px] hover:decoration-zinc-400 text-sm font-mono text-zinc-300 hover:text-zinc-100 transition-all cursor-pointer group"
                             title={`Open ${fullPath}`}
                         >
+                            <ArrowUpRight className="w-3.5 h-3.5 text-zinc-500 group-hover:text-zinc-400 transition-colors" />
                             {children}
-                            <span className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-zinc-500">↗</span>
                         </button>
                     );
                 }
@@ -228,11 +229,11 @@ function MessageContentBase({
                                 e.preventDefault();
                                 window.dispatchEvent(new CustomEvent('reveal-folder', { detail: fullFolderPath }));
                             }}
-                            className="bg-zinc-800/30 hover:bg-zinc-700/50 px-1.5 py-0.5 rounded border border-white/5 text-sm font-mono text-blue-300 hover:text-blue-200 transition-all cursor-pointer group"
+                            className="inline-flex items-baseline gap-1 underline decoration-dashed decoration-zinc-500/50 underline-offset-[3px] hover:decoration-zinc-400 text-sm font-mono text-zinc-300 hover:text-zinc-100 transition-all cursor-pointer group"
                             title={`Reveal ${fullFolderPath}`}
                         >
+                            <FolderIcon name={childrenStr} isExpanded={false} className="w-3.5 h-3.5 text-zinc-500 group-hover:text-zinc-400 transition-colors" />
                             {children}
-                            <span className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-zinc-500">📁</span>
                         </button>
                     );
                 }

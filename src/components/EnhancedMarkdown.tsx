@@ -11,6 +11,7 @@ import { DeveloperCard } from "./DeveloperCard";
 import { SmartLink } from "./SmartLink";
 import { Mermaid } from "./Mermaid";
 import { FileIcon, FolderIcon } from "./FileIcon";
+import { ArrowUpRight } from "lucide-react";
 import { generateMermaidFromJSON } from "@/lib/diagram-utils";
 
 interface ParsedContent {
@@ -198,12 +199,11 @@ export function EnhancedMarkdown({ content, components, currentOwner, currentRep
                                 e.preventDefault();
                                 window.dispatchEvent(new CustomEvent('open-file-preview', { detail: fullPath }));
                             }}
-                            className="inline-flex items-center gap-1.5 bg-zinc-800/30 hover:bg-zinc-700/50 px-1.5 py-0.5 rounded border border-white/5 text-sm font-mono text-purple-300 hover:text-purple-200 transition-all cursor-pointer group"
+                            className="inline-flex items-baseline gap-1 underline decoration-dashed decoration-zinc-500/50 underline-offset-[3px] hover:decoration-zinc-400 text-sm font-mono text-zinc-300 hover:text-zinc-100 transition-all cursor-pointer group"
                             title={`Open ${fullPath}`}
                         >
-                            <FileIcon filename={childrenStr} className="w-3.5 h-3.5" />
+                            <ArrowUpRight className="w-3.5 h-3.5 text-zinc-500 group-hover:text-zinc-400 transition-colors" />
                             {children}
-                            <span className="ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-zinc-500">↗</span>
                         </button>
                     );
                 }
@@ -224,12 +224,11 @@ export function EnhancedMarkdown({ content, components, currentOwner, currentRep
                                 e.preventDefault();
                                 window.dispatchEvent(new CustomEvent('reveal-folder', { detail: fullFolderPath }));
                             }}
-                            className="inline-flex items-center gap-1.5 bg-zinc-800/30 hover:bg-zinc-700/50 px-1.5 py-0.5 rounded border border-white/5 text-sm font-mono text-blue-300 hover:text-blue-200 transition-all cursor-pointer group"
+                            className="inline-flex items-baseline gap-1 underline decoration-dashed decoration-zinc-500/50 underline-offset-[3px] hover:decoration-zinc-400 text-sm font-mono text-zinc-300 hover:text-zinc-100 transition-all cursor-pointer group"
                             title={`Reveal ${fullFolderPath}`}
                         >
-                            <FolderIcon name={childrenStr} isExpanded={false} className="w-3.5 h-3.5" />
+                            <FolderIcon name={childrenStr} isExpanded={false} className="w-3.5 h-3.5 text-zinc-500 group-hover:text-zinc-400 transition-colors" />
                             {children}
-                            <span className="ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-zinc-500">↗</span>
                         </button>
                     );
                 }
