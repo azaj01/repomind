@@ -20,6 +20,8 @@ import { InstallPWA } from "@/components/InstallPWA";
 import PublicStats from "@/components/PublicStats";
 import AuthButton from "@/components/AuthButton";
 import Footer from "@/components/Footer";
+import FeaturedIn from "@/components/FeaturedIn";
+import MediaShowcase from "@/components/MediaShowcase";
 import JsonLdScript from "@/components/JsonLdScript";
 import type { SearchHistoryItem } from "@/lib/services/history-service";
 import { INVALID_SESSION_ERROR_PARAM } from "@/lib/session-guard";
@@ -109,7 +111,6 @@ export default function HomeClient({
             </div>
 
             <section className="min-h-[100svh] flex flex-col items-center justify-center px-4 py-12 sm:py-14 md:py-16 lg:py-4 relative overflow-hidden z-10">
-
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -174,17 +175,50 @@ export default function HomeClient({
                 </motion.div>
             </section>
 
+            <FeaturedIn />
             <TrustedByMarquee trendingRepos={trendingRepos} />
             <InteractiveDemo />
-
-            <div className="relative z-10 w-full bg-zinc-950">
-                <CAGComparison />
-            </div>
 
             <div className="relative z-10 w-full bg-black">
                 <BentoFeatures />
                 <SecurityBanner />
             </div>
+
+            <section className="relative z-10 w-full bg-zinc-950 py-24 px-6 border-t border-white/5">
+                <div className="max-w-7xl mx-auto">
+                    <div className="grid grid-cols-1 gap-10 items-start">
+                        <div>
+                            <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-5">Use Cases That Drive Decisions</h2>
+                            <p className="text-zinc-400 text-lg mb-8">
+                                RepoMind helps teams reduce uncertainty before adoption, release, and remediation decisions.
+                            </p>
+                            <div className="space-y-4">
+                                <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5 group hover:border-zinc-700 transition-colors">
+                                    <h3 className="text-xl font-semibold mb-2 group-hover:text-cyan-400 transition-colors">Repository Due Diligence</h3>
+                                    <p className="text-zinc-400 text-sm mb-4">Evaluate unfamiliar repositories before adopting dependencies or onboarding teams. Get system-level snapshots for immediate clarity.</p>
+                                    <Link href="/github-repository-analysis" className="text-cyan-400 text-xs font-bold hover:text-cyan-300 transition-colors flex items-center gap-1">
+                                        Exploration Workflow <ArrowRight size={12} />
+                                    </Link>
+                                </article>
+                                <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5 group hover:border-zinc-700 transition-colors">
+                                    <h3 className="text-xl font-semibold mb-2 group-hover:text-purple-400 transition-colors">Context-Aware Code Review</h3>
+                                    <p className="text-zinc-400 text-sm mb-4">Review implementation quality with repository context, not isolated snippets. Surface logic flaws and blind spots.</p>
+                                    <Link href="/ai-code-review-tool" className="text-purple-400 text-xs font-bold hover:text-purple-300 transition-colors flex items-center gap-1">
+                                        Review Workflow <ArrowRight size={12} />
+                                    </Link>
+                                </article>
+                                <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5 group hover:border-zinc-700 transition-colors">
+                                    <h3 className="text-xl font-semibold mb-2 group-hover:text-red-400 transition-colors">Security Prioritization</h3>
+                                    <p className="text-zinc-400 text-sm mb-4">Surface actionable risk signals and triage findings with engineering context. Get severity-framed remediation direction.</p>
+                                    <Link href="/security-scanner" className="text-red-400 text-xs font-bold hover:text-red-300 transition-colors flex items-center gap-1">
+                                        Triage Workflow <ArrowRight size={12} />
+                                    </Link>
+                                </article>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
 
             <section className="relative z-10 w-full bg-black py-24 px-6 border-t border-white/5">
                 <div className="max-w-7xl mx-auto">
@@ -215,64 +249,13 @@ export default function HomeClient({
                 </div>
             </section>
 
-            <section className="relative z-10 w-full bg-zinc-950 py-24 px-6 border-t border-white/5">
-                <div className="max-w-7xl mx-auto">
-                    <div className="grid grid-cols-1 gap-10 items-start">
-                        <div>
-                            <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-5">Use Cases That Drive Decisions</h2>
-                            <p className="text-zinc-400 text-lg mb-8">
-                                RepoMind helps teams reduce uncertainty before adoption, release, and remediation decisions.
-                            </p>
-                            <div className="space-y-4">
-                                <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
-                                    <h3 className="text-xl font-semibold mb-2">Repository Due Diligence</h3>
-                                    <p className="text-zinc-400">Evaluate unfamiliar repositories before adopting dependencies or onboarding teams.</p>
-                                </article>
-                                <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
-                                    <h3 className="text-xl font-semibold mb-2">Context-Aware Code Review</h3>
-                                    <p className="text-zinc-400">Review implementation quality with repository context, not isolated snippets.</p>
-                                </article>
-                                <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
-                                    <h3 className="text-xl font-semibold mb-2">Security Prioritization</h3>
-                                    <p className="text-zinc-400">Surface actionable risk signals and triage findings with engineering context.</p>
-                                </article>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
+            <MediaShowcase />
 
-            <section className="relative z-10 w-full bg-black py-24 px-6 border-t border-white/5">
-                <div className="max-w-6xl mx-auto">
-                    <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6 text-center">Output Examples</h2>
-                    <p className="text-zinc-400 text-lg mb-10 text-center max-w-3xl mx-auto">
-                        Use RepoMind to generate architecture maps, code-review insights, and security recommendations that teams can act on quickly.
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                        <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
-                            <h3 className="text-lg font-semibold mb-3">Architecture Snapshot</h3>
-                            <p className="text-zinc-400 text-sm mb-4">Clear system-level understanding for onboarding and due diligence.</p>
-                            <Link href="/github-repository-analysis" className="text-cyan-300 text-sm hover:text-cyan-200 transition-colors">
-                                See repository analysis workflow
-                            </Link>
-                        </article>
-                        <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
-                            <h3 className="text-lg font-semibold mb-3">Code Review Insights</h3>
-                            <p className="text-zinc-400 text-sm mb-4">Context-aware findings on logic, dependencies, and potential blind spots.</p>
-                            <Link href="/ai-code-review-tool" className="text-cyan-300 text-sm hover:text-cyan-200 transition-colors">
-                                Explore AI code review
-                            </Link>
-                        </article>
-                        <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
-                            <h3 className="text-lg font-semibold mb-3">Security Triage Brief</h3>
-                            <p className="text-zinc-400 text-sm mb-4">Severity framing and remediation direction for faster action.</p>
-                            <Link href="/security-scanner" className="text-cyan-300 text-sm hover:text-cyan-200 transition-colors">
-                                Explore security scanner
-                            </Link>
-                        </article>
-                    </div>
-                </div>
-            </section>
+            <div className="relative z-10 w-full bg-zinc-950">
+                <CAGComparison />
+            </div>
+
+
 
             <section className="relative z-10 w-full bg-black py-24 px-6 border-t border-white/5">
                 <div className="max-w-5xl mx-auto">

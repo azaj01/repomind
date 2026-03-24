@@ -42,6 +42,11 @@ export const footerLinks = {
         { name: "Repository Analysis", href: "/github-repository-analysis" },
         { name: "AI Code Review Tool", href: "/ai-code-review-tool" },
         { name: "Security Scanner", href: "/security-scanner" },
+    ],
+    media: [
+        { name: "StartupAsRadar", href: "https://www.startupasradar.com/startup/3648" },
+        { name: "BuiltAtLightSpeed", href: "https://www.builtatlightspeed.com/theme/403errors-repomind" },
+        { name: "YouTube Demo", href: "https://www.youtube.com/watch?v=3f66xlgpjw0" },
     ]
 };
 
@@ -150,6 +155,26 @@ export default function Footer() {
                                         <Link href={link.href} className="text-zinc-400 hover:text-cyan-400 text-sm transition-colors flex items-center justify-between group">
                                             {link.name}
                                         </Link>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        {/* Media */}
+                        <div className="space-y-4 col-span-2 sm:col-span-1">
+                            <h3 className="text-white text-sm font-semibold tracking-wide uppercase">Media</h3>
+                            <ul className="space-y-3">
+                                {footerLinks.media.map((link) => (
+                                    <li key={link.name}>
+                                        <a 
+                                            href={link.href} 
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-zinc-400 hover:text-cyan-400 text-sm transition-colors flex items-center justify-between group"
+                                        >
+                                            {link.name}
+                                            <ArrowUpRight size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        </a>
                                     </li>
                                 ))}
                             </ul>
