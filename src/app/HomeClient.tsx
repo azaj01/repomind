@@ -371,7 +371,7 @@ export default function HomeClient({
                         </div>
 
                         {hasMoreRepos ? (
-                            <div className="mt-12 flex flex-col items-center gap-4">
+                            <div className="mt-12 flex flex-col items-center gap-8">
                                 <button 
                                     onClick={() => setVisibleReposCount(prev => prev + 6)}
                                     className="inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-white text-black font-bold hover:bg-zinc-200 transition-colors group"
