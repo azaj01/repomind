@@ -14,12 +14,18 @@ export const metadata: Metadata = createSeoMetadata({
   ogDescription: "Explore the projects getting the most heat on GitHub this week.",
 });
 
-export default async function TrendingPage() {
-  const trendingRepos = await getCuratedRepos('weekly');
+export default async function TrendingPage({
+    searchParams
+}: {
+    searchParams: Promise<{ tier?: string }>
+}) {
+    const { tier: tierParam } = await searchParams;
+    const tier = (tierParam as any) || 'weekly';
+    const trendingRepos = await getCuratedRepos(tier);
 
-  return (
-    <Suspense fallback={null}>
-      <TrendingClient initialRepos={trendingRepos} />
-    </Suspense>
-  );
+    return (
+        <Suspense fallback={null}>
+            <TrendingClient initialRepos={trendingRepos} currentTier={tier} />
+        </Suspense>
+    );
 }

@@ -40,11 +40,13 @@ type PublicStatsData = {
 
 export default function HomeClient({
     initialPosts = [],
-    trendingRepos = [],
+    weeklyTrending = [],
+    monthlyTrending = [],
     publicStats,
 }: {
     initialPosts?: BlogPost[];
-    trendingRepos?: CatalogRepoEntry[];
+    weeklyTrending?: CatalogRepoEntry[];
+    monthlyTrending?: CatalogRepoEntry[];
     publicStats: PublicStatsData;
 }) {
     const [loading, setLoading] = useState(false);
@@ -57,6 +59,8 @@ export default function HomeClient({
     const [visibleReposCount, setVisibleReposCount] = useState(6);
     const hasInvalidSessionError = searchParams.get("error") === INVALID_SESSION_ERROR_PARAM;
 
+    const [trendingTier, setTrendingTier] = useState<"weekly" | "monthly">("weekly");
+    const trendingRepos = trendingTier === "weekly" ? weeklyTrending : monthlyTrending;
     const visibleRepos = trendingRepos.slice(0, visibleReposCount);
     const hasMoreRepos = visibleReposCount < trendingRepos.length;
     const softwareSchema = buildSoftwareApplicationStructuredData({
@@ -156,7 +160,7 @@ export default function HomeClient({
                     <RepoSearch 
                         onSearchSubmit={handleSearch}
                         loading={loading}
-                        trendingRepos={trendingRepos}
+                        trendingRepos={weeklyTrending}
                         recentSearches={recentSearches}
                         isSessionActive={!!session}
                     />
@@ -176,7 +180,7 @@ export default function HomeClient({
             </section>
 
             <FeaturedIn />
-            <TrustedByMarquee trendingRepos={trendingRepos} />
+            <TrustedByMarquee trendingRepos={weeklyTrending} />
             <InteractiveDemo />
 
             <div className="relative z-10 w-full bg-black">
@@ -311,9 +315,32 @@ export default function HomeClient({
                                 <TrendingUp className="inline-block text-blue-400 mb-1 mr-2 md:mr-3" size={32} />
                                 Explore Trending <span className="bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">Repositories</span>
                             </h2>
-                            <p className="text-zinc-400 text-lg max-w-2xl mx-auto">
-                                Explore the projects getting the most heat on GitHub this week. Instantly analyze any of them with RepoMind.
+                            <p className="text-zinc-400 text-lg max-w-2xl mx-auto mb-8">
+                                Explore the projects getting the most heat on GitHub. Instantly analyze any of them with RepoMind.
                             </p>
+
+                            <div className="flex justify-center p-1 bg-zinc-900 border border-white/5 rounded-xl w-fit mx-auto">
+                                <button
+                                    onClick={() => { setTrendingTier("weekly"); setVisibleReposCount(6); }}
+                                    className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${
+                                        trendingTier === "weekly" 
+                                        ? "bg-blue-600 text-white shadow-lg" 
+                                        : "text-zinc-500 hover:text-zinc-300"
+                                    }`}
+                                >
+                                    Weekly
+                                </button>
+                                <button
+                                    onClick={() => { setTrendingTier("monthly"); setVisibleReposCount(6); }}
+                                    className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${
+                                        trendingTier === "monthly" 
+                                        ? "bg-blue-600 text-white shadow-lg" 
+                                        : "text-zinc-500 hover:text-zinc-300"
+                                    }`}
+                                >
+                                    Monthly
+                                </button>
+                            </div>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

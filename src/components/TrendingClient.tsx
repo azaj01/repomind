@@ -20,9 +20,10 @@ import Footer from "./Footer";
 
 interface TrendingClientProps {
     initialRepos: CatalogRepoEntry[];
+    currentTier: "weekly" | "monthly" | "yearly" | "all-time";
 }
 
-export default function TrendingClient({ initialRepos }: TrendingClientProps) {
+export default function TrendingClient({ initialRepos, currentTier }: TrendingClientProps) {
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedLanguage, setSelectedLanguage] = useState<string | null>(null);
     const [visibleCount, setVisibleCount] = useState(50);
@@ -63,7 +64,7 @@ export default function TrendingClient({ initialRepos }: TrendingClientProps) {
                         <span className="text-sm font-bold">Back to Home</span>
                     </Link>
                     <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900/50 border border-white/5 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-                        Weekly Refresh
+                        {currentTier} Refresh
                     </div>
                 </div>
             </nav>
@@ -82,13 +83,34 @@ export default function TrendingClient({ initialRepos }: TrendingClientProps) {
                             <TrendingUp size={48} className="text-blue-400" />
                         </div>
                         <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6">
-                            Explore Trending <span className="bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">Repositories</span>
+                            Trending <span className="bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+                                {currentTier === 'all-time' ? 'All-Time' : currentTier.charAt(0).toUpperCase() + currentTier.slice(1)}
+                            </span>
                         </h1>
                         <p className="text-zinc-400 text-lg md:text-xl max-w-2xl mx-auto leading-relaxed">
-                            Discover the most influential and rapidly growing projects on GitHub this week.
-                            Analyze any of them instantly with RepoMind&apos;s Agentic intelligence.
+                            Discover projects getting the most heat on GitHub {currentTier === 'all-time' ? 'ever' : `this ${currentTier.replace('ly', '')}`}.
+                            Analyze any of them instantly with AI.
                         </p>
                     </motion.div>
+                </div>
+            </section>
+
+            {/* Tier Switcher */}
+            <section className="max-w-7xl mx-auto px-6 mb-8">
+                <div className="flex flex-wrap justify-center p-1.5 bg-zinc-900 border border-white/5 rounded-2xl w-fit mx-auto gap-1">
+                    {(['weekly', 'monthly', 'yearly', 'all-time'] as const).map((tier) => (
+                        <Link
+                            key={tier}
+                            href={`/trending?tier=${tier}`}
+                            className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                                currentTier === tier 
+                                ? "bg-blue-600 text-white shadow-[0_0_20px_rgba(59,130,246,0.4)]" 
+                                : "text-zinc-500 hover:text-zinc-300 hover:bg-white/5"
+                            }`}
+                        >
+                            {tier.charAt(0).toUpperCase() + tier.slice(1)}
+                        </Link>
+                    ))}
                 </div>
             </section>
 

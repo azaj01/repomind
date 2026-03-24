@@ -27,15 +27,21 @@ export const metadata: Metadata = createSeoMetadata({
 });
 
 export default async function Home() {
-    const [latestPosts, trendingRepos, publicStats] = await Promise.all([
+    const [latestPosts, weeklyTrending, monthlyTrending, publicStats] = await Promise.all([
         getHomepagePosts(),
+        getCuratedRepos("weekly").then((repos) => repos.slice(0, HOMEPAGE_TRENDING_REPO_LIMIT)),
         getCuratedRepos("monthly").then((repos) => repos.slice(0, HOMEPAGE_TRENDING_REPO_LIMIT)),
         getPublicStats(),
     ]);
 
     return (
         <Suspense fallback={null}>
-            <HomeClient initialPosts={latestPosts} trendingRepos={trendingRepos} publicStats={publicStats} />
+            <HomeClient 
+                initialPosts={latestPosts} 
+                weeklyTrending={weeklyTrending} 
+                monthlyTrending={monthlyTrending}
+                publicStats={publicStats} 
+            />
         </Suspense>
     );
 }
