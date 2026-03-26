@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 import { headers } from 'next/headers';
 import type { GitHubRepo, RepoCommit, RepoLanguage } from '@/lib/github';
-import { getErrorStatus, getRepo, getRepoFullContext, getRepoReadme, isGitHubRepo } from '@/lib/github';
+import { getErrorStatus, getRepo, getRepoFullContext, isGitHubRepo } from '@/lib/github';
 import { cacheRepoUnavailable, getCachedRepoFullContext, getCachedRepoUnavailable } from '@/lib/cache';
 import { isCuratedRepo } from '@/lib/repo-catalog';
 import { ArrowLeft, Star, GitFork, AlertCircle, Clock, FileCode, Search, Lock, Home, Github } from 'lucide-react';
@@ -10,7 +10,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { CopyBadge } from '@/components/CopyBadge';
 import { normalizeReadmeForPreview } from './repo-page-utils';
-import { buildOgImageUrl, createSeoMetadata, truncateMetaText } from '@/lib/seo';
+import { buildOgImageUrl, createSeoMetadata } from '@/lib/seo';
 import { emojifyGitHubShortcodes } from '@/lib/github-emoji';
 
 interface Props {
@@ -139,47 +139,24 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         });
     }
 
-    try {
-        const repoData = await getRepo(owner, repo);
-        const repoDescription = emojifyGitHubShortcodes(repoData.description);
-        return createSeoMetadata({
-            title: `${owner}/${repo}`,
-            description: `Analyze ${owner}/${repo} architecture, code quality, and security with RepoMind Agentic CAG.`,
-            canonical: `/repo/${owner}/${repo}`,
-            ogImage: buildOgImageUrl("repo", {
-                owner,
-                repo,
-                description: repoDescription,
-                stars: repoData.stargazers_count,
-                forks: repoData.forks_count,
-                language: repoData.language,
-            }),
-            ogTitle: `${owner}/${repo}`,
-            ogDescription: repoDescription
-                ? truncateMetaText(repoDescription, 160)
-                : `Analyze ${owner}/${repo} architecture, code quality, and security with RepoMind Agentic CAG.`,
-            robots: shouldIndex
-                ? { index: true, follow: true }
-                : {
+    return createSeoMetadata({
+        title: `${owner}/${repo}`,
+        description: `Analyze ${owner}/${repo} architecture, code quality, and security with RepoMind Agentic CAG.`,
+        canonical: `/repo/${owner}/${repo}`,
+        ogImage: buildOgImageUrl("repo", { owner, repo }),
+        ogTitle: `${owner}/${repo}`,
+        ogDescription: `Analyze ${owner}/${repo} architecture, code quality, and security with RepoMind Agentic CAG.`,
+        robots: shouldIndex
+            ? { index: true, follow: true }
+            : {
+                index: false,
+                follow: true,
+                googleBot: {
                     index: false,
                     follow: true,
-                    googleBot: {
-                        index: false,
-                        follow: true,
-                    },
                 },
-        });
-    } catch {
-        return createSeoMetadata({
-            title: `${owner}/${repo}`,
-            description: `Analyze ${owner}/${repo} architecture, code quality, and security with RepoMind Agentic CAG.`,
-            canonical: `/repo/${owner}/${repo}`,
-            ogImage: buildOgImageUrl("repo", { owner, repo }),
-            ogTitle: `${owner}/${repo}`,
-            ogDescription: `Analyze ${owner}/${repo} architecture, code quality, and security with RepoMind Agentic CAG.`,
-            noIndex: true,
-        });
-    }
+            },
+    });
 }
 
 export default async function RepoPage({ params }: Props) {
@@ -214,8 +191,6 @@ export default async function RepoPage({ params }: Props) {
         const cachedContext = await getCachedRepoFullContext(owner, repo);
         if (cachedContext && isGitHubRepo(cachedContext.metadata)) {
             readmeContent = typeof cachedContext.readme === "string" ? cachedContext.readme : null;
-        } else {
-            readmeContent = await getRepoReadme(owner, repo);
         }
     } else {
         const result = await getRepoFullContext(owner, repo);

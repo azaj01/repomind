@@ -1,9 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const { getProfileMock, getRepoMock } = vi.hoisted(() => ({
-    getProfileMock: vi.fn(),
-    getRepoMock: vi.fn(),
-}));
+import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/ProfileLoader", () => ({
     ProfileLoader: () => null,
@@ -13,19 +8,9 @@ vi.mock("@/components/RepoLoader", () => ({
     RepoLoader: () => null,
 }));
 
-vi.mock("@/lib/github", () => ({
-    getProfile: getProfileMock,
-    getRepo: getRepoMock,
-}));
-
 import { generateMetadata } from "./page";
 
 describe("chat metadata", () => {
-    beforeEach(() => {
-        getProfileMock.mockReset();
-        getRepoMock.mockReset();
-    });
-
     it("uses a generic landing preview when no query is provided", async () => {
         const metadata = await generateMetadata({
             searchParams: Promise.resolve({}),
@@ -38,15 +23,6 @@ describe("chat metadata", () => {
     });
 
     it("builds profile metadata and honors the prompt intent", async () => {
-        getProfileMock.mockResolvedValue({
-            login: "ada",
-            name: "Ada Lovelace",
-            bio: "Pioneer of computing and the first programmer.",
-            public_repos: 7,
-            followers: 1234,
-            following: 9,
-        });
-
         const metadata = await generateMetadata({
             searchParams: Promise.resolve({
                 q: "ada",
@@ -54,20 +30,13 @@ describe("chat metadata", () => {
             }),
         });
 
-        expect(metadata.title).toBe("Ada Lovelace (@ada) Architecture");
-        expect(metadata.description).toContain("Pioneer of computing");
-        expect(metadata.description).toContain("explore projects, skills, and contributions");
+        expect(metadata.title).toBe("@ada Architecture");
+        expect(metadata.description).toContain("Generate architecture flowcharts");
+        expect(metadata.description).toContain("Explore projects, skills, and contributions");
         expect(metadata.openGraph?.images?.[0]?.url).toBe("/og/homepage.png");
     });
 
     it("builds repo metadata and biases the card from the prompt intent", async () => {
-        getRepoMock.mockResolvedValue({
-            description: "Secure APIs for teams.",
-            stargazers_count: 321,
-            forks_count: 45,
-            language: "TypeScript",
-        });
-
         const metadata = await generateMetadata({
             searchParams: Promise.resolve({
                 q: "acme/widget",
@@ -77,7 +46,7 @@ describe("chat metadata", () => {
 
         expect(metadata.title).toBe("acme/widget Security");
         expect(metadata.description).toContain("Surface risks");
-        expect(metadata.description).toContain("Secure APIs for teams.");
+        expect(metadata.description).toContain("Ask about architecture");
         expect(metadata.openGraph?.images?.[0]?.url).toBe("/og/homepage.png");
     });
 });

@@ -2,7 +2,6 @@ import { ProfileLoader } from "@/components/ProfileLoader";
 import { RepoLoader } from "@/components/RepoLoader";
 import { redirect } from "next/navigation";
 import { normalizeGitHubInput } from "@/lib/utils";
-import { getProfile, getRepo } from "@/lib/github";
 import {
     buildOgImageUrl,
     buildProfileChatTitle,
@@ -10,7 +9,6 @@ import {
     chatIntentDescription,
     createSeoMetadata,
     inferChatIntent,
-    truncateMetaText,
 } from "@/lib/seo";
 
 import type { Metadata } from "next";
@@ -55,71 +53,33 @@ export async function generateMetadata({
         : `/chat?q=${encodeURIComponent(query)}`;
 
     if (!query.includes("/")) {
-        try {
-            const profile = await getProfile(query);
-            const title = buildProfileChatTitle(query, profile.name, intent);
-            const description = profile.bio
-                ? `${truncateMetaText(profile.bio, 130)} Use RepoMind to explore projects, skills, and contributions.`
-                : `${chatIntentDescription(intent)} Explore their projects, skills, and contributions with RepoMind.`;
-
-            const metadata = createSeoMetadata({
-                title,
-                description,
-                canonical: canonicalQuery,
-                ogImage: buildOgImageUrl("marketing", { variant: "home" }),
-                ogTitle: title,
-                ogDescription: description,
-            });
-            metadata.robots = buildChatRobots();
-            return metadata;
-        } catch {
-            const title = buildProfileChatTitle(query, undefined, intent);
-            const description = `${chatIntentDescription(intent)} Explore their projects, skills, and contributions with RepoMind.`;
-            const metadata = createSeoMetadata({
-                title,
-                description,
-                canonical: canonicalQuery,
-                ogImage: buildOgImageUrl("marketing", { variant: "home" }),
-                ogTitle: title,
-                ogDescription: description,
-            });
-            metadata.robots = buildChatRobots();
-            return metadata;
-        }
+        const title = buildProfileChatTitle(query, undefined, intent);
+        const description = `${chatIntentDescription(intent)} Explore projects, skills, and contributions with RepoMind.`;
+        const metadata = createSeoMetadata({
+            title,
+            description,
+            canonical: canonicalQuery,
+            ogImage: buildOgImageUrl("marketing", { variant: "home" }),
+            ogTitle: title,
+            ogDescription: description,
+        });
+        metadata.robots = buildChatRobots();
+        return metadata;
     }
 
     const [owner, repo] = query.split("/");
-    try {
-        const repoData = await getRepo(owner, repo);
-        const title = buildRepoChatTitle(owner, repo, intent);
-        const description = repoData.description
-            ? `${chatIntentDescription(intent)} ${truncateMetaText(repoData.description, 120)}`
-            : `${chatIntentDescription(intent)} Ask about architecture, dependencies, and implementation details.`;
-
-        const metadata = createSeoMetadata({
-            title,
-            description,
-            canonical: canonicalQuery,
-            ogImage: buildOgImageUrl("marketing", { variant: "home" }),
-            ogTitle: title,
-            ogDescription: description,
-        });
-        metadata.robots = buildChatRobots();
-        return metadata;
-    } catch {
-        const title = buildRepoChatTitle(owner, repo, intent);
-        const description = `${chatIntentDescription(intent)} Ask about architecture, dependencies, and implementation details.`;
-        const metadata = createSeoMetadata({
-            title,
-            description,
-            canonical: canonicalQuery,
-            ogImage: buildOgImageUrl("marketing", { variant: "home" }),
-            ogTitle: title,
-            ogDescription: description,
-        });
-        metadata.robots = buildChatRobots();
-        return metadata;
-    }
+    const title = buildRepoChatTitle(owner, repo, intent);
+    const description = `${chatIntentDescription(intent)} Ask about architecture, dependencies, and implementation details.`;
+    const metadata = createSeoMetadata({
+        title,
+        description,
+        canonical: canonicalQuery,
+        ogImage: buildOgImageUrl("marketing", { variant: "home" }),
+        ogTitle: title,
+        ogDescription: description,
+    });
+    metadata.robots = buildChatRobots();
+    return metadata;
 }
 
 export default async function ChatPage({

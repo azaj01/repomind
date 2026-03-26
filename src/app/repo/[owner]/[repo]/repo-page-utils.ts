@@ -1,4 +1,4 @@
-const README_PREVIEW_MAX_CHARS = 20_000;
+const README_PREVIEW_MAX_CHARS = 8_000;
 
 export function normalizeReadmeForPreview(readmeContent: string | null | undefined): string {
     const normalized = (readmeContent || "").replace(

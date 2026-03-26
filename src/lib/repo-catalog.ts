@@ -1,14 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import { unstable_cache, revalidateTag } from "next/cache";
 import { revalidatePath } from "next/cache";
 
-export const REPO_CATALOG_CACHE_TAG = "repo-catalog";
-
 const REPO_LIMIT = 7600;
-const TOPIC_INDEX_LIMIT = 2000;
 const TOPIC_MIN_REPO_COUNT = 20;
 const TOPIC_REPO_LIST_LIMIT = 50;
+const CATALOG_DATA_FILE = path.join(process.cwd(), "public", "data", "top-repos.json");
 
 export type RepoTier = 'all-time' | 'yearly' | '6-month' | 'monthly' | 'weekly';
 
@@ -27,7 +24,11 @@ export interface CatalogRepoEntry {
 interface CatalogData {
   curatedRepos: CatalogRepoEntry[];
   curatedRepoKeys: string[];
+  curatedRepoKeySet: Set<string>;
   indexableTopics: string[];
+  indexableTopicSet: Set<string>;
+  topicBuckets: Map<string, CatalogRepoEntry[]>;
+  topicTopRepos: Map<string, CatalogRepoEntry[]>;
 }
 
 function isCatalogRepoEntry(value: unknown): value is CatalogRepoEntry {
@@ -79,6 +80,7 @@ function buildCatalogData(repos: CatalogRepoEntry[]): CatalogData {
 
   const curatedRepos = deduped.slice(0, REPO_LIMIT);
   const curatedRepoKeys = curatedRepos.map((repo) => toRepoKey(repo.owner, repo.repo));
+  const curatedRepoKeySet = new Set(curatedRepoKeys);
 
   const topicBuckets: Record<string, CatalogRepoEntry[]> = {};
   const topicFrequency: Record<string, { allTime: number; trending: number }> = {};
@@ -122,55 +124,69 @@ function buildCatalogData(repos: CatalogRepoEntry[]): CatalogData {
     .slice(0, 1500);
 
   const indexableTopics = [...stableTopics, ...trendingTopics].sort();
+  const indexableTopicSet = new Set(indexableTopics);
 
   return {
     curatedRepos,
     curatedRepoKeys,
     indexableTopics,
+    curatedRepoKeySet,
+    indexableTopicSet,
+    topicBuckets: new Map<string, CatalogRepoEntry[]>(Object.entries(topicBuckets)),
+    topicTopRepos: new Map<string, CatalogRepoEntry[]>(),
   };
 }
 
 const getCatalogDataInternal = async (): Promise<CatalogData> => {
-    try {
-      const dataPath = path.join(process.cwd(), "public", "data", "top-repos.json");
-      if (!fs.existsSync(dataPath)) {
-        console.warn("[Catalog] Data file not found.");
-        return buildCatalogData([]);
-      }
-
-      const fileContent = await fs.promises.readFile(dataPath, "utf8");
-      const parsed = JSON.parse(fileContent) as unknown;
-      const repos = Array.isArray(parsed) ? parsed.filter(isCatalogRepoEntry) : [];
-
-      return buildCatalogData(repos);
-    } catch (error) {
-      console.error("Failed to load repo catalog data:", error);
-      return buildCatalogData([]);
-    }
+  try {
+    const fileContent = await fs.promises.readFile(CATALOG_DATA_FILE, "utf8");
+    const parsed = JSON.parse(fileContent) as unknown;
+    const repos = Array.isArray(parsed) ? parsed.filter(isCatalogRepoEntry) : [];
+    return buildCatalogData(repos);
+  } catch (error) {
+    console.error("Failed to load repo catalog data:", error);
+    return buildCatalogData([]);
+  }
 };
 
-const getCatalogDataCached = unstable_cache(
-  getCatalogDataInternal,
-  ["repo-catalog-data-v2"],
-  {
-    revalidate: false, // No auto-revalidation, handled manually
-    tags: [REPO_CATALOG_CACHE_TAG],
+let inMemoryCatalogData: CatalogData | null = null;
+let inMemoryCatalogMtimeMs = -1;
+
+async function getCatalogDataMtimeMs(): Promise<number> {
+  try {
+    const stats = await fs.promises.stat(CATALOG_DATA_FILE);
+    return stats.mtimeMs;
+  } catch {
+    return -1;
   }
-);
+}
 
 export async function getCatalogData(): Promise<CatalogData> {
-  // Always fetch fresh in development
   if (process.env.NODE_ENV === "development") {
     return getCatalogDataInternal();
   }
-  return getCatalogDataCached();
+
+  const currentMtimeMs = await getCatalogDataMtimeMs();
+  if (inMemoryCatalogData && currentMtimeMs === inMemoryCatalogMtimeMs) {
+    return inMemoryCatalogData;
+  }
+
+  const nextData = await getCatalogDataInternal();
+  inMemoryCatalogData = nextData;
+  inMemoryCatalogMtimeMs = currentMtimeMs;
+  return nextData;
 }
 
 /**
  * Manually refresh the repository catalog cache.
  */
 export async function refreshCatalogCache() {
-  revalidateTag(REPO_CATALOG_CACHE_TAG, "max");
+  inMemoryCatalogData = null;
+  inMemoryCatalogMtimeMs = -1;
+  revalidatePath("/topics/[topic]", "page");
+  revalidatePath("/repo/[owner]/[repo]", "page");
+  revalidatePath("/sitemap.xml");
+  revalidatePath("/trending");
 }
 
 export async function getCuratedRepos(tier?: RepoTier): Promise<CatalogRepoEntry[]> {
@@ -184,15 +200,29 @@ export async function getCuratedRepos(tier?: RepoTier): Promise<CatalogRepoEntry
 export async function isCuratedRepo(owner: string, repo: string): Promise<boolean> {
   const data = await getCatalogData();
   const key = toRepoKey(owner, repo);
-  return data.curatedRepoKeys.includes(key);
+  return data.curatedRepoKeySet.has(key);
 }
 
 export async function getReposForTopic(topic: string): Promise<CatalogRepoEntry[]> {
   const data = await getCatalogData();
   const normalizedTopic = topic.toLowerCase();
-  const repos = data.curatedRepos.filter((repo) => repo.topics.includes(normalizedTopic));
-  repos.sort((a, b) => b.stars - a.stars);
-  return repos.slice(0, TOPIC_REPO_LIST_LIMIT);
+  const cached = data.topicTopRepos.get(normalizedTopic);
+  if (cached) {
+    return cached;
+  }
+
+  const repos = data.topicBuckets.get(normalizedTopic);
+  if (!repos || repos.length === 0) {
+    data.topicTopRepos.set(normalizedTopic, []);
+    return [];
+  }
+
+  const topRepos = repos
+    .slice()
+    .sort((a, b) => b.stars - a.stars)
+    .slice(0, TOPIC_REPO_LIST_LIMIT);
+  data.topicTopRepos.set(normalizedTopic, topRepos);
+  return topRepos;
 }
 
 export async function getIndexableTopics(): Promise<string[]> {
@@ -202,7 +232,7 @@ export async function getIndexableTopics(): Promise<string[]> {
 
 export async function isIndexableTopic(topic: string): Promise<boolean> {
   const data = await getCatalogData();
-  return data.indexableTopics.includes(topic.toLowerCase());
+  return data.indexableTopicSet.has(topic.toLowerCase());
 }
 
 export async function getCatalogStats() {

@@ -2,7 +2,7 @@ import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, ArrowRight, Star, FileCode } from 'lucide-react';
-import { getReposForTopic, isIndexableTopic } from '@/lib/repo-catalog';
+import { getIndexableTopics, getReposForTopic, isIndexableTopic } from '@/lib/repo-catalog';
 import { buildOgImageUrl, createSeoMetadata, truncateMetaText } from '@/lib/seo';
 
 interface Props {
@@ -12,6 +12,12 @@ interface Props {
 }
 
 export const revalidate = 604800;
+export const dynamicParams = false;
+
+export async function generateStaticParams() {
+    const topics = await getIndexableTopics();
+    return topics.map((topic) => ({ topic }));
+}
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const { topic } = await params;
