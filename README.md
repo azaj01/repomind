@@ -17,7 +17,7 @@
   <a href="https://github.com/403errors/repomind/issues"><strong>Contribute</strong></a>
 </p>
 
-![RepoMind Demo](public/assets/demo_repomind.gif)
+[![RepoMind Demo](https://img.youtube.com/vi/3f66xlgpjw0/maxresdefault.jpg)](https://www.youtube.com/watch?v=3f66xlgpjw0)
 
 RepoMind is an open-source, AI-powered platform for understanding public GitHub repositories and developer profiles with **Agentic CAG**. It combines deep code reasoning, architecture visualization, and security scanning into a fast, browser-first experience.
 
