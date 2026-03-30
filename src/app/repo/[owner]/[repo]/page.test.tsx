@@ -1,19 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
-    getRepoMock,
     isCuratedRepoMock,
     getCachedRepoUnavailableMock,
 } = vi.hoisted(() => ({
-    getRepoMock: vi.fn(),
     isCuratedRepoMock: vi.fn(),
     getCachedRepoUnavailableMock: vi.fn(),
 }));
 
 vi.mock("@/lib/github", () => ({
-    getRepo: getRepoMock,
     getRepoFullContext: vi.fn(),
-    getErrorStatus: vi.fn(),
 }));
 
 vi.mock("@/lib/repo-catalog", () => ({
@@ -29,7 +25,6 @@ import { generateMetadata } from "./page";
 
 describe("repository metadata", () => {
     beforeEach(() => {
-        getRepoMock.mockReset();
         isCuratedRepoMock.mockReset();
         getCachedRepoUnavailableMock.mockReset();
     });
@@ -37,12 +32,6 @@ describe("repository metadata", () => {
     it("builds branded metadata for indexed repositories", async () => {
         getCachedRepoUnavailableMock.mockResolvedValue(false);
         isCuratedRepoMock.mockResolvedValue(true);
-        getRepoMock.mockResolvedValue({
-            description: "A fast and focused widget analyzer.",
-            stargazers_count: 123,
-            forks_count: 45,
-            language: "TypeScript",
-        });
 
         const metadata = await generateMetadata({
             params: Promise.resolve({ owner: "acme", repo: "widget" }),

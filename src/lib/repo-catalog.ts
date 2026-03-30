@@ -150,30 +150,14 @@ const getCatalogDataInternal = async (): Promise<CatalogData> => {
 };
 
 let inMemoryCatalogData: CatalogData | null = null;
-let inMemoryCatalogMtimeMs = -1;
-
-async function getCatalogDataMtimeMs(): Promise<number> {
-  try {
-    const stats = await fs.promises.stat(CATALOG_DATA_FILE);
-    return stats.mtimeMs;
-  } catch {
-    return -1;
-  }
-}
 
 export async function getCatalogData(): Promise<CatalogData> {
-  if (process.env.NODE_ENV === "development") {
-    return getCatalogDataInternal();
-  }
-
-  const currentMtimeMs = await getCatalogDataMtimeMs();
-  if (inMemoryCatalogData && currentMtimeMs === inMemoryCatalogMtimeMs) {
+  if (inMemoryCatalogData) {
     return inMemoryCatalogData;
   }
 
   const nextData = await getCatalogDataInternal();
   inMemoryCatalogData = nextData;
-  inMemoryCatalogMtimeMs = currentMtimeMs;
   return nextData;
 }
 
@@ -182,7 +166,6 @@ export async function getCatalogData(): Promise<CatalogData> {
  */
 export async function refreshCatalogCache() {
   inMemoryCatalogData = null;
-  inMemoryCatalogMtimeMs = -1;
   revalidatePath("/topics/[topic]", "page");
   revalidatePath("/repo/[owner]/[repo]", "page");
   revalidatePath("/sitemap.xml");

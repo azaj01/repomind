@@ -6,8 +6,8 @@ import { getCuratedRepos } from "@/lib/repo-catalog";
 import { getPublicStats } from "@/lib/analytics";
 import { buildOgImageUrl, createSeoMetadata } from "@/lib/seo";
 
-export const dynamic = "force-dynamic";
-const HOMEPAGE_TRENDING_REPO_LIMIT = 120;
+export const revalidate = 300;
+const HOMEPAGE_TRENDING_REPO_LIMIT = 60;
 
 export const metadata: Metadata = createSeoMetadata({
     title: "GitHub Repository Analysis, Code Review & Security Scanning",

@@ -1,7 +1,6 @@
 import { Metadata } from 'next';
-import { headers } from 'next/headers';
-import type { GitHubRepo, RepoCommit, RepoLanguage } from '@/lib/github';
-import { getErrorStatus, getRepo, getRepoFullContext, isGitHubRepo } from '@/lib/github';
+import type { GitHubRepo, RepoLanguage } from '@/lib/github';
+import { getErrorStatus, getRepo } from '@/lib/github';
 import { cacheRepoUnavailable, getCachedRepoFullContext, getCachedRepoUnavailable } from '@/lib/cache';
 import { isCuratedRepo } from '@/lib/repo-catalog';
 import { ArrowLeft, Star, GitFork, AlertCircle, Clock, FileCode, Search, Lock, Home, Github } from 'lucide-react';
@@ -23,11 +22,6 @@ interface Props {
 export const revalidate = 900;
 
 const REPO_SEGMENT_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
-const CRAWLER_README_MAX_CHARS = 6000;
-
-function isLikelyCrawler(userAgent: string): boolean {
-    return /bot|crawl|spider|slurp|preview|facebookexternalhit|linkedinbot|whatsapp|telegram|discord/i.test(userAgent);
-}
 
 function isValidRepoSegment(value: string): boolean {
     if (!REPO_SEGMENT_PATTERN.test(value)) {
@@ -48,29 +42,6 @@ function isValidOwnerRepo(owner: string, repo: string): boolean {
 function buildRepoSignInHref(owner: string, repo: string): string {
     const callbackUrl = encodeURIComponent(`/repo/${owner}/${repo}`);
     return `/api/auth/signin?callbackUrl=${callbackUrl}`;
-}
-
-function buildCrawlerReadmeExcerpt(readme: string | null): string | null {
-    if (!readme) return null;
-
-    const plain = readme
-        .replace(/```[\s\S]*?```/g, " ")
-        .replace(/`[^`]*`/g, " ")
-        .replace(/!\[[^\]]*]\([^)]+\)/g, " ")
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-        .replace(/<[^>]+>/g, " ")
-        .replace(/^#{1,6}\s+/gm, "")
-        .replace(/^\s*[-*+]\s+/gm, "• ")
-        .replace(/^\s*\d+\.\s+/gm, "• ")
-        .replace(/\r/g, "")
-        .replace(/[ \t]+\n/g, "\n")
-        .replace(/\n{3,}/g, "\n\n")
-        .replace(/[ \t]{2,}/g, " ")
-        .trim();
-
-    if (!plain) return null;
-    if (plain.length <= CRAWLER_README_MAX_CHARS) return plain;
-    return `${plain.slice(0, CRAWLER_README_MAX_CHARS).trim()}…`;
 }
 
 function RepoUnavailableState({ owner, repo }: { owner: string; repo: string }) {
@@ -170,9 +141,6 @@ export default async function RepoPage({ params }: Props) {
         return <RepoUnavailableState owner={owner} repo={repo} />;
     }
 
-    const userAgent = (await headers()).get('user-agent') || '';
-    const isCrawler = isLikelyCrawler(userAgent);
-
     let repoData: GitHubRepo;
     try {
         repoData = await getRepo(owner, repo);
@@ -184,33 +152,14 @@ export default async function RepoPage({ params }: Props) {
         return <RepoUnavailableState owner={owner} repo={repo} />;
     }
 
-    let detailsData: { languages: RepoLanguage[]; commits: RepoCommit[] } = { languages: [], commits: [] };
-    let readmeContent: string | null = null;
-
-    if (isCrawler) {
-        const cachedContext = await getCachedRepoFullContext(owner, repo);
-        if (cachedContext && isGitHubRepo(cachedContext.metadata)) {
-            readmeContent = typeof cachedContext.readme === "string" ? cachedContext.readme : null;
-        }
-    } else {
-        const result = await getRepoFullContext(owner, repo);
-
-        if (!result.success) {
-            if (result.status === 404) {
-                await cacheRepoUnavailable(owner, repo);
-            }
-            console.error('Failed to load full repo context:', result.error);
-            return <RepoUnavailableState owner={owner} repo={repo} />;
-        }
-
-        const context = result.data;
-        repoData = context.metadata;
-        detailsData = { languages: context.languages, commits: context.commits };
-        readmeContent = context.readme;
-    }
-
-    const fullReadme = normalizeReadmeForPreview(readmeContent);
-    const crawlerReadmeExcerpt = isCrawler ? buildCrawlerReadmeExcerpt(fullReadme) : null;
+    const cachedContext = await getCachedRepoFullContext(owner, repo);
+    const repoLanguages: RepoLanguage[] =
+        cachedContext && Array.isArray(cachedContext.languages)
+            ? (cachedContext.languages as RepoLanguage[])
+            : [];
+    const fullReadme = normalizeReadmeForPreview(
+        cachedContext && typeof cachedContext.readme === "string" ? cachedContext.readme : null
+    );
     const repoDescription = emojifyGitHubShortcodes(repoData.description);
 
     return (
@@ -261,12 +210,18 @@ export default async function RepoPage({ params }: Props) {
                         </div>
                         <div className="flex items-center flex-wrap gap-2">
                             <FileCode className="w-4 h-4 mr-1 text-green-400" />
-                            {detailsData.languages.slice(0, 3).map((lang) => (
+                            {repoLanguages.slice(0, 3).map((lang) => (
                                 <span key={lang.name} className="flex items-center mr-2">
                                     <span className="w-2 h-2 rounded-full mr-1" style={{ backgroundColor: lang.color ?? undefined }}></span>
                                     {lang.name}
                                 </span>
                             ))}
+                            {repoLanguages.length === 0 && repoData.language && (
+                                <span className="flex items-center mr-2">
+                                    <span className="w-2 h-2 rounded-full mr-1 bg-green-400"></span>
+                                    {repoData.language}
+                                </span>
+                            )}
                         </div>
                     </div>
 
@@ -334,19 +289,7 @@ export default async function RepoPage({ params }: Props) {
                     <CopyBadge owner={owner} repo={repo} />
                 </div>
 
-                {isCrawler && crawlerReadmeExcerpt && (
-                    <section className="bg-zinc-900/30 border border-zinc-800/50 rounded-xl p-8 mb-12">
-                        <div className="flex items-center justify-between border-b border-zinc-800 pb-2 mb-6">
-                            <h2 className="text-xl font-medium text-zinc-300 uppercase tracking-wider text-sm">Repository Overview (README excerpt)</h2>
-                            <span className="text-xs text-zinc-500 bg-zinc-800/50 px-2 py-1 rounded">Crawler view</span>
-                        </div>
-                        <p className="text-zinc-300 leading-relaxed whitespace-pre-line">
-                            {crawlerReadmeExcerpt}
-                        </p>
-                    </section>
-                )}
-
-                {!isCrawler && fullReadme && (
+                {fullReadme && (
                     <section className="bg-zinc-900/30 border border-zinc-800/50 rounded-xl p-8 mb-12">
                         <div className="flex items-center justify-between border-b border-zinc-800 pb-2 mb-6">
                             <h2 className="text-xl font-medium text-zinc-300 uppercase tracking-wider text-sm">Repository Summary (README)</h2>

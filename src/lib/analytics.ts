@@ -798,7 +798,7 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
 
 /**
  * Fetch lightweight, aggregated stats for public viewing (e.g. landing page).
- * Cache for 60 seconds to speed up landing page requests while staying fresh.
+ * Cache for 5 minutes to speed up landing page requests while staying fresh.
  */
 const getCachedPublicStats = unstable_cache(
     async () => {
@@ -870,7 +870,7 @@ const getCachedPublicStats = unstable_cache(
     },
     ["public-stats-v2"], // Bumped key to force refresh
     {
-        revalidate: 60,
+        revalidate: 300,
         tags: ["public-stats"],
     }
 );
