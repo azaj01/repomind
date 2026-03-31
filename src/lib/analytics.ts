@@ -22,13 +22,35 @@ export interface AnalyticsData {
     kvStats?: {
         currentSize: number;
         maxSize: number;
-        history: KVUsagePoint[];
+        history?: KVUsagePoint[];
     };
     searchPerformance?: {
         byWindow: Record<SelectionPerformanceWindow, SelectionPerformanceMetrics>;
     };
     reportFunnel?: ReportFunnelMetrics;
     falsePositiveReview?: FalsePositiveReviewSummary;
+}
+
+export interface AnalyticsSummaryData {
+    totalVisitors: number;
+    totalQueries: number;
+    totalLoggedInUsers: number;
+    deviceStats: Record<string, number>;
+    countryStats: Record<string, number>;
+    kvStats?: {
+        currentSize: number;
+        maxSize: number;
+        history?: KVUsagePoint[];
+    };
+}
+
+export interface AnalyticsDetailsOptions {
+    visitorLimit?: number;
+    loggedInLimit?: number;
+    includeSelection?: boolean;
+    includeFunnel?: boolean;
+    includeFalsePositiveReview?: boolean;
+    includeKvHistory?: boolean;
 }
 
 export interface VisitorData {
@@ -92,6 +114,25 @@ export interface ReportFunnelMetrics {
 interface ReportConversionTrackingOptions {
     actorUsername?: string | null;
 }
+
+const SELECTION_TELEMETRY_SAMPLE_RATE = 0.1;
+const DEFAULT_VISITOR_DETAIL_LIMIT = 10;
+const DEFAULT_LOGGED_IN_DETAIL_LIMIT = 10;
+
+const EMPTY_SELECTION_METRICS: SelectionPerformanceMetrics = {
+    avgSelectionMs: 0,
+    indexHitRate: 0,
+    fallbackRate: 0,
+    selections: 0,
+};
+
+const EMPTY_FALSE_POSITIVE_REVIEW: FalsePositiveReviewSummary = {
+    total: 0,
+    pending: 0,
+    confirmedFalsePositive: 0,
+    rejected: 0,
+    recentSubmissions: [],
+};
 
 /**
  * Fetch and parse KV info for storage stats
@@ -201,12 +242,12 @@ export async function trackEvent(
             pipeline.hincrby(visitorKey, "queryCount", 1);
         }
 
-        // 5. Update global device/country stats
+        // 5. Update global device/country stats as hashes (single-key aggregations)
         if (metadata.country) {
-            pipeline.incr(`stats:country:${metadata.country}`);
+            pipeline.hincrby("stats:country", metadata.country, 1);
         }
         if (metadata.device) {
-            pipeline.incr(`stats:device:${metadata.device}`);
+            pipeline.hincrby("stats:device", metadata.device, 1);
         }
 
         await pipeline.exec();
@@ -220,16 +261,18 @@ export async function trackSelectionPerformance(params: {
     selectionMs: number;
 }): Promise<void> {
     try {
+        if (Math.random() >= SELECTION_TELEMETRY_SAMPLE_RATE) {
+            return;
+        }
+
         const dayKey = new Date().toISOString().slice(0, 10);
         const baseKey = `stats:selection:${dayKey}`;
         const ttlSeconds = 14 * 24 * 60 * 60;
         const duration = Math.max(0, Math.round(params.selectionMs));
 
         const pipeline = kv.pipeline();
-        pipeline.incr(`${baseKey}:count`);
         pipeline.incrby(`${baseKey}:ms_total`, duration);
         pipeline.incr(`${baseKey}:${params.type}`);
-        pipeline.expire(`${baseKey}:count`, ttlSeconds);
         pipeline.expire(`${baseKey}:ms_total`, ttlSeconds);
         pipeline.expire(`${baseKey}:${params.type}`, ttlSeconds);
         await pipeline.exec();
@@ -258,7 +301,7 @@ export async function trackAuthenticatedQueryEvent(userId: string, anonId?: stri
         let migratedQueries = 0;
         if (anonId && anonId.startsWith("anon_")) {
             const visitorKey = `visitor:${anonId}`;
-            const existing = await kv.hgetall(visitorKey) as any;
+            const existing = await kv.hgetall<Record<string, string | number>>(visitorKey);
 
             if (existing && existing.queryCount) {
                 migratedQueries = Number(existing.queryCount);
@@ -296,7 +339,7 @@ function bigIntToNumber(value: bigint | null | undefined): number | null {
     return Number.isFinite(asNumber) ? asNumber : null;
 }
 
-async function getLoggedInUserStats(): Promise<LoggedInUserData[]> {
+async function getLoggedInUserStats(limit: number = 200): Promise<LoggedInUserData[]> {
     try {
         type UserRow = Prisma.UserGetPayload<{
             select: {
@@ -320,7 +363,7 @@ async function getLoggedInUserStats(): Promise<LoggedInUserData[]> {
                     lastQueryAt: true,
                 },
                 orderBy: [{ lastQueryAt: "desc" }, { createdAt: "desc" }],
-                take: 200,
+                take: limit,
             }),
             prisma.repoScan.groupBy({
                 by: ["userId"],
@@ -569,6 +612,72 @@ async function getManualAnalyticsAdjustments(): Promise<{ visitors: number; quer
     }
 }
 
+async function getGeoDeviceStatsFromHashes(): Promise<{
+    countryStats: Record<string, number>;
+    deviceStats: Record<string, number>;
+}> {
+    try {
+        const [countryHash, deviceHash] = await Promise.all([
+            kv.hgetall<Record<string, number | string>>("stats:country"),
+            kv.hgetall<Record<string, number | string>>("stats:device"),
+        ]);
+
+        const countryStats: Record<string, number> = {};
+        const deviceStats: Record<string, number> = {
+            mobile: 0,
+            desktop: 0,
+            unknown: 0,
+        };
+
+        if (countryHash && typeof countryHash === "object") {
+            Object.entries(countryHash).forEach(([country, value]) => {
+                countryStats[country] = Number(value || 0);
+            });
+        }
+
+        if (deviceHash && typeof deviceHash === "object") {
+            Object.entries(deviceHash).forEach(([device, value]) => {
+                deviceStats[device] = Number(value || 0);
+            });
+        }
+
+        return { countryStats, deviceStats };
+    } catch (error) {
+        console.error("Failed to fetch country/device hash stats:", error);
+        return {
+            countryStats: {},
+            deviceStats: { mobile: 0, desktop: 0, unknown: 0 },
+        };
+    }
+}
+
+async function getBoundedVisitorIds(limit: number): Promise<string[]> {
+    const safeLimit = Math.max(1, Math.floor(limit));
+
+    try {
+        const randomMembers = await kv.exec(["SRANDMEMBER", "visitors", safeLimit]) as string[] | string | null;
+        if (Array.isArray(randomMembers)) {
+            return randomMembers.filter((value): value is string => typeof value === "string");
+        }
+        if (typeof randomMembers === "string") {
+            return [randomMembers];
+        }
+    } catch (error) {
+        console.error("Failed to fetch bounded visitor ids via SRANDMEMBER:", error);
+    }
+
+    try {
+        const allMembers = await kv.smembers("visitors");
+        if (!Array.isArray(allMembers)) {
+            return [];
+        }
+        return (allMembers as string[]).slice(-safeLimit);
+    } catch (error) {
+        console.error("Failed to fetch visitor ids via SMEMBERS fallback:", error);
+        return [];
+    }
+}
+
 function getDayKeyFromTimestamp(timestamp: number): string {
     return new Date(timestamp).toISOString().slice(0, 10);
 }
@@ -591,7 +700,6 @@ async function getSelectionPerformance(window: SelectionPerformanceWindow): Prom
         const pipeline = kv.pipeline();
         keys.forEach((dayKey) => {
             const baseKey = `stats:selection:${dayKey}`;
-            pipeline.get(`${baseKey}:count`);
             pipeline.get(`${baseKey}:ms_total`);
             pipeline.get(`${baseKey}:index_hit`);
             pipeline.get(`${baseKey}:llm_fallback`);
@@ -603,12 +711,12 @@ async function getSelectionPerformance(window: SelectionPerformanceWindow): Prom
         let indexHits = 0;
         let fallbacks = 0;
 
-        for (let i = 0; i < values.length; i += 4) {
-            selections += Number(values[i] || 0);
-            msTotal += Number(values[i + 1] || 0);
-            indexHits += Number(values[i + 2] || 0);
-            fallbacks += Number(values[i + 3] || 0);
+        for (let i = 0; i < values.length; i += 3) {
+            msTotal += Number(values[i] || 0);
+            indexHits += Number(values[i + 1] || 0);
+            fallbacks += Number(values[i + 2] || 0);
         }
+        selections = indexHits + fallbacks;
 
         const avgSelectionMs = selections > 0 ? Math.round(msTotal / selections) : 0;
         const indexHitRate = selections > 0 ? Number(((indexHits / selections) * 100).toFixed(1)) : 0;
@@ -626,79 +734,108 @@ async function getSelectionPerformance(window: SelectionPerformanceWindow): Prom
     }
 }
 
-export async function getAnalyticsData(): Promise<AnalyticsData> {
+async function getAnalyticsSummaryUncached(): Promise<AnalyticsSummaryData> {
     try {
-        // Parallelize fetching independent data
-        const [
-            totalVisitorsAggRaw,
-            totalQueriesAggRaw,
-            visitorIdsRaw,
-            kvInfo,
-            reportFunnel,
-            falsePositiveReview,
-            selection24h,
-            selection7d,
-        ] = await Promise.all([
+        const adminUsername = process.env.ADMIN_GITHUB_USERNAME?.trim();
+        const [anonVisitorCountRaw, totalAnonQueriesRaw, manualAdjustments, kvInfo, geoDeviceStats, authUserAgg] = await Promise.all([
             kv.scard("visitors"),
             kv.get<number>("queries:total"),
-            kv.smembers("visitors"),
+            getManualAnalyticsAdjustments(),
             getKVStats(),
-            getReportFunnelMetrics().catch((error) => {
-                console.error("Failed to fetch report funnel analytics:", error);
-                return emptyReportFunnelMetrics();
+            getGeoDeviceStatsFromHashes(),
+            prisma.user.aggregate({
+                where: adminUsername ? {
+                    OR: [
+                        { githubLogin: { not: adminUsername } },
+                        { githubLogin: null },
+                    ],
+                } : {},
+                _sum: { queryCount: true },
+                _count: { id: true },
             }),
-            getFalsePositiveReviewSummary().catch((error) => {
-                console.error("Failed to fetch false positive review data:", error);
-                return {
-                    total: 0,
-                    pending: 0,
-                    confirmedFalsePositive: 0,
-                    rejected: 0,
-                    recentSubmissions: [],
-                };
-            }),
-            getSelectionPerformance("24h"),
-            getSelectionPerformance("7d"),
         ]);
 
-        const totalVisitorsAgg = Number(totalVisitorsAggRaw || 0);
-        const totalQueriesAgg = Number(totalQueriesAggRaw || 0);
-        const visitorIds = (visitorIdsRaw as string[]) || [];
+        const totalAnonVisitors = Number(anonVisitorCountRaw || 0);
+        const totalAnonQueries = Number(totalAnonQueriesRaw || 0);
+        const totalLoggedInUsers = Number(authUserAgg._count.id || 0);
+        const authQueryTotal = Number(authUserAgg._sum.queryCount || 0);
 
-        // Any ID in the 'visitors' KV set is considered an anonymous (or unmigrated historical) visitor.
-        // Logged-in users who migrate are removed from this set.
-        const totalAnonVisitors = visitorIds.length;
-        const totalAnonQueries = totalQueriesAgg;
+        return {
+            totalVisitors: totalAnonVisitors + manualAdjustments.visitors + totalLoggedInUsers,
+            totalQueries: totalAnonQueries + manualAdjustments.queries + authQueryTotal,
+            totalLoggedInUsers,
+            deviceStats: geoDeviceStats.deviceStats,
+            countryStats: geoDeviceStats.countryStats,
+            kvStats: {
+                currentSize: kvInfo.currentSize,
+                maxSize: kvInfo.maxSize,
+            },
+        };
+    } catch (error) {
+        console.error("Failed to fetch analytics summary:", error);
+        return {
+            totalVisitors: 0,
+            totalQueries: 0,
+            totalLoggedInUsers: 0,
+            deviceStats: {},
+            countryStats: {},
+            kvStats: {
+                currentSize: 0,
+                maxSize: 256 * 1024 * 1024,
+            },
+        };
+    }
+}
 
-        // Fetch logged-in user summary stats
-        const [loggedInUsers, manualAdjustments] = await Promise.all([
-            getLoggedInUserStats().catch((error) => {
+export const getAnalyticsSummary = unstable_cache(
+    async (): Promise<AnalyticsSummaryData> => getAnalyticsSummaryUncached(),
+    ["admin-analytics-summary-v1"],
+    { revalidate: 90, tags: ["admin-analytics-summary"] },
+);
+
+export async function getAnalyticsDetails(options: AnalyticsDetailsOptions = {}): Promise<Partial<AnalyticsData>> {
+    const {
+        visitorLimit = DEFAULT_VISITOR_DETAIL_LIMIT,
+        loggedInLimit = DEFAULT_LOGGED_IN_DETAIL_LIMIT,
+        includeSelection = true,
+        includeFunnel = true,
+        includeFalsePositiveReview = true,
+        includeKvHistory = true,
+    } = options;
+
+    try {
+        const safeVisitorLimit = Math.max(1, Math.min(100, Math.floor(visitorLimit)));
+        const safeLoggedInLimit = Math.max(1, Math.min(200, Math.floor(loggedInLimit)));
+
+        const [visitorIdsRaw, loggedInUsers, selection24h, selection7d, reportFunnel, falsePositiveReview] = await Promise.all([
+            getBoundedVisitorIds(safeVisitorLimit),
+            getLoggedInUserStats(safeLoggedInLimit).catch((error) => {
                 console.error("Failed to fetch logged-in user analytics:", error);
                 return [];
             }),
-            getManualAnalyticsAdjustments(),
+            includeSelection ? getSelectionPerformance("24h") : Promise.resolve(EMPTY_SELECTION_METRICS),
+            includeSelection ? getSelectionPerformance("7d") : Promise.resolve(EMPTY_SELECTION_METRICS),
+            includeFunnel ? getReportFunnelMetrics().catch((error) => {
+                console.error("Failed to fetch report funnel analytics:", error);
+                return emptyReportFunnelMetrics();
+            }) : Promise.resolve(emptyReportFunnelMetrics()),
+            includeFalsePositiveReview ? getFalsePositiveReviewSummary().catch((error) => {
+                console.error("Failed to fetch false positive review data:", error);
+                return EMPTY_FALSE_POSITIVE_REVIEW;
+            }) : Promise.resolve(EMPTY_FALSE_POSITIVE_REVIEW),
         ]);
 
-        // Record usage and get history
-        const kvHistory = await recordKVUsageHistory(kvInfo.currentSize);
+        const sortedVisitorIds = visitorIdsRaw;
+        const visitorPipeline = kv.pipeline();
+        sortedVisitorIds.forEach((id) => visitorPipeline.hgetall(`visitor:${id}`));
+        const visitorDetails = await visitorPipeline.exec() as Array<Partial<VisitorData> | null>;
 
-        // Limit details fetch to the last 1000 visitors to avoid command explosion
-        // In a real app with millions of users, we'd use pagination or a separate list for "recent"
-        const MAX_VISITORS_TO_FETCH = 500;
-        const sortedVisitorIds = visitorIds.slice(-MAX_VISITORS_TO_FETCH);
-
-        const pipeline = kv.pipeline();
-        sortedVisitorIds.forEach(id => pipeline.hgetall(`visitor:${id}`));
-        const visitorsDetails = await pipeline.exec() as Array<Partial<VisitorData> | null>;
-
-        // Process visitors for the recent activity table
         const recentVisitors: VisitorData[] = [];
         let activeUsers24h = 0;
         const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
 
-        visitorsDetails.forEach((details, index) => {
+        visitorDetails.forEach((details, index) => {
             if (!details) return;
-
             const visitor: VisitorData = {
                 id: sortedVisitorIds[index],
                 country: details.country ?? "Unknown",
@@ -707,66 +844,94 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
                 firstSeen: Number(details.firstSeen ?? details.lastSeen),
                 queryCount: Number(details.queryCount ?? 0),
             };
-
             recentVisitors.push(visitor);
-
             if (visitor.lastSeen > oneDayAgo) {
-                activeUsers24h++;
+                activeUsers24h += 1;
             }
         });
 
-        // Fetch pre-aggregated stats for global accuracy (since recentVisitors is limited)
-        const countryKeys = await kv.keys("stats:country:*");
-        const deviceKeys = await kv.keys("stats:device:*");
-
-        const statsPipeline = kv.pipeline();
-        countryKeys.forEach((key) => statsPipeline.get(key));
-        deviceKeys.forEach((key) => statsPipeline.get(key));
-        const statsValues = await statsPipeline.exec() as Array<number | string | null>;
-
-        const countryStats: Record<string, number> = {};
-        const deviceStats: Record<string, number> = { mobile: 0, desktop: 0, unknown: 0 };
-
-        countryKeys.forEach((key, i) => {
-            const country = key.replace("stats:country:", "");
-            countryStats[country] = Number(statsValues[i] || 0);
-        });
-
-        deviceKeys.forEach((key, i) => {
-            const device = key.replace("stats:device:", "");
-            deviceStats[device] = Number(statsValues[countryKeys.length + i] || 0);
-        });
-
-        // if we didn't fetch all visitors, our stats might be incomplete
-        // but for a dashboard, showing stats for the most recent 500 is a fair trade-off
-        // unless we transition to pre-aggregated keys (next step)
-
-        const authQueryTotal = loggedInUsers.reduce((sum: number, u: LoggedInUserData) => sum + (u.queryCount || 0), 0);
-
-        return {
-            totalVisitors: totalAnonVisitors + manualAdjustments.visitors + loggedInUsers.length,
-            totalQueries: (totalAnonQueries || 0) + manualAdjustments.queries + authQueryTotal,
-            activeUsers24h,
-            totalLoggedInUsers: loggedInUsers.length,
-            deviceStats,
-            countryStats,
-            recentVisitors,
-            loggedInUsers,
-            kvStats: {
+        let kvStats: AnalyticsData["kvStats"] | undefined;
+        if (includeKvHistory) {
+            const kvInfo = await getKVStats();
+            const kvHistory = await recordKVUsageHistory(kvInfo.currentSize);
+            kvStats = {
                 currentSize: kvInfo.currentSize,
                 maxSize: kvInfo.maxSize,
-                history: kvHistory
-            },
-            searchPerformance: {
+                history: kvHistory,
+            };
+        }
+
+        return {
+            activeUsers24h,
+            recentVisitors,
+            loggedInUsers,
+            searchPerformance: includeSelection ? {
                 byWindow: {
                     "24h": selection24h,
                     "7d": selection7d,
                 },
-            },
-            reportFunnel,
-            falsePositiveReview,
+            } : undefined,
+            reportFunnel: includeFunnel ? reportFunnel : undefined,
+            falsePositiveReview: includeFalsePositiveReview ? falsePositiveReview : undefined,
+            kvStats,
         };
+    } catch (error) {
+        console.error("Failed to fetch analytics details:", error);
+        return {
+            activeUsers24h: 0,
+            recentVisitors: [],
+            loggedInUsers: [],
+            searchPerformance: includeSelection ? {
+                byWindow: {
+                    "24h": EMPTY_SELECTION_METRICS,
+                    "7d": EMPTY_SELECTION_METRICS,
+                },
+            } : undefined,
+            reportFunnel: includeFunnel ? emptyReportFunnelMetrics() : undefined,
+            falsePositiveReview: includeFalsePositiveReview ? EMPTY_FALSE_POSITIVE_REVIEW : undefined,
+        };
+    }
+}
 
+export async function getAnalyticsData(): Promise<AnalyticsData> {
+    try {
+        const [summary, details] = await Promise.all([
+            getAnalyticsSummaryUncached(),
+            getAnalyticsDetails({
+                visitorLimit: 500,
+                loggedInLimit: 200,
+                includeSelection: true,
+                includeFunnel: true,
+                includeFalsePositiveReview: true,
+                includeKvHistory: true,
+            }),
+        ]);
+
+        const kvHistory = details.kvStats?.history ?? [];
+
+        return {
+            totalVisitors: summary.totalVisitors,
+            totalQueries: summary.totalQueries,
+            totalLoggedInUsers: summary.totalLoggedInUsers,
+            deviceStats: summary.deviceStats,
+            countryStats: summary.countryStats,
+            activeUsers24h: details.activeUsers24h ?? 0,
+            recentVisitors: details.recentVisitors ?? [],
+            loggedInUsers: details.loggedInUsers ?? [],
+            kvStats: {
+                currentSize: summary.kvStats?.currentSize ?? 0,
+                maxSize: summary.kvStats?.maxSize ?? 256 * 1024 * 1024,
+                history: kvHistory,
+            },
+            searchPerformance: details.searchPerformance ?? {
+                byWindow: {
+                    "24h": EMPTY_SELECTION_METRICS,
+                    "7d": EMPTY_SELECTION_METRICS,
+                },
+            },
+            reportFunnel: details.reportFunnel ?? emptyReportFunnelMetrics(),
+            falsePositiveReview: details.falsePositiveReview ?? EMPTY_FALSE_POSITIVE_REVIEW,
+        };
     } catch (error) {
         console.error("Failed to fetch analytics data:", error);
         return {
@@ -780,17 +945,16 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
             loggedInUsers: [],
             searchPerformance: {
                 byWindow: {
-                    "24h": { avgSelectionMs: 0, indexHitRate: 0, fallbackRate: 0, selections: 0 },
-                    "7d": { avgSelectionMs: 0, indexHitRate: 0, fallbackRate: 0, selections: 0 },
+                    "24h": EMPTY_SELECTION_METRICS,
+                    "7d": EMPTY_SELECTION_METRICS,
                 },
             },
             reportFunnel: emptyReportFunnelMetrics(),
-            falsePositiveReview: {
-                total: 0,
-                pending: 0,
-                confirmedFalsePositive: 0,
-                rejected: 0,
-                recentSubmissions: [],
+            falsePositiveReview: EMPTY_FALSE_POSITIVE_REVIEW,
+            kvStats: {
+                currentSize: 0,
+                maxSize: 256 * 1024 * 1024,
+                history: [],
             },
         };
     }
@@ -806,15 +970,14 @@ const getCachedPublicStats = unstable_cache(
             const adminUsername = process.env.ADMIN_GITHUB_USERNAME?.trim();
             
             // 1. Fetch KV data
-            const [kvVisitorIdsRaw, totalAnonQueriesRaw, manualAdjustments] = await Promise.all([
-                kv.smembers("visitors"),
+            const [anonVisitorCountRaw, totalAnonQueriesRaw, manualAdjustments] = await Promise.all([
+                kv.scard("visitors"),
                 kv.get<number>("queries:total"),
                 getManualAnalyticsAdjustments(),
             ]);
 
-            const visitorIds = (kvVisitorIdsRaw as string[]) || [];
             // Count all IDs in KV. These are exclusively anonymous visitors or unmigrated historical records.
-            const totalAnonVisitors = visitorIds.length;
+            const totalAnonVisitors = Number(anonVisitorCountRaw || 0);
             const totalAnonQueries = Number(totalAnonQueriesRaw || 0);
 
             // 2. Fetch Postgres data (excluding admin)

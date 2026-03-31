@@ -7,11 +7,13 @@ const {
     scardMock,
     getMock,
     smembersMock,
+    hgetallMock,
     keysMock,
     execInfoMock,
     lrangeMock,
     pipelineExecMock,
     userFindManyMock,
+    userAggregateMock,
     repoScanGroupByMock,
     recentSearchGroupByMock,
     chatGroupByMock,
@@ -22,11 +24,13 @@ const {
     scardMock: vi.fn(),
     getMock: vi.fn(),
     smembersMock: vi.fn(),
+    hgetallMock: vi.fn(),
     keysMock: vi.fn(),
     execInfoMock: vi.fn(),
     lrangeMock: vi.fn(),
     pipelineExecMock: vi.fn(),
     userFindManyMock: vi.fn(),
+    userAggregateMock: vi.fn(),
     repoScanGroupByMock: vi.fn(),
     recentSearchGroupByMock: vi.fn(),
     chatGroupByMock: vi.fn(),
@@ -39,6 +43,7 @@ vi.mock("@vercel/kv", () => ({
         scard: scardMock,
         get: getMock,
         smembers: smembersMock,
+        hgetall: hgetallMock,
         keys: keysMock,
         exec: execInfoMock,
         lrange: lrangeMock,
@@ -88,6 +93,7 @@ vi.mock("@/lib/db", () => ({
     prisma: {
         user: {
             findMany: userFindManyMock,
+            aggregate: userAggregateMock,
         },
         repoScan: {
             groupBy: repoScanGroupByMock,
@@ -113,11 +119,13 @@ describe("report conversion analytics", () => {
         scardMock.mockReset();
         getMock.mockReset();
         smembersMock.mockReset();
+        hgetallMock.mockReset();
         keysMock.mockReset();
         execInfoMock.mockReset();
         lrangeMock.mockReset();
         pipelineExecMock.mockReset();
         userFindManyMock.mockReset();
+        userAggregateMock.mockReset();
         repoScanGroupByMock.mockReset();
         recentSearchGroupByMock.mockReset();
         chatGroupByMock.mockReset();
@@ -127,11 +135,21 @@ describe("report conversion analytics", () => {
         scardMock.mockResolvedValue(0);
         getMock.mockResolvedValue(0);
         smembersMock.mockResolvedValue([]);
+        hgetallMock.mockResolvedValue({});
         keysMock.mockResolvedValue([]);
-        execInfoMock.mockResolvedValue("total_data_size:0");
+        execInfoMock.mockImplementation(async (command: unknown) => {
+            if (Array.isArray(command) && command[0] === "SRANDMEMBER") {
+                return [];
+            }
+            return "total_data_size:0";
+        });
         lrangeMock.mockResolvedValue([]);
         pipelineExecMock.mockResolvedValue([]);
         userFindManyMock.mockResolvedValue([]);
+        userAggregateMock.mockResolvedValue({
+            _sum: { queryCount: 0 },
+            _count: { id: 0 },
+        });
         repoScanGroupByMock.mockResolvedValue([]);
         recentSearchGroupByMock.mockResolvedValue([]);
         chatGroupByMock.mockResolvedValue([]);

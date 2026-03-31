@@ -7,12 +7,12 @@ import StatsDashboardClient from "@/app/admin/stats/StatsDashboardClient";
 const {
     authMock,
     isAdminUserMock,
-    getAnalyticsDataMock,
+    getAnalyticsSummaryMock,
     headersMock,
 } = vi.hoisted(() => ({
     authMock: vi.fn(),
     isAdminUserMock: vi.fn(),
-    getAnalyticsDataMock: vi.fn(),
+    getAnalyticsSummaryMock: vi.fn(),
     headersMock: vi.fn(),
 }));
 
@@ -25,7 +25,7 @@ vi.mock("@/lib/admin-auth", () => ({
 }));
 
 vi.mock("@/lib/analytics", () => ({
-    getAnalyticsData: getAnalyticsDataMock,
+    getAnalyticsSummary: getAnalyticsSummaryMock,
 }));
 
 vi.mock("next/headers", () => ({
@@ -38,7 +38,7 @@ describe("AdminStatsPage", () => {
     beforeEach(() => {
         authMock.mockReset();
         isAdminUserMock.mockReset();
-        getAnalyticsDataMock.mockReset();
+        getAnalyticsSummaryMock.mockReset();
         headersMock.mockReset();
         headersMock.mockResolvedValue({
             get: () => null,
@@ -51,7 +51,7 @@ describe("AdminStatsPage", () => {
         const view = await AdminStatsPage() as ReactElement;
 
         expect(view.type).toBe(AdminLoginPage);
-        expect(getAnalyticsDataMock).not.toHaveBeenCalled();
+        expect(getAnalyticsSummaryMock).not.toHaveBeenCalled();
     });
 
     it("renders access denied for authenticated non-admin users", async () => {
@@ -63,7 +63,7 @@ describe("AdminStatsPage", () => {
 
         expect(isAdminUserMock).toHaveBeenCalledWith(session);
         expect(view.type).toBe(AdminAccessDeniedPage);
-        expect(getAnalyticsDataMock).not.toHaveBeenCalled();
+        expect(getAnalyticsSummaryMock).not.toHaveBeenCalled();
     });
 
     it("renders stats dashboard for authorized admin users", async () => {
@@ -71,7 +71,7 @@ describe("AdminStatsPage", () => {
         const data = {
             totalVisitors: 10,
             totalQueries: 20,
-            recentVisitors: [],
+            totalLoggedInUsers: 0,
             countryStats: {},
             deviceStats: {},
             kvStats: { currentSize: 10, maxSize: 100 },
@@ -79,7 +79,7 @@ describe("AdminStatsPage", () => {
 
         authMock.mockResolvedValue(session);
         isAdminUserMock.mockReturnValue(true);
-        getAnalyticsDataMock.mockResolvedValue(data);
+        getAnalyticsSummaryMock.mockResolvedValue(data);
         headersMock.mockResolvedValue({
             get: (key: string) => {
                 if (key === "user-agent") return "Mozilla/5.0 (iPhone)";
@@ -96,8 +96,13 @@ describe("AdminStatsPage", () => {
         }>;
 
         expect(view.type).toBe(StatsDashboardClient);
-        expect(getAnalyticsDataMock).toHaveBeenCalledOnce();
-        expect(view.props.data).toEqual(data);
+        expect(getAnalyticsSummaryMock).toHaveBeenCalledOnce();
+        expect(view.props.data).toEqual({
+            ...data,
+            activeUsers24h: 0,
+            recentVisitors: [],
+            loggedInUsers: [],
+        });
         expect(view.props.country).toBe("IN");
         expect(view.props.isMobile).toBe(true);
         expect(view.props.currentUsername).toBe("403errors");

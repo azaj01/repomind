@@ -1,5 +1,5 @@
-import { getCatalogData, type CatalogRepoEntry } from "@/lib/repo-catalog";
-import { getUserRepos, type GitHubRepo } from "@/lib/github";
+import { getCatalogData } from "@/lib/repo-catalog";
+import { getUserRepos } from "@/lib/github";
 import { octokit } from "@/lib/github"; // I need to make sure octokit is exported or use a wrapper
 import { kv } from "@vercel/kv";
 
@@ -9,6 +9,13 @@ export interface RepoSuggestion {
     stars: number;
     description: string | null;
     source: 'local' | 'user' | 'github';
+}
+
+interface GitHubSearchRepoItem {
+    owner: { login: string };
+    name: string;
+    stargazers_count: number;
+    description: string | null;
 }
 
 const SEARCH_CACHE_TTL = 3600; // 1 hour
@@ -42,7 +49,7 @@ function dedupeRepoSuggestions(suggestions: RepoSuggestion[]): RepoSuggestion[] 
  */
 export async function getRepoSuggestions(query: string): Promise<RepoSuggestion[]> {
     const trimmed = query.trim();
-    if (!trimmed) return [];
+    if (!trimmed || trimmed.length < 3) return [];
 
     // 1. Check for "username/" or "username/partial" pattern
     if (trimmed.includes('/')) {
@@ -108,14 +115,14 @@ export async function getRepoSuggestions(query: string): Promise<RepoSuggestion[
         if (cached) return dedupeRepoSuggestions([...localMatches, ...cached]).slice(0, 10);
 
         // Actual GitHub Search
-        const { data } = await (octokit as any).rest.search.repos({
+        const { data } = await octokit.rest.search.repos({
             q: trimmed,
             sort: 'stars',
             order: 'desc',
             per_page: 10
         });
 
-        const githubMatches = data.items.map((repo: any) => ({
+        const githubMatches = (data.items as GitHubSearchRepoItem[]).map((repo) => ({
             owner: repo.owner.login,
             repo: repo.name,
             stars: repo.stargazers_count,

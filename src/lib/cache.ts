@@ -19,6 +19,7 @@ const TTL_BUDGET_WINDOW = 86400; // 24 hours
 const FILE_CACHE_MAX_ANON_BYTES = 10 * 1024 * 1024; // 10MB/day
 const FILE_CACHE_MAX_AUTH_BYTES = 20 * 1024 * 1024; // 20MB/day
 const ANON_MAX_CACHEABLE_FILE_BYTES = 128 * 1024; // 128KB
+const ANON_CONSECUTIVE_PATH_CAP = 5;
 const TOOL_BUDGET_MAX_ANON = 10;
 const TOOL_BUDGET_MAX_AUTH = 30;
 
@@ -43,6 +44,11 @@ interface RepoFullContextCachePayload {
 interface CommitSnapshotCachePayload<T> {
     data: T;
     fetchedAt: number;
+}
+
+interface InMemoryAnonFileHitState {
+    hits: number;
+    expiresAt: number;
 }
 
 export interface ToolBudgetUsage {
@@ -157,6 +163,31 @@ function getRepoCommitSnapshotKey(owner: string, repo: string, limit: number): s
     return `commit_snapshot:repo:${owner.toLowerCase()}/${repo.toLowerCase()}:${limit}`;
 }
 
+const anonFileHitState = new Map<string, InMemoryAnonFileHitState>();
+
+function incrementInMemoryAnonFileHit(key: string, ttlSeconds: number = TTL_BUDGET_WINDOW): number {
+    const now = Date.now();
+    const ttlMs = Math.max(1, ttlSeconds) * 1000;
+
+    if (anonFileHitState.size > 10_000) {
+        for (const [entryKey, state] of anonFileHitState.entries()) {
+            if (state.expiresAt <= now) {
+                anonFileHitState.delete(entryKey);
+            }
+        }
+    }
+
+    const existing = anonFileHitState.get(key);
+
+    if (!existing || existing.expiresAt <= now) {
+        anonFileHitState.set(key, { hits: 1, expiresAt: now + ttlMs });
+        return 1;
+    }
+
+    existing.hits += 1;
+    return existing.hits;
+}
+
 export async function resolveAnonymousConsecutivePaths(
     owner: string,
     repo: string,
@@ -176,7 +207,7 @@ export async function resolveAnonymousConsecutivePaths(
         await safeKvOperation(() => kv.expire(sequenceKey, TTL_BUDGET_WINDOW));
     }
 
-    const uniquePaths = Array.from(new Set(paths));
+    const uniquePaths = Array.from(new Set(paths)).slice(0, ANON_CONSECUTIVE_PATH_CAP);
     const lastSeenKeys = uniquePaths.map((path) => `anon_last_seen:${namespace}:${path}`);
     const lastSeenValues = await safeKvOperation(() => kv.mget<number[]>(lastSeenKeys));
     const consecutive: string[] = [];
@@ -239,7 +270,9 @@ export async function consumeToolBudgetUsage(
     const { resetAt, windowSecondsRemaining } = getBudgetResetInfo();
     const nextRaw = await safeKvOperation(() => kv.incrby(key, normalizedUnits));
     const next = typeof nextRaw === "number" ? nextRaw : normalizedUnits;
-    await safeKvOperation(() => kv.expire(key, Math.max(1, Math.min(TTL_BUDGET_WINDOW, windowSecondsRemaining + 60))));
+    if (next === normalizedUnits) {
+        await safeKvOperation(() => kv.expire(key, Math.max(1, Math.min(TTL_BUDGET_WINDOW, windowSecondsRemaining + 60))));
+    }
 
     const limit = getToolBudgetLimit(audience);
     return {
@@ -341,11 +374,7 @@ async function shouldAdmitAnonymousFileCache(
 
     const namespace = getFileCacheNamespace(owner, repo, normalized);
     const key = `file_hit:${namespace}:${path}:${sha}`;
-    const hitsRaw = await safeKvOperation(() => kv.incrby(key, 1));
-    const hits = typeof hitsRaw === "number" ? hitsRaw : 0;
-    if (hits === 1) {
-        await safeKvOperation(() => kv.expire(key, TTL_BUDGET_WINDOW));
-    }
+    const hits = incrementInMemoryAnonFileHit(key);
     // Cache-on-second-hit for anonymous traffic to avoid low-value one-offs.
     return hits >= 2;
 }

@@ -2,9 +2,9 @@ import { auth } from "@/lib/auth";
 import { isAdminUser } from "@/lib/admin-auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { FileText, Settings, Users, ArrowRight, BarChart2, Globe, Activity, Database, Hash } from "lucide-react";
+import { FileText, Users, ArrowRight, BarChart2, Activity, Database, Hash } from "lucide-react";
 import { getAllPosts } from "@/lib/services/blog-service";
-import { getAnalyticsData } from "@/lib/analytics";
+import { getAnalyticsSummary } from "@/lib/analytics";
 import { getCatalogStats } from "@/lib/repo-catalog";
 
 export default async function AdminDashboardPage() {
@@ -16,12 +16,11 @@ export default async function AdminDashboardPage() {
 
   const [posts, analytics, catalogStats] = await Promise.all([
     getAllPosts(),
-    getAnalyticsData(),
+    getAnalyticsSummary(),
     getCatalogStats(),
   ]);
 
-  const publishedCount = posts.filter((p: any) => p.published).length;
-  const draftCount = posts.length - publishedCount;
+  const publishedCount = posts.filter((post) => post.published).length;
 
   const stats = [
     { label: "Total Posts", value: posts.length.toString(), icon: FileText, color: "text-blue-400" },

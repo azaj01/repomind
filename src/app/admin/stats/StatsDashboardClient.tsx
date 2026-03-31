@@ -49,13 +49,15 @@ export default function StatsDashboardClient({
     currentUsername,
 }: StatsDashboardClientProps) {
     const router = useRouter();
+    const [analyticsData, setAnalyticsData] = useState<AnalyticsData>(data);
+    const [isDetailsLoading, setIsDetailsLoading] = useState(false);
     const [falsePositiveRows, setFalsePositiveRows] = useState(() => data.falsePositiveReview?.recentSubmissions ?? []);
     const [accountRows, setAccountRows] = useState<LoggedInUserData[]>(() => data.loggedInUsers ?? []);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [selectedRange, setSelectedRange] = useState<HistoryRange>("24h");
     const [selectionRange, setSelectionRange] = useState<SelectionRange>("24h");
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'lastSeen', direction: 'desc' });
-    const [visibleCount, setVisibleCount] = useState(15);
+    const [visibleCount, setVisibleCount] = useState(10);
     const [currentTime, setCurrentTime] = useState(0);
     const [pendingSubmissionId, setPendingSubmissionId] = useState<string | null>(null);
     const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
@@ -72,12 +74,52 @@ export default function StatsDashboardClient({
     }, []);
 
     useEffect(() => {
-        setFalsePositiveRows(data.falsePositiveReview?.recentSubmissions ?? []);
-    }, [data.falsePositiveReview]);
+        setAnalyticsData(data);
+    }, [data]);
 
     useEffect(() => {
-        setAccountRows(data.loggedInUsers ?? []);
-    }, [data.loggedInUsers]);
+        setFalsePositiveRows(analyticsData.falsePositiveReview?.recentSubmissions ?? []);
+    }, [analyticsData.falsePositiveReview]);
+
+    useEffect(() => {
+        setAccountRows(analyticsData.loggedInUsers ?? []);
+    }, [analyticsData.loggedInUsers]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadDetails = async () => {
+            setIsDetailsLoading(true);
+            try {
+                const response = await fetch("/api/admin/stats/details?visitorLimit=10&loggedInLimit=10", {
+                    cache: "no-store",
+                });
+                if (!response.ok) return;
+                const details = await response.json() as Partial<AnalyticsData>;
+                if (cancelled) return;
+                setAnalyticsData((current) => ({
+                    ...current,
+                    ...details,
+                    kvStats: {
+                        currentSize: current.kvStats?.currentSize ?? 0,
+                        maxSize: current.kvStats?.maxSize ?? 0,
+                        history: details.kvStats?.history ?? current.kvStats?.history ?? [],
+                    },
+                }));
+            } catch (error) {
+                if (!cancelled) {
+                    console.error("Failed to lazy-load admin analytics details:", error);
+                }
+            } finally {
+                if (!cancelled) {
+                    setIsDetailsLoading(false);
+                }
+            }
+        };
+        void loadDetails();
+        return () => {
+            cancelled = true;
+        };
+    }, [data]);
 
     const handleRefresh = () => {
         setIsRefreshing(true);
@@ -167,24 +209,24 @@ export default function StatsDashboardClient({
     };
 
     // Calculate advanced metrics
-    const returningUsers = data.recentVisitors.filter(
+    const returningUsers = analyticsData.recentVisitors.filter(
         (v) => v.queryCount > 1 && (v.lastSeen - v.firstSeen > 1000 * 60 * 60)
     ).length;
-    const retentionRate = data.totalVisitors > 0
-        ? ((returningUsers / data.totalVisitors) * 100).toFixed(1)
+    const retentionRate = analyticsData.totalVisitors > 0
+        ? ((returningUsers / analyticsData.totalVisitors) * 100).toFixed(1)
         : "0";
-    const avgQueriesPerUser = data.totalVisitors > 0
-        ? (data.totalQueries / data.totalVisitors).toFixed(1)
+    const avgQueriesPerUser = analyticsData.totalVisitors > 0
+        ? (analyticsData.totalQueries / analyticsData.totalVisitors).toFixed(1)
         : "0";
-    const activeNow = data.recentVisitors.filter((v) => isOnline(v.lastSeen)).length;
-    const reportFunnel = data.reportFunnel;
+    const activeNow = analyticsData.recentVisitors.filter((v) => isOnline(v.lastSeen)).length;
+    const reportFunnel = analyticsData.reportFunnel;
     const weeklyReportViews = reportFunnel?.weekly.report_viewed_shared ?? 0;
     const weeklyFixStarts = reportFunnel?.weekly.report_fix_chat_started ?? 0;
     const weeklyLoginGates = reportFunnel?.weekly.report_fix_login_gate_shown ?? 0;
     const weeklyConversionRate = reportFunnel?.weeklyConversionRate ?? 0;
-    const falsePositiveReview = data.falsePositiveReview;
+    const falsePositiveReview = analyticsData.falsePositiveReview;
     const loggedInUsers = accountRows;
-    const selectionStats = data.searchPerformance?.byWindow?.[selectionRange] ?? {
+    const selectionStats = analyticsData.searchPerformance?.byWindow?.[selectionRange] ?? {
         avgSelectionMs: 0,
         indexHitRate: 0,
         fallbackRate: 0,
@@ -196,7 +238,7 @@ export default function StatsDashboardClient({
     );
 
     const sortedVisitors = useMemo(() => {
-        const items = [...data.recentVisitors];
+        const items = [...analyticsData.recentVisitors];
         items.sort((a, b) => {
             const aValue = a[sortConfig.key as keyof VisitorData] ?? '';
             const bValue = b[sortConfig.key as keyof VisitorData] ?? '';
@@ -206,13 +248,13 @@ export default function StatsDashboardClient({
             return 0;
         });
         return items;
-    }, [data.recentVisitors, sortConfig]);
+    }, [analyticsData.recentVisitors, sortConfig]);
 
     const displayedVisitors = useMemo(() => {
         return sortedVisitors.slice(0, visibleCount);
     }, [sortedVisitors, visibleCount]);
     const displayedLoggedInUsers = useMemo(() => {
-        return loggedInUsers.slice(0, 100);
+        return loggedInUsers.slice(0, 10);
     }, [loggedInUsers]);
 
     const requestSort = (key: keyof VisitorData | 'id') => {
@@ -249,6 +291,11 @@ export default function StatsDashboardClient({
                     </div>
 
                     <div className="flex items-center gap-4">
+                        {isDetailsLoading && (
+                            <span className="hidden sm:inline-flex rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-cyan-200">
+                                Loading Detailed Panels…
+                            </span>
+                        )}
                         <div className="text-right hidden sm:block">
                             <div className="text-sm text-zinc-400">Current Time (IST)</div>
                             <div className="text-xs font-mono text-zinc-500">
@@ -300,14 +347,14 @@ export default function StatsDashboardClient({
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                     <StatsCard
                         title="Total Visitors"
-                        value={data.totalVisitors}
+                        value={analyticsData.totalVisitors}
                         subValue={`${returningUsers} returning`}
                         icon={<Users className="w-5 h-5 text-purple-400" />}
                         trend="+12%"
                     />
                     <StatsCard
                         title="Total Queries"
-                        value={data.totalQueries}
+                        value={analyticsData.totalQueries}
                         subValue={`${avgQueriesPerUser} per visitor`}
                         icon={<Activity className="w-5 h-5 text-blue-400" />}
                         trend="+5%"
@@ -326,14 +373,14 @@ export default function StatsDashboardClient({
                     />
                     <StatsCard
                         title="Logged Accounts"
-                        value={loggedInUsers.length}
-                        subValue={`${loggedInUsers.length} shown`}
+                        value={analyticsData.totalLoggedInUsers}
+                        subValue={`${displayedLoggedInUsers.length} loaded`}
                         icon={<UserCheck className="w-5 h-5 text-cyan-400" />}
                     />
                     <StatsCard
                         title="KV Storage"
-                        value={formatSize(data.kvStats?.currentSize || 0)}
-                        subValue={`${((data.kvStats?.currentSize || 0) / (data.kvStats?.maxSize || 1) * 100).toFixed(2)}% of ${formatSize(data.kvStats?.maxSize || 0)}`}
+                        value={formatSize(analyticsData.kvStats?.currentSize || 0)}
+                        subValue={`${((analyticsData.kvStats?.currentSize || 0) / (analyticsData.kvStats?.maxSize || 1) * 100).toFixed(2)}% of ${formatSize(analyticsData.kvStats?.maxSize || 0)}`}
                         icon={<Database className="w-5 h-5 text-amber-400" />}
                     />
                 </div>
@@ -433,8 +480,8 @@ export default function StatsDashboardClient({
                                     <span className="text-xs text-zinc-500">BY PERCENTAGE</span>
                                 </div>
                                 <div className="h-12 w-full flex rounded-xl overflow-hidden bg-zinc-800">
-                                    {Object.entries(data.deviceStats).map(([device, count]) => {
-                                        const percentage = (count / data.totalVisitors) * 100;
+                                    {Object.entries(analyticsData.deviceStats).map(([device, count]) => {
+                                        const percentage = (count / analyticsData.totalVisitors) * 100;
                                         if (percentage === 0) return null;
                                         const colors = {
                                             desktop: 'bg-blue-500',
@@ -461,7 +508,7 @@ export default function StatsDashboardClient({
                                 <div className="space-y-3">
                                     <h3 className="text-sm font-medium text-zinc-300">Top Countries</h3>
                                     <div className="space-y-4">
-                                        {Object.entries(data.countryStats)
+                                        {Object.entries(analyticsData.countryStats)
                                             .sort(([, a], [, b]) => b - a)
                                             .slice(0, 4)
                                             .map(([country, count]) => (
@@ -473,7 +520,7 @@ export default function StatsDashboardClient({
                                                     <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
                                                         <motion.div
                                                             initial={{ width: 0 }}
-                                                            animate={{ width: `${(count / data.totalVisitors) * 100}%` }}
+                                                            animate={{ width: `${(count / analyticsData.totalVisitors) * 100}%` }}
                                                             className="h-full bg-purple-500/40"
                                                         />
                                                     </div>
@@ -489,7 +536,7 @@ export default function StatsDashboardClient({
                                     </div>
                                     <p className="text-sm text-zinc-400 leading-relaxed">
                                         Your platform has a <span className="text-white font-medium">{retentionRate}% retention rate</span>.
-                                        High query volume from {Object.entries(data.countryStats).sort(([, a], [, b]) => b - a)[0]?.[0] || 'users'} suggests
+                                        High query volume from {Object.entries(analyticsData.countryStats).sort(([, a], [, b]) => b - a)[0]?.[0] || 'users'} suggests
                                         strong feature adoption in those regions.
                                     </p>
                                 </div>
@@ -517,7 +564,7 @@ export default function StatsDashboardClient({
                             <div className="space-y-4">
                                 <div className="flex justify-between items-center text-sm">
                                     <span className="text-zinc-400">Active (24h)</span>
-                                    <span className="font-mono text-zinc-200">{data.activeUsers24h}</span>
+                                    <span className="font-mono text-zinc-200">{analyticsData.activeUsers24h}</span>
                                 </div>
                                 <div className="flex justify-between items-center text-sm">
                                     <span className="text-zinc-400">Avg. Queries</span>
@@ -525,7 +572,7 @@ export default function StatsDashboardClient({
                                 </div>
                                 <div className="flex justify-between items-center text-sm">
                                     <span className="text-zinc-400">Total Sessions</span>
-                                    <span className="font-mono text-zinc-200">{data.totalVisitors}</span>
+                                    <span className="font-mono text-zinc-200">{analyticsData.totalVisitors}</span>
                                 </div>
                                 <div className="flex justify-between items-center text-sm">
                                     <span className="text-zinc-400">Returning Users</span>
@@ -565,14 +612,14 @@ export default function StatsDashboardClient({
                             </select>
                             <div className="flex items-center gap-2 text-xs font-mono text-zinc-400">
                                 <Zap className="w-3 h-3 text-amber-500" />
-                                <span>LIMIT: {formatSize(data.kvStats?.maxSize || 0)}</span>
+                                <span>LIMIT: {formatSize(analyticsData.kvStats?.maxSize || 0)}</span>
                             </div>
                         </div>
                     </div>
 
                     <div className="h-64 w-full relative group">
                         {(() => {
-                            const history = data.kvStats?.history || [];
+                            const history = analyticsData.kvStats?.history || [];
                             if (history.length < 2) return (
                                 <div className="flex flex-col items-center justify-center h-full text-zinc-600">
                                     <Database className="w-10 h-10 opacity-10 mb-2" />
@@ -908,7 +955,7 @@ export default function StatsDashboardClient({
                 <div className="bg-zinc-900/50 border border-white/10 rounded-2xl overflow-hidden">
                     <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between">
                         <h2 className="text-xl font-semibold">Recent Visitors</h2>
-                        <span className="text-xs text-zinc-500 font-mono">Showing {displayedVisitors.length} of {data.recentVisitors.length}</span>
+                        <span className="text-xs text-zinc-500 font-mono">Showing {displayedVisitors.length} of {analyticsData.recentVisitors.length}</span>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-sm whitespace-nowrap">
@@ -995,7 +1042,7 @@ export default function StatsDashboardClient({
                                         );
                                     })}
                                 </AnimatePresence>
-                                {data.recentVisitors.length === 0 && (
+                                {analyticsData.recentVisitors.length === 0 && (
                                     <tr>
                                         <td colSpan={6} className="px-6 py-12 text-center text-zinc-500">
                                             <div className="flex flex-col items-center gap-2">
@@ -1013,10 +1060,10 @@ export default function StatsDashboardClient({
                 {visibleCount < sortedVisitors.length && (
                     <div className="flex justify-center pb-8">
                         <button
-                            onClick={() => setVisibleCount(prev => prev + 15)}
+                            onClick={() => setVisibleCount(prev => prev + 10)}
                             className="bg-zinc-900 border border-white/10 px-8 py-3 rounded-xl hover:bg-zinc-800 hover:border-white/20 transition-all font-medium text-sm text-zinc-400 hover:text-white"
                         >
-                            Show 15 more visitors
+                            Show 10 more visitors
                         </button>
                     </div>
                 )}

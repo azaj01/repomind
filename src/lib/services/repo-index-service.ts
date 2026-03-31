@@ -25,6 +25,7 @@ const INDEX_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 const INDEX_ACCESS_TTL_SECONDS = 60 * 60 * 24; // 24h window
 const INDEX_MIN_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const INDEX_EVICT_ACCESS_THRESHOLD = 3;
+const INDEX_ACCESS_THROTTLE_MS = 15 * 60 * 1000;
 
 const CORE_FILE_PATTERNS: Array<{ pattern: RegExp; boost: number }> = [
     { pattern: /(^|\/)package\.json$/i, boost: 3 },
@@ -114,6 +115,27 @@ async function safeKvOperation<T>(operation: () => Promise<T>): Promise<T | null
     }
 }
 
+const indexAccessWriteGate = new Map<string, number>();
+
+function shouldWriteIndexAccess(owner: string, repo: string, nowMs: number = Date.now()): boolean {
+    const key = `${owner.toLowerCase()}/${repo.toLowerCase()}`;
+    const lastWriteAt = indexAccessWriteGate.get(key) ?? 0;
+    if (nowMs - lastWriteAt < INDEX_ACCESS_THROTTLE_MS) {
+        return false;
+    }
+
+    indexAccessWriteGate.set(key, nowMs);
+    if (indexAccessWriteGate.size > 2_000) {
+        const threshold = nowMs - (INDEX_ACCESS_THROTTLE_MS * 4);
+        for (const [entryKey, ts] of indexAccessWriteGate.entries()) {
+            if (ts < threshold) {
+                indexAccessWriteGate.delete(entryKey);
+            }
+        }
+    }
+    return true;
+}
+
 async function ensureIndexFirstBuilt(owner: string, repo: string): Promise<void> {
     const key = getIndexFirstBuiltKey(owner, repo);
     await safeKvOperation(async () => {
@@ -125,6 +147,10 @@ async function ensureIndexFirstBuilt(owner: string, repo: string): Promise<void>
 }
 
 export async function recordRepoIndexAccess(owner: string, repo: string): Promise<void> {
+    if (!shouldWriteIndexAccess(owner, repo)) {
+        return;
+    }
+
     const key = getIndexAccessKey(owner, repo);
     await safeKvOperation(async () => {
         const pipeline = kv.pipeline();

@@ -35,7 +35,7 @@ export default function RepoSearch({
         let isCancelled = false;
         
         const fetchSuggestions = async () => {
-            if (input.length < 2) {
+            if (input.length < 3) {
                 setSuggestions([]);
                 setShowSuggestions(false);
                 return;
@@ -119,7 +119,7 @@ export default function RepoSearch({
                         value={input}
                         onChange={(e) => handleInputChange(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        onFocus={() => input.length >= 2 && suggestions.length > 0 && setShowSuggestions(true)}
+                        onFocus={() => input.length >= 3 && suggestions.length > 0 && setShowSuggestions(true)}
                         onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                         placeholder="GitHub URL, username, or repo"
                         className="flex-1 bg-transparent border-none outline-none text-white px-3 py-2 md:px-4 md:py-3 placeholder-zinc-500 text-sm md:text-base w-full min-w-0"
