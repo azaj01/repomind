@@ -2,8 +2,10 @@
 import { config } from "dotenv";
 import { defineConfig, env } from "prisma/config";
 
-config({ path: ".env.local" });
-config();
+if (!process.env.VERCEL) {
+  config({ path: ".env.local" });
+  config();
+}
 
 const prismaCliDatabaseUrl = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 
