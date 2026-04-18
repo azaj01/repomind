@@ -58,6 +58,10 @@ vi.mock("@vercel/kv", () => ({
                     localCalls.push({ type: "hgetall", key });
                     return pipeline;
                 },
+                smembers: (key: string) => {
+                    localCalls.push({ type: "smembers", key });
+                    return pipeline;
+                },
                 incr: (key: string) => {
                     localCalls.push({ type: "incr", key });
                     return pipeline;
@@ -68,6 +72,14 @@ vi.mock("@vercel/kv", () => ({
                 },
                 del: (key: string) => {
                     localCalls.push({ type: "del", key });
+                    return pipeline;
+                },
+                decrby: (key: string) => {
+                    localCalls.push({ type: "decrby", key });
+                    return pipeline;
+                },
+                srem: (key: string) => {
+                    localCalls.push({ type: "srem", key });
                     return pipeline;
                 },
                 expire: (key: string) => {
@@ -111,7 +123,7 @@ vi.mock("@/lib/db", () => ({
     },
 }));
 
-import { getAnalyticsData, resetReportConversionMetrics, trackReportConversionEvent } from "@/lib/analytics";
+import { getAnalyticsData, getAnalyticsDetails, resetReportConversionMetrics, trackReportConversionEvent } from "@/lib/analytics";
 
 describe("report conversion analytics", () => {
     beforeEach(() => {
@@ -138,10 +150,13 @@ describe("report conversion analytics", () => {
         hgetallMock.mockResolvedValue({});
         keysMock.mockResolvedValue([]);
         execInfoMock.mockImplementation(async (command: unknown) => {
-            if (Array.isArray(command) && command[0] === "SRANDMEMBER") {
-                return [];
+            if (Array.isArray(command)) {
+                if (command[0] === "ZCARD" || command[0] === "ZCOUNT") return 0;
+                if (command[0] === "ZREVRANGE") return [];
+                if (command[0] === "ZADD" || command[0] === "ZREM") return 1;
+                if (command[0] === "INFO") return "total_data_size:0";
             }
-            return "total_data_size:0";
+            return 0;
         });
         lrangeMock.mockResolvedValue([]);
         pipelineExecMock.mockResolvedValue([]);
@@ -199,5 +214,122 @@ describe("report conversion analytics", () => {
         expect(data.reportFunnel?.weeklyExpiredLinkFailures).toBeGreaterThanOrEqual(0);
         expect(data.reportFunnel?.totals.report_viewed_shared).toBeGreaterThanOrEqual(0);
         expect(data.falsePositiveReview?.recentSubmissions).toEqual([]);
+    });
+
+    it("derives retention from legacy visitor hashes when new retention indexes are empty", async () => {
+        const now = Date.now();
+        const dayMs = 24 * 60 * 60 * 1000;
+
+        smembersMock.mockImplementation(async (key: string) => {
+            if (key === "visitors") {
+                return ["anon_repeat", "anon_single"];
+            }
+            return [];
+        });
+
+        execInfoMock.mockImplementation(async (command: unknown) => {
+            if (Array.isArray(command)) {
+                if (command[0] === "ZCARD" || command[0] === "ZCOUNT") return 0;
+                if (command[0] === "ZREVRANGE" || command[0] === "ZRANGEBYSCORE") return [];
+                if (command[0] === "ZADD" || command[0] === "ZREM") return 1;
+                if (command[0] === "INFO") return "total_data_size:0";
+            }
+            return 0;
+        });
+
+        pipelineExecMock.mockImplementation(async (localCalls: PipelineCall[]) => {
+            if (localCalls.every((call) => call.type === "smembers" && call.key.startsWith("stats:active:day:"))) {
+                return localCalls.map(() => []);
+            }
+
+            if (localCalls.every((call) => call.type === "hgetall" && call.key.startsWith("visitor:"))) {
+                return localCalls.map((call) => {
+                    if (call.key === "visitor:anon_repeat") {
+                        return {
+                            firstSeen: now - 20 * dayMs,
+                            lastSeen: now - 2 * dayMs,
+                            queryCount: 5,
+                        };
+                    }
+
+                    return {
+                        firstSeen: now - dayMs,
+                        lastSeen: now - dayMs,
+                        queryCount: 1,
+                    };
+                });
+            }
+
+            return [];
+        });
+
+        const details = await getAnalyticsDetails({
+            visitorLimit: 10,
+            loggedInLimit: 10,
+            includeSelection: false,
+            includeFunnel: false,
+            includeFalsePositiveReview: false,
+            includeKvHistory: false,
+        });
+
+        expect(details.returningUsers30d).toBe(1);
+        expect(details.retentionRate30d).toBe(50);
+    });
+
+    it("returns recent visitors from legacy visitor hashes when actor recency index is empty", async () => {
+        const now = Date.now();
+
+        smembersMock.mockImplementation(async (key: string) => {
+            if (key === "visitors") {
+                return ["anon_legacy"];
+            }
+            return [];
+        });
+
+        execInfoMock.mockImplementation(async (command: unknown) => {
+            if (Array.isArray(command)) {
+                if (command[0] === "ZREVRANGE" || command[0] === "ZRANGEBYSCORE") return [];
+                if (command[0] === "ZCARD" || command[0] === "ZCOUNT") return 0;
+                if (command[0] === "ZADD" || command[0] === "ZREM") return 1;
+                if (command[0] === "INFO") return "total_data_size:0";
+            }
+            return 0;
+        });
+
+        pipelineExecMock.mockImplementation(async (localCalls: PipelineCall[]) => {
+            if (localCalls.every((call) => call.type === "hgetall" && call.key.startsWith("visitor:"))) {
+                return localCalls.map(() => ({
+                    firstSeen: now - 2 * 60 * 60 * 1000,
+                    lastSeen: now - 60 * 1000,
+                    queryCount: 3,
+                    country: "IN",
+                    device: "desktop",
+                }));
+            }
+
+            if (localCalls.every((call) => call.type === "smembers" && call.key.startsWith("stats:active:day:"))) {
+                return localCalls.map(() => []);
+            }
+
+            return [];
+        });
+
+        const details = await getAnalyticsDetails({
+            visitorLimit: 10,
+            loggedInLimit: 10,
+            includeSelection: false,
+            includeFunnel: false,
+            includeFalsePositiveReview: false,
+            includeKvHistory: false,
+        });
+
+        expect(details.recentVisitors).toHaveLength(1);
+        expect(details.recentVisitors?.[0]).toMatchObject({
+            id: "anon_legacy",
+            actorType: "anonymous",
+            country: "IN",
+            device: "desktop",
+            queryCount: 3,
+        });
     });
 });

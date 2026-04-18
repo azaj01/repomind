@@ -28,9 +28,14 @@ describe("GET /api/admin/stats/details", () => {
         getAnalyticsDetailsMock.mockReset();
 
         getAnalyticsDetailsMock.mockResolvedValue({
+            activeNow: 0,
             activeUsers24h: 0,
+            returningUsers30d: 0,
+            retentionRate30d: 0,
             recentVisitors: [],
             loggedInUsers: [],
+            nextVisitorCursor: null,
+            nextLoggedInCursor: null,
         });
     });
 
@@ -51,10 +56,12 @@ describe("GET /api/admin/stats/details", () => {
         expect(response.status).toBe(200);
         expect(getAnalyticsDetailsMock).toHaveBeenCalledWith({
             visitorLimit: 10,
+            visitorCursor: null,
             loggedInLimit: 10,
+            loggedInCursor: null,
             includeSelection: true,
             includeFunnel: true,
-            includeFalsePositiveReview: true,
+            includeFalsePositiveReview: false,
             includeKvHistory: true,
         });
     });
@@ -69,10 +76,32 @@ describe("GET /api/admin/stats/details", () => {
         expect(response.status).toBe(200);
         expect(getAnalyticsDetailsMock).toHaveBeenCalledWith({
             visitorLimit: 100,
+            visitorCursor: null,
             loggedInLimit: 1,
+            loggedInCursor: null,
             includeSelection: true,
             includeFunnel: true,
-            includeFalsePositiveReview: true,
+            includeFalsePositiveReview: false,
+            includeKvHistory: true,
+        });
+    });
+
+    it("passes cursors when provided", async () => {
+        authMock.mockResolvedValue({ user: { id: "u_1" } });
+        isAdminUserMock.mockReturnValue(true);
+
+        const response = await GET(
+            new NextRequest("http://localhost/api/admin/stats/details?visitorCursor=20&loggedInCursor=30")
+        );
+        expect(response.status).toBe(200);
+        expect(getAnalyticsDetailsMock).toHaveBeenCalledWith({
+            visitorLimit: 10,
+            visitorCursor: "20",
+            loggedInLimit: 10,
+            loggedInCursor: "30",
+            includeSelection: true,
+            includeFunnel: true,
+            includeFalsePositiveReview: false,
             includeKvHistory: true,
         });
     });

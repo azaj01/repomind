@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import {
     Users, Activity, Smartphone, Monitor, Globe,
     RefreshCw, ArrowUpDown, ChevronUp, ChevronDown,
-    UserCheck, TrendingUp, Database, Zap, Mail, Search, MessageSquare, ShieldAlert, Trash2
+    UserCheck, TrendingUp, Database, Zap, Mail, Search, MessageSquare, ShieldAlert, Trash2, Info
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -33,6 +33,14 @@ type SortConfig = {
     direction: 'asc' | 'desc';
 };
 
+type HoveredKvPoint = {
+    index: number;
+    timestamp: number;
+    size: number;
+    xPercent: number;
+    yPercent: number;
+};
+
 function formatFalsePositiveReason(reason: string): string {
     return reason
         .toLowerCase()
@@ -57,13 +65,18 @@ export default function StatsDashboardClient({
     const [selectedRange, setSelectedRange] = useState<HistoryRange>("24h");
     const [selectionRange, setSelectionRange] = useState<SelectionRange>("24h");
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'lastSeen', direction: 'desc' });
-    const [visibleCount, setVisibleCount] = useState(10);
+    const [visitorRows, setVisitorRows] = useState<VisitorData[]>(() => data.recentVisitors ?? []);
+    const [nextVisitorCursor, setNextVisitorCursor] = useState<string | null>(data.nextVisitorCursor ?? null);
+    const [nextLoggedInCursor, setNextLoggedInCursor] = useState<string | null>(data.nextLoggedInCursor ?? null);
+    const [isLoadingMoreVisitors, setIsLoadingMoreVisitors] = useState(false);
+    const [isLoadingMoreLoggedIn, setIsLoadingMoreLoggedIn] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [pendingSubmissionId, setPendingSubmissionId] = useState<string | null>(null);
     const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
     const [isResettingFunnel, setIsResettingFunnel] = useState(false);
     const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
     const [deleteCandidate, setDeleteCandidate] = useState<LoggedInUserData | null>(null);
+    const [hoveredKvPoint, setHoveredKvPoint] = useState<HoveredKvPoint | null>(null);
 
     useEffect(() => {
         const tick = () => setCurrentTime(Date.now());
@@ -75,6 +88,9 @@ export default function StatsDashboardClient({
 
     useEffect(() => {
         setAnalyticsData(data);
+        setVisitorRows(data.recentVisitors ?? []);
+        setNextVisitorCursor(data.nextVisitorCursor ?? null);
+        setNextLoggedInCursor(data.nextLoggedInCursor ?? null);
     }, [data]);
 
     useEffect(() => {
@@ -86,40 +102,8 @@ export default function StatsDashboardClient({
     }, [analyticsData.loggedInUsers]);
 
     useEffect(() => {
-        let cancelled = false;
-        const loadDetails = async () => {
-            setIsDetailsLoading(true);
-            try {
-                const response = await fetch("/api/admin/stats/details?visitorLimit=10&loggedInLimit=10", {
-                    cache: "no-store",
-                });
-                if (!response.ok) return;
-                const details = await response.json() as Partial<AnalyticsData>;
-                if (cancelled) return;
-                setAnalyticsData((current) => ({
-                    ...current,
-                    ...details,
-                    kvStats: {
-                        currentSize: current.kvStats?.currentSize ?? 0,
-                        maxSize: current.kvStats?.maxSize ?? 0,
-                        history: details.kvStats?.history ?? current.kvStats?.history ?? [],
-                    },
-                }));
-            } catch (error) {
-                if (!cancelled) {
-                    console.error("Failed to lazy-load admin analytics details:", error);
-                }
-            } finally {
-                if (!cancelled) {
-                    setIsDetailsLoading(false);
-                }
-            }
-        };
-        void loadDetails();
-        return () => {
-            cancelled = true;
-        };
-    }, [data]);
+        setHoveredKvPoint(null);
+    }, [selectedRange, analyticsData.kvStats?.history]);
 
     const handleRefresh = () => {
         setIsRefreshing(true);
@@ -178,6 +162,68 @@ export default function StatsDashboardClient({
         }
     };
 
+    const handleLoadMoreVisitors = async () => {
+        if (!nextVisitorCursor || isLoadingMoreVisitors) return;
+        setIsLoadingMoreVisitors(true);
+        setIsDetailsLoading(true);
+        try {
+            const response = await fetch(
+                `/api/admin/stats/details?visitorLimit=10&visitorCursor=${encodeURIComponent(nextVisitorCursor)}&loggedInLimit=10`,
+                { cache: "no-store" }
+            );
+            if (!response.ok) {
+                toast.error("Failed to load more visitors");
+                return;
+            }
+            const details = await response.json() as Partial<AnalyticsData>;
+            setVisitorRows((current) => [...current, ...(details.recentVisitors ?? [])]);
+            setNextVisitorCursor(details.nextVisitorCursor ?? null);
+            setAnalyticsData((current) => ({
+                ...current,
+                activeUsers24h: details.activeUsers24h ?? current.activeUsers24h,
+                returningUsers30d: details.returningUsers30d ?? current.returningUsers30d,
+                retentionRate30d: details.retentionRate30d ?? current.retentionRate30d,
+            }));
+        } catch (error) {
+            console.error("Failed to load more visitors:", error);
+            toast.error("Failed to load more visitors");
+        } finally {
+            setIsLoadingMoreVisitors(false);
+            setIsDetailsLoading(false);
+        }
+    };
+
+    const handleLoadMoreLoggedInUsers = async () => {
+        if (!nextLoggedInCursor || isLoadingMoreLoggedIn) return;
+        setIsLoadingMoreLoggedIn(true);
+        setIsDetailsLoading(true);
+        try {
+            const response = await fetch(
+                `/api/admin/stats/details?visitorLimit=10&loggedInLimit=10&loggedInCursor=${encodeURIComponent(nextLoggedInCursor)}`,
+                { cache: "no-store" }
+            );
+            if (!response.ok) {
+                toast.error("Failed to load more accounts");
+                return;
+            }
+            const details = await response.json() as Partial<AnalyticsData>;
+            setAccountRows((current) => [...current, ...(details.loggedInUsers ?? [])]);
+            setNextLoggedInCursor(details.nextLoggedInCursor ?? null);
+            setAnalyticsData((current) => ({
+                ...current,
+                activeUsers24h: details.activeUsers24h ?? current.activeUsers24h,
+                returningUsers30d: details.returningUsers30d ?? current.returningUsers30d,
+                retentionRate30d: details.retentionRate30d ?? current.retentionRate30d,
+            }));
+        } catch (error) {
+            console.error("Failed to load more logged-in accounts:", error);
+            toast.error("Failed to load more accounts");
+        } finally {
+            setIsLoadingMoreLoggedIn(false);
+            setIsDetailsLoading(false);
+        }
+    };
+
     const formatIST = (timestamp: number) => {
         return new Intl.DateTimeFormat('en-IN', {
             timeZone: 'Asia/Kolkata',
@@ -208,17 +254,11 @@ export default function StatsDashboardClient({
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     };
 
-    // Calculate advanced metrics
-    const returningUsers = analyticsData.recentVisitors.filter(
-        (v) => v.queryCount > 1 && (v.lastSeen - v.firstSeen > 1000 * 60 * 60)
-    ).length;
-    const retentionRate = analyticsData.totalVisitors > 0
-        ? ((returningUsers / analyticsData.totalVisitors) * 100).toFixed(1)
-        : "0";
+    const returningUsers = analyticsData.returningUsers30d ?? 0;
+    const retentionRate = (analyticsData.retentionRate30d ?? 0).toFixed(1);
     const avgQueriesPerUser = analyticsData.totalVisitors > 0
         ? (analyticsData.totalQueries / analyticsData.totalVisitors).toFixed(1)
         : "0";
-    const activeNow = analyticsData.recentVisitors.filter((v) => isOnline(v.lastSeen)).length;
     const reportFunnel = analyticsData.reportFunnel;
     const weeklyReportViews = reportFunnel?.weekly.report_viewed_shared ?? 0;
     const weeklyFixStarts = reportFunnel?.weekly.report_fix_chat_started ?? 0;
@@ -238,7 +278,7 @@ export default function StatsDashboardClient({
     );
 
     const sortedVisitors = useMemo(() => {
-        const items = [...analyticsData.recentVisitors];
+        const items = [...visitorRows];
         items.sort((a, b) => {
             const aValue = a[sortConfig.key as keyof VisitorData] ?? '';
             const bValue = b[sortConfig.key as keyof VisitorData] ?? '';
@@ -248,13 +288,13 @@ export default function StatsDashboardClient({
             return 0;
         });
         return items;
-    }, [analyticsData.recentVisitors, sortConfig]);
+    }, [visitorRows, sortConfig]);
 
     const displayedVisitors = useMemo(() => {
-        return sortedVisitors.slice(0, visibleCount);
-    }, [sortedVisitors, visibleCount]);
+        return sortedVisitors;
+    }, [sortedVisitors]);
     const displayedLoggedInUsers = useMemo(() => {
-        return loggedInUsers.slice(0, 10);
+        return loggedInUsers;
     }, [loggedInUsers]);
 
     const requestSort = (key: keyof VisitorData | 'id') => {
@@ -282,12 +322,6 @@ export default function StatsDashboardClient({
                             </h1>
                             <p className="text-zinc-500 text-sm mt-1">Real-time platform performance monitoring (IST)</p>
                         </div>
-                        {activeNow > 0 && (
-                            <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-green-500/10 border border-green-500/20 rounded-full h-fit mt-1">
-                                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                                <span className="text-[10px] font-bold text-green-400 uppercase tracking-wider">{activeNow} Active Now</span>
-                            </div>
-                        )}
                     </div>
 
                     <div className="flex items-center gap-4">
@@ -349,6 +383,7 @@ export default function StatsDashboardClient({
                         title="Total Visitors"
                         value={analyticsData.totalVisitors}
                         subValue={`${returningUsers} returning`}
+                        infoText="Returning users are actors active on at least 2 distinct days in the last 30 days."
                         icon={<Users className="w-5 h-5 text-purple-400" />}
                         trend="+12%"
                     />
@@ -363,18 +398,13 @@ export default function StatsDashboardClient({
                         title="Retention Rate"
                         value={`${retentionRate}%`}
                         subValue="Returning users"
+                        infoText="Retention rate = returning users (2+ distinct active days in last 30 days) divided by all active users in last 30 days."
                         icon={<TrendingUp className="w-5 h-5 text-green-400" />}
-                    />
-                    <StatsCard
-                        title="Active Now"
-                        value={activeNow}
-                        subValue="Last 5 minutes"
-                        icon={<div className="relative"><Globe className="w-5 h-5 text-green-400" />{activeNow > 0 && <div className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full animate-ping" />}</div>}
                     />
                     <StatsCard
                         title="Logged Accounts"
                         value={analyticsData.totalLoggedInUsers}
-                        subValue={`${displayedLoggedInUsers.length} loaded`}
+                        subValue={`${displayedLoggedInUsers.length} loaded${nextLoggedInCursor ? " (more available)" : ""}`}
                         icon={<UserCheck className="w-5 h-5 text-cyan-400" />}
                     />
                     <StatsCard
@@ -547,20 +577,9 @@ export default function StatsDashboardClient({
                     <div className="bg-zinc-900/50 border border-white/10 rounded-2xl p-6">
                         <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
                             <TrendingUp className="w-5 h-5 text-green-400" />
-                            Session Pulse
+                            Activity Pulse
                         </h2>
                         <div className="space-y-6">
-                            <div className="p-4 bg-zinc-800/50 rounded-xl border border-white/5">
-                                <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Active Now</div>
-                                <div className="text-3xl font-bold text-white flex items-center gap-3">
-                                    {activeNow}
-                                    {activeNow > 0 && <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />}
-                                </div>
-                                <div className="text-xs text-zinc-400 mt-2">
-                                    Last 5 minutes matching window
-                                </div>
-                            </div>
-
                             <div className="space-y-4">
                                 <div className="flex justify-between items-center text-sm">
                                     <span className="text-zinc-400">Active (24h)</span>
@@ -617,7 +636,7 @@ export default function StatsDashboardClient({
                         </div>
                     </div>
 
-                    <div className="h-64 w-full relative group">
+                    <div className="h-64 w-full relative">
                         {(() => {
                             const history = analyticsData.kvStats?.history || [];
                             if (history.length < 2) return (
@@ -653,95 +672,135 @@ export default function StatsDashboardClient({
                                 </div>
                             );
 
+                            const points = filteredHistory;
+                            const minSize = Math.min(...points.map((point) => point.size));
+                            const maxSize = Math.max(...points.map((point) => point.size));
+                            const baselineRange = Math.max(maxSize - minSize, 1024);
+                            const padding = baselineRange * 0.1;
+                            const scaledMin = Math.max(0, minSize - padding);
+                            const scaledMax = maxSize + padding;
+                            const scaledRange = Math.max(1, scaledMax - scaledMin);
+
+                            const getRelativeY = (size: number) => {
+                                const rawY = 100 - ((size - scaledMin) / scaledRange) * 100;
+                                return Math.max(0, Math.min(100, rawY));
+                            };
+
+                            const normalizedPoints = points
+                                .map((point, index) => `${index},${getRelativeY(point.size)}`)
+                                .join(" ");
+                            const areaPoints = `0,100 ${normalizedPoints} ${points.length - 1},100`;
+                            const yAxisTicks = [0, 25, 50, 75, 100].map((tick) => ({
+                                tick,
+                                value: scaledMax - (tick / 100) * scaledRange,
+                            }));
+
                             return (
-                                <div className="w-full h-full pt-4">
-                                    <svg className="w-full h-full overflow-hidden" preserveAspectRatio="none" viewBox={`0 0 ${filteredHistory.length - 1} 100`}>
-                                        <defs>
-                                            <linearGradient id="line-gradient" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.4" />
-                                                <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
-                                            </linearGradient>
-                                        </defs>
+                                <div className="w-full h-full pt-2">
+                                    <div className="flex h-full gap-3">
+                                        <div className="hidden w-20 shrink-0 flex-col justify-between pb-6 text-[10px] font-mono text-zinc-500 sm:flex">
+                                            {yAxisTicks.map(({ tick, value }) => (
+                                                <span key={tick} className="leading-none">
+                                                    {formatSize(Math.max(0, value))}
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <div
+                                            className="relative h-full flex-1"
+                                            onMouseLeave={() => setHoveredKvPoint(null)}
+                                        >
+                                            <svg className="h-full w-full overflow-hidden" preserveAspectRatio="none" viewBox={`0 0 ${points.length - 1} 100`}>
+                                                <defs>
+                                                    <linearGradient id="line-gradient" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.4" />
+                                                        <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
+                                                    </linearGradient>
+                                                </defs>
 
-                                        {/* Grid Lines */}
-                                        {[0, 25, 50, 75, 100].map((y) => (
-                                            <line
-                                                key={y}
-                                                x1="0"
-                                                y1={y}
-                                                x2={filteredHistory.length - 1}
-                                                y2={y}
-                                                stroke="rgba(255,255,255,0.05)"
-                                                strokeWidth="1"
-                                                vectorEffect="non-scaling-stroke"
-                                            />
-                                        ))}
-
-                                        {(() => {
-                                            const points = filteredHistory;
-                                            const minSize = Math.min(...points.map(p => p.size));
-                                            const maxSize = Math.max(...points.map(p => p.size));
-                                            const range = Math.max(maxSize - minSize, 1024);
-                                            const padding = range * 0.1;
-
-                                            const getRelativeY = (size: number) => {
-                                                const rawY = 100 - ((size - (minSize - padding)) / (range + 2 * padding) * 100);
-                                                return Math.max(0, Math.min(100, rawY)); // Clamp to 0-100
-                                            };
-
-                                            const normalizedPoints = points.map((p, i) => `${i},${getRelativeY(p.size)}`).join(' ');
-                                            const areaPoints = `0,100 ${normalizedPoints} ${points.length - 1},100`;
-
-                                            return (
-                                                <>
-                                                    <polyline
-                                                        points={areaPoints}
-                                                        fill="url(#line-gradient)"
-                                                        className="transition-all duration-700"
-                                                    />
-                                                    <polyline
-                                                        points={normalizedPoints}
-                                                        fill="none"
-                                                        stroke="#f59e0b"
-                                                        strokeWidth="2"
-                                                        strokeLinejoin="round"
-                                                        strokeLinecap="round"
+                                                {[0, 25, 50, 75, 100].map((y) => (
+                                                    <line
+                                                        key={y}
+                                                        x1="0"
+                                                        y1={y}
+                                                        x2={points.length - 1}
+                                                        y2={y}
+                                                        stroke="rgba(255,255,255,0.05)"
+                                                        strokeWidth="1"
                                                         vectorEffect="non-scaling-stroke"
-                                                        className="transition-all duration-700"
                                                     />
+                                                ))}
 
-                                                    {points.map((p, i) => {
-                                                        const y = getRelativeY(p.size);
-                                                        return (
-                                                            <g key={i} className="cursor-pointer group/point">
-                                                                <rect
-                                                                    x={i - 0.5}
-                                                                    y={0}
-                                                                    width={1}
-                                                                    height={100}
-                                                                    fill="transparent"
-                                                                />
-                                                                <circle
-                                                                    cx={i}
-                                                                    cy={y}
-                                                                    r="3"
-                                                                    fill="#f59e0b"
-                                                                    className="opacity-0 group-hover/point:opacity-100 transition-opacity"
-                                                                    vectorEffect="non-scaling-size"
-                                                                />
-                                                                <title>{`${new Date(p.timestamp).toLocaleString()} - ${formatSize(p.size)}`}</title>
-                                                            </g>
-                                                        );
-                                                    })}
-                                                </>
-                                            );
-                                        })()}
-                                    </svg>
+                                                <polyline
+                                                    points={areaPoints}
+                                                    fill="url(#line-gradient)"
+                                                    className="transition-all duration-700"
+                                                />
+                                                <polyline
+                                                    points={normalizedPoints}
+                                                    fill="none"
+                                                    stroke="#f59e0b"
+                                                    strokeWidth="2"
+                                                    strokeLinejoin="round"
+                                                    strokeLinecap="round"
+                                                    vectorEffect="non-scaling-stroke"
+                                                    className="transition-all duration-700"
+                                                />
 
-                                    {/* X-Axis Labels */}
-                                    <div className="absolute bottom-0 left-0 w-full flex justify-between px-1 text-[8px] font-mono text-zinc-600 mt-2">
-                                        <span>{new Date(filteredHistory[0].timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                                        <span>{new Date(filteredHistory[filteredHistory.length - 1].timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                                {points.map((point, index) => {
+                                                    const y = getRelativeY(point.size);
+                                                    const xPercent = points.length > 1
+                                                        ? (index / (points.length - 1)) * 100
+                                                        : 0;
+                                                    const isHovered = hoveredKvPoint?.index === index;
+                                                    return (
+                                                        <g key={`${point.timestamp}-${index}`} className="cursor-pointer group/point">
+                                                            <rect
+                                                                x={index - 0.5}
+                                                                y={0}
+                                                                width={1}
+                                                                height={100}
+                                                                fill="transparent"
+                                                                onMouseEnter={() => setHoveredKvPoint({
+                                                                    index,
+                                                                    timestamp: point.timestamp,
+                                                                    size: point.size,
+                                                                    xPercent,
+                                                                    yPercent: y,
+                                                                })}
+                                                            />
+                                                            <circle
+                                                                cx={index}
+                                                                cy={y}
+                                                                r="3"
+                                                                fill="#f59e0b"
+                                                                className={isHovered ? "opacity-100 transition-opacity" : "opacity-0 transition-opacity group-hover/point:opacity-100"}
+                                                                vectorEffect="non-scaling-size"
+                                                            />
+                                                        </g>
+                                                    );
+                                                })}
+                                            </svg>
+
+                                            {hoveredKvPoint && (
+                                                <div
+                                                    className="pointer-events-none absolute z-20 min-w-[170px] -translate-x-1/2 -translate-y-[115%] rounded-lg border border-amber-500/30 bg-zinc-950/95 px-3 py-2 text-xs shadow-lg shadow-black/40"
+                                                    style={{
+                                                        left: `${hoveredKvPoint.xPercent}%`,
+                                                        top: `${hoveredKvPoint.yPercent}%`,
+                                                    }}
+                                                >
+                                                    <p className="font-mono text-[11px] text-amber-300">{formatSize(hoveredKvPoint.size)}</p>
+                                                    <p className="mt-1 text-[10px] text-zinc-400">
+                                                        {new Date(hoveredKvPoint.timestamp).toLocaleString()}
+                                                    </p>
+                                                </div>
+                                            )}
+
+                                            <div className="absolute bottom-0 left-0 w-full flex justify-between px-1 text-[9px] font-mono text-zinc-600">
+                                                <span>{new Date(points[0].timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                                <span>{new Date(points[points.length - 1].timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             );
@@ -845,7 +904,7 @@ export default function StatsDashboardClient({
                             <h2 className="text-xl font-semibold">Logged-In Accounts (Postgres)</h2>
                             <div className="flex flex-wrap items-center gap-2 text-xs">
                                 <span className="rounded-full border border-white/10 bg-zinc-950 px-2.5 py-1 font-mono text-zinc-500">
-                                    Showing {displayedLoggedInUsers.length} of {loggedInUsers.length}
+                                    Showing {displayedLoggedInUsers.length} of {analyticsData.totalLoggedInUsers}
                                 </span>
                                 <span className="rounded-full border border-red-500/20 bg-red-500/10 px-2.5 py-1 font-semibold uppercase tracking-wider text-red-200">
                                     {incompleteLoggedInUsers.length} incomplete without email
@@ -949,13 +1008,27 @@ export default function StatsDashboardClient({
                             </tbody>
                         </table>
                     </div>
+                    {nextLoggedInCursor && (
+                        <div className="flex justify-center border-t border-white/10 p-4">
+                            <button
+                                type="button"
+                                onClick={() => void handleLoadMoreLoggedInUsers()}
+                                disabled={isLoadingMoreLoggedIn}
+                                className="bg-zinc-900 border border-white/10 px-6 py-2.5 rounded-xl hover:bg-zinc-800 hover:border-white/20 transition-all font-medium text-sm text-zinc-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {isLoadingMoreLoggedIn ? "Loading..." : "Show 10 more logged-in accounts"}
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 {/* Visitors Table */}
                 <div className="bg-zinc-900/50 border border-white/10 rounded-2xl overflow-hidden">
                     <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between">
-                        <h2 className="text-xl font-semibold">Recent Visitors</h2>
-                        <span className="text-xs text-zinc-500 font-mono">Showing {displayedVisitors.length} of {analyticsData.recentVisitors.length}</span>
+                        <h2 className="text-xl font-semibold">Recent Visitors (Anon + Logged-in)</h2>
+                        <span className="text-xs text-zinc-500 font-mono">
+                            Showing {displayedVisitors.length}{nextVisitorCursor ? " (more available)" : ""}
+                        </span>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-sm whitespace-nowrap">
@@ -963,9 +1036,10 @@ export default function StatsDashboardClient({
                                 <tr>
                                     <th className="px-6 py-4 cursor-pointer hover:text-white transition-colors" onClick={() => requestSort('id')}>
                                         <div className="flex items-center gap-2">
-                                            Visitor ID {renderSortIcon("id")}
+                                            Actor ID {renderSortIcon("id")}
                                         </div>
                                     </th>
+                                    <th className="px-6 py-4">Type</th>
                                     <th className="px-6 py-4 cursor-pointer hover:text-white transition-colors" onClick={() => requestSort('country')}>
                                         <div className="flex items-center gap-2">
                                             Country {renderSortIcon("country")}
@@ -1008,9 +1082,16 @@ export default function StatsDashboardClient({
                                                             {visitor.id.slice(0, 2).toUpperCase()}
                                                         </div>
                                                         <span className="font-mono text-xs text-zinc-500 group-hover:text-zinc-400 transition-colors">
-                                                            {visitor.id.slice(0, 8)}
+                                                            {visitor.actorType === "authenticated" && visitor.githubLogin
+                                                                ? `@${visitor.githubLogin}`
+                                                                : visitor.id.slice(0, 16)}
                                                         </span>
                                                     </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className={`inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${visitor.actorType === "authenticated" ? "border-cyan-500/20 bg-cyan-500/10 text-cyan-200" : "border-amber-500/20 bg-amber-500/10 text-amber-200"}`}>
+                                                        {visitor.actorType}
+                                                    </span>
                                                 </td>
                                                 <td className="px-6 py-4 text-zinc-300">{visitor.country}</td>
                                                 <td className="px-6 py-4">
@@ -1042,9 +1123,9 @@ export default function StatsDashboardClient({
                                         );
                                     })}
                                 </AnimatePresence>
-                                {analyticsData.recentVisitors.length === 0 && (
+                                {visitorRows.length === 0 && (
                                     <tr>
-                                        <td colSpan={6} className="px-6 py-12 text-center text-zinc-500">
+                                        <td colSpan={7} className="px-6 py-12 text-center text-zinc-500">
                                             <div className="flex flex-col items-center gap-2">
                                                 <Users className="w-8 h-8 opacity-20" />
                                                 <p>No visitors recorded in the current dataset.</p>
@@ -1057,13 +1138,15 @@ export default function StatsDashboardClient({
                     </div>
                 </div>
 
-                {visibleCount < sortedVisitors.length && (
+                {nextVisitorCursor && (
                     <div className="flex justify-center pb-8">
                         <button
-                            onClick={() => setVisibleCount(prev => prev + 10)}
-                            className="bg-zinc-900 border border-white/10 px-8 py-3 rounded-xl hover:bg-zinc-800 hover:border-white/20 transition-all font-medium text-sm text-zinc-400 hover:text-white"
+                            type="button"
+                            onClick={() => void handleLoadMoreVisitors()}
+                            disabled={isLoadingMoreVisitors}
+                            className="bg-zinc-900 border border-white/10 px-8 py-3 rounded-xl hover:bg-zinc-800 hover:border-white/20 transition-all font-medium text-sm text-zinc-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                            Show 10 more visitors
+                            {isLoadingMoreVisitors ? "Loading..." : "Show 10 more visitors"}
                         </button>
                     </div>
                 )}
@@ -1112,12 +1195,13 @@ export default function StatsDashboardClient({
     );
 }
 
-function StatsCard({ title, value, icon, subValue, trend }: {
+function StatsCard({ title, value, icon, subValue, trend, infoText }: {
     title: string,
     value: string | number,
     icon: React.ReactNode,
     subValue?: string,
-    trend?: string
+    trend?: string,
+    infoText?: string,
 }) {
     return (
         <motion.div
@@ -1131,7 +1215,23 @@ function StatsCard({ title, value, icon, subValue, trend }: {
                 <div className="p-2.5 bg-white/5 rounded-xl border border-white/5 group-hover:border-white/10 transition-colors">
                     {icon}
                 </div>
-                <div className="text-sm font-medium text-zinc-400">{title}</div>
+                <div className="flex items-center gap-2">
+                    <div className="text-sm font-medium text-zinc-400">{title}</div>
+                    {infoText && (
+                        <div className="relative group/info">
+                            <button
+                                type="button"
+                                aria-label={`${title} definition`}
+                                className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-white/15 bg-zinc-900 text-zinc-500 transition-colors hover:text-zinc-200"
+                            >
+                                <Info className="h-3 w-3" />
+                            </button>
+                            <div className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-64 -translate-x-1/2 rounded-lg border border-white/15 bg-zinc-950/95 px-3 py-2 text-[11px] leading-relaxed text-zinc-300 shadow-xl shadow-black/50 group-hover/info:block group-focus-within/info:block">
+                                {infoText}
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
             <div className="flex items-baseline gap-2">
                 <div className="text-3xl font-bold text-white tracking-tight">{value}</div>

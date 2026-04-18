@@ -1,4 +1,4 @@
-import { getAnalyticsSummary, type AnalyticsData } from "@/lib/analytics";
+import { getAdminAnalyticsSnapshot } from "@/lib/analytics";
 import { auth } from "@/lib/auth";
 import { isAdminUser } from "@/lib/admin-auth";
 import { headers } from "next/headers";
@@ -19,18 +19,7 @@ export default async function AdminStatsPage() {
         return <AdminAccessDeniedPage />;
     }
 
-    const summary = await getAnalyticsSummary();
-    const data: AnalyticsData = {
-        totalVisitors: summary.totalVisitors,
-        totalQueries: summary.totalQueries,
-        totalLoggedInUsers: summary.totalLoggedInUsers,
-        deviceStats: summary.deviceStats,
-        countryStats: summary.countryStats,
-        kvStats: summary.kvStats,
-        activeUsers24h: 0,
-        recentVisitors: [],
-        loggedInUsers: [],
-    };
+    const data = await getAdminAnalyticsSnapshot();
 
     // Get current user debug info
     const headersList = await headers();

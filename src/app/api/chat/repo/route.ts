@@ -3,7 +3,12 @@ import { generateAnswerStream } from "@/app/actions";
 import { trackAuthenticatedQueryEvent, trackEvent } from "@/lib/analytics";
 import { auth } from "@/lib/auth";
 import { consumeToolBudgetUsage, getToolBudgetUsage, type CacheAudience } from "@/lib/cache";
-import { getAnonymousActorId } from "@/lib/actor-id";
+import {
+    ANON_COOKIE_NAME,
+    getAnonymousActorId,
+    getAnonymousCookieIdFromActorId,
+    isValidAnonymousCookieId,
+} from "@/lib/actor-id";
 import { getInvalidSessionApiError, getSessionAuthState, getSessionUserId } from "@/lib/session-guard";
 import type { StreamUpdate } from "@/lib/streaming-types";
 import { prisma } from "@/lib/db";
@@ -31,7 +36,11 @@ export async function POST(req: NextRequest) {
 
         const userId = getSessionUserId(session);
         const audience: CacheAudience = userId ? "authenticated" : "anonymous";
-        const actorId = userId ?? getAnonymousActorId(req.headers);
+        const anonCookieValue = req.cookies.get(ANON_COOKIE_NAME)?.value ?? null;
+        const validAnonCookie = isValidAnonymousCookieId(anonCookieValue) ? anonCookieValue : null;
+        const actorId = userId ?? getAnonymousActorId(req.headers, validAnonCookie);
+        const shouldSetAnonCookie = !userId && !validAnonCookie;
+        const anonCookieIdToSet = shouldSetAnonCookie ? getAnonymousCookieIdFromActorId(actorId) : null;
 
         const body = await req.json();
         const { query, repoDetails, filePaths, fileShas, history, profileData, modelPreference, runId } = body;
@@ -57,9 +66,12 @@ export async function POST(req: NextRequest) {
         const country = req.headers.get("x-vercel-ip-country") ?? "Unknown";
         const device = /mobile/i.test(userAgent) ? "mobile" : "desktop";
         if (userId) {
-            // Pass actorId as anonId only when the user was previously anonymous
-            // (actorId === userId for auth users, so passing undefined is safe here).
-            await trackAuthenticatedQueryEvent(userId, undefined);
+            await trackAuthenticatedQueryEvent(userId, {
+                anonId: validAnonCookie ? `anon_${validAnonCookie}` : undefined,
+                country,
+                device,
+                userAgent,
+            });
         } else {
             // actorId is an anon_-prefixed hash for unauthenticated visitors
             await trackEvent(actorId, "query", { country, device, userAgent });
@@ -194,7 +206,7 @@ export async function POST(req: NextRequest) {
             }
         });
 
-        return new Response(stream, {
+        const response = new NextResponse(stream, {
             headers: {
                 "Content-Type": "text/event-stream",
                 "Cache-Control": "no-cache",
@@ -202,6 +214,18 @@ export async function POST(req: NextRequest) {
                 "X-Accel-Buffering": "no", // Prevent buffering by Vercel/Nginx
             },
         });
+        if (anonCookieIdToSet) {
+            response.cookies.set({
+                name: ANON_COOKIE_NAME,
+                value: anonCookieIdToSet,
+                httpOnly: true,
+                sameSite: "lax",
+                path: "/",
+                secure: process.env.NODE_ENV === "production",
+                maxAge: 60 * 60 * 24 * 365,
+            });
+        }
+        return response;
     } catch (error: unknown) {
         console.error("Repo chat API route error:", {
             path: req.nextUrl.pathname,

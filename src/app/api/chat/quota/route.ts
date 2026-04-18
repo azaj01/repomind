@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
-import { getAnonymousActorId } from "@/lib/actor-id";
+import { ANON_COOKIE_NAME, getAnonymousActorId } from "@/lib/actor-id";
 import { getToolBudgetWindowUsage, type CacheAudience, type ToolBudgetScope } from "@/lib/cache";
 import { getInvalidSessionApiError, getSessionAuthState, getSessionUserId } from "@/lib/session-guard";
 
@@ -27,7 +27,8 @@ export async function GET(req: NextRequest) {
 
         const userId = getSessionUserId(session);
         const audience: CacheAudience = userId ? "authenticated" : "anonymous";
-        const actorId = userId ?? getAnonymousActorId(req.headers);
+        const anonCookieId = req.cookies.get(ANON_COOKIE_NAME)?.value ?? null;
+        const actorId = userId ?? getAnonymousActorId(req.headers, anonCookieId);
         const usage = await getToolBudgetWindowUsage(scope, audience, actorId);
 
         return NextResponse.json({

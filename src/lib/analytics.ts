@@ -13,12 +13,17 @@ export interface KVUsagePoint {
 export interface AnalyticsData {
     totalVisitors: number;
     totalQueries: number;
+    activeNow: number;
     activeUsers24h: number;
+    returningUsers30d: number;
+    retentionRate30d: number;
     totalLoggedInUsers: number;
     deviceStats: Record<string, number>;
     countryStats: Record<string, number>;
     recentVisitors: VisitorData[];
     loggedInUsers: LoggedInUserData[];
+    nextVisitorCursor?: string | null;
+    nextLoggedInCursor?: string | null;
     kvStats?: {
         currentSize: number;
         maxSize: number;
@@ -46,7 +51,9 @@ export interface AnalyticsSummaryData {
 
 export interface AnalyticsDetailsOptions {
     visitorLimit?: number;
+    visitorCursor?: string | null;
     loggedInLimit?: number;
+    loggedInCursor?: string | null;
     includeSelection?: boolean;
     includeFunnel?: boolean;
     includeFalsePositiveReview?: boolean;
@@ -55,6 +62,12 @@ export interface AnalyticsDetailsOptions {
 
 export interface VisitorData {
     id: string;
+    actorType: "anonymous" | "authenticated";
+    actorKey: string;
+    userId?: string | null;
+    anonId?: string | null;
+    githubLogin?: string | null;
+    email?: string | null;
     country: string;
     device: string;
     lastSeen: number;
@@ -118,6 +131,62 @@ interface ReportConversionTrackingOptions {
 const SELECTION_TELEMETRY_SAMPLE_RATE = 0.1;
 const DEFAULT_VISITOR_DETAIL_LIMIT = 10;
 const DEFAULT_LOGGED_IN_DETAIL_LIMIT = 10;
+const DEFAULT_ADMIN_ANALYTICS_REVALIDATE_SECONDS = 60;
+const ACTIVE_DAY_TTL_SECONDS = 45 * 24 * 60 * 60;
+const ACTOR_LAST_SEEN_KEY = "stats:actors:last_seen";
+const ACTOR_HASH_PREFIX = "actor:";
+const ACTIVE_DAY_PREFIX = "stats:active:day:";
+const LEGACY_VISITORS_SET_KEY = "visitors";
+const ANALYTICS_DB_BACKOFF_MS = 30_000;
+const ANALYTICS_DB_WARNING_THROTTLE_MS = 60_000;
+const PRISMA_CONNECTIVITY_ERROR_CODES = new Set(["P1001", "P1008", "P2024"]);
+const PRISMA_CONNECTIVITY_ERROR_PATTERNS = [
+    "can't reach database server",
+    "timed out fetching a new connection from the connection pool",
+    "connection pool timeout",
+] as const;
+
+let analyticsDbBackoffUntil = 0;
+let lastAnalyticsDbWarningAt = 0;
+
+export const ADMIN_ANALYTICS_CACHE_TAGS = [
+    "admin-analytics-summary",
+    "admin-analytics-details",
+    "admin-analytics-snapshot",
+    "admin-logged-in-users",
+] as const;
+
+function actorHashKey(actorMember: string): string {
+    return `${ACTOR_HASH_PREFIX}${actorMember}`;
+}
+
+function activeDayKey(dayKey: string): string {
+    return `${ACTIVE_DAY_PREFIX}${dayKey}`;
+}
+
+function actorMemberFromAnonId(anonId: string): string {
+    return `anon:${anonId}`;
+}
+
+function actorMemberFromUserId(userId: string): string {
+    return `user:${userId}`;
+}
+
+function parseOffsetCursor(rawCursor?: string | null): number {
+    if (!rawCursor) return 0;
+    const parsed = Number.parseInt(rawCursor, 10);
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.max(0, parsed);
+}
+
+function nextOffsetCursor(offset: number, fetched: number, totalKnown?: number): string | null {
+    if (fetched <= 0) return null;
+    const next = offset + fetched;
+    if (typeof totalKnown === "number" && next >= totalKnown) {
+        return null;
+    }
+    return String(next);
+}
 
 const EMPTY_SELECTION_METRICS: SelectionPerformanceMetrics = {
     avgSelectionMs: 0,
@@ -133,6 +202,70 @@ const EMPTY_FALSE_POSITIVE_REVIEW: FalsePositiveReviewSummary = {
     rejected: 0,
     recentSubmissions: [],
 };
+
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    if (typeof error === "string") return error;
+    return "";
+}
+
+function getPrismaErrorCode(error: unknown): string | null {
+    if (!error || typeof error !== "object") return null;
+    if (!("code" in error)) return null;
+    const maybeCode = (error as { code?: unknown }).code;
+    return typeof maybeCode === "string" ? maybeCode : null;
+}
+
+function isPrismaConnectivityError(error: unknown): boolean {
+    const code = getPrismaErrorCode(error);
+    if (code && PRISMA_CONNECTIVITY_ERROR_CODES.has(code)) {
+        return true;
+    }
+
+    const message = getErrorMessage(error).toLowerCase();
+    return PRISMA_CONNECTIVITY_ERROR_PATTERNS.some((pattern) => message.includes(pattern));
+}
+
+function isAnalyticsDbInBackoff(): boolean {
+    return Date.now() < analyticsDbBackoffUntil;
+}
+
+function activateAnalyticsDbBackoff(context: string, error: unknown): boolean {
+    if (!isPrismaConnectivityError(error)) {
+        return false;
+    }
+
+    const now = Date.now();
+    analyticsDbBackoffUntil = Math.max(analyticsDbBackoffUntil, now + ANALYTICS_DB_BACKOFF_MS);
+
+    if (now - lastAnalyticsDbWarningAt > ANALYTICS_DB_WARNING_THROTTLE_MS) {
+        const code = getPrismaErrorCode(error);
+        const detail = code ? `code=${code}` : "transient connection error";
+        console.warn(`[analytics] ${context}: DB unavailable (${detail}); using KV-only fallback temporarily.`);
+        lastAnalyticsDbWarningAt = now;
+    }
+
+    return true;
+}
+
+const getCachedFalsePositiveReviewSummary = unstable_cache(
+    async (): Promise<FalsePositiveReviewSummary> => {
+        if (isAnalyticsDbInBackoff()) {
+            return EMPTY_FALSE_POSITIVE_REVIEW;
+        }
+
+        try {
+            return await getFalsePositiveReviewSummary(25);
+        } catch (error) {
+            if (!activateAnalyticsDbBackoff("false positive review summary", error)) {
+                console.warn("False positive review summary unavailable, serving empty summary.");
+            }
+            return EMPTY_FALSE_POSITIVE_REVIEW;
+        }
+    },
+    ["admin-false-positive-review-v1"],
+    { revalidate: DEFAULT_ADMIN_ANALYTICS_REVALIDATE_SECONDS, tags: ["admin-analytics-snapshot", "admin-analytics-details"] },
+);
 
 /**
  * Fetch and parse KV info for storage stats
@@ -191,6 +324,50 @@ async function recordKVUsageHistory(currentSize: number): Promise<KVUsagePoint[]
     }
 }
 
+async function trackActorActivity(params: {
+    actorMember: string;
+    actorType: "anonymous" | "authenticated";
+    country?: string;
+    device?: "mobile" | "desktop" | "unknown";
+    userAgent?: string;
+    userId?: string | null;
+    anonId?: string | null;
+    queryIncrement?: number;
+}): Promise<void> {
+    const timestamp = Date.now();
+    const dayKey = dayKeyFromDate(new Date(timestamp));
+    const hashKey = actorHashKey(params.actorMember);
+
+    const existing = await kv.hgetall<Record<string, string | number>>(hashKey);
+    const hasExisting = Boolean(existing && Object.keys(existing).length > 0);
+    const pipeline = kv.pipeline();
+
+    pipeline.hset(hashKey, {
+        firstSeen: hasExisting ? Number(existing?.firstSeen ?? timestamp) : timestamp,
+        lastSeen: timestamp,
+        actorType: params.actorType,
+        ...(params.country ? { country: params.country } : {}),
+        ...(params.device ? { device: params.device } : {}),
+        ...(params.userAgent ? { userAgent: params.userAgent } : {}),
+        ...(params.userId ? { userId: params.userId } : {}),
+        ...(params.anonId ? { anonId: params.anonId } : {}),
+    });
+
+    if (typeof params.queryIncrement === "number" && params.queryIncrement > 0) {
+        pipeline.hincrby(hashKey, "queryCount", params.queryIncrement);
+    } else if (!hasExisting) {
+        pipeline.hset(hashKey, { queryCount: 0 });
+    }
+
+    pipeline.sadd(activeDayKey(dayKey), params.actorMember);
+    pipeline.expire(activeDayKey(dayKey), ACTIVE_DAY_TTL_SECONDS);
+
+    await Promise.all([
+        kv.exec(["ZADD", ACTOR_LAST_SEEN_KEY, timestamp, params.actorMember]),
+        pipeline.exec(),
+    ]);
+}
+
 /**
  * Track an anonymous visitor event (e.g., query) in KV.
  * Only tracks if the ID starts with 'anon_'.
@@ -212,12 +389,13 @@ export async function trackEvent(
     try {
         const timestamp = Date.now();
         const visitorKey = `visitor:${visitorId}`;
+        const actorMember = actorMemberFromAnonId(visitorId);
 
         const existing = await kv.hgetall(visitorKey);
         const pipeline = kv.pipeline();
 
         // 1. Add to global visitors set
-        pipeline.sadd("visitors", visitorId);
+        pipeline.sadd(LEGACY_VISITORS_SET_KEY, visitorId);
 
         // 2. Set static first-seen data only for new visitors
         if (!existing) {
@@ -250,7 +428,18 @@ export async function trackEvent(
             pipeline.hincrby("stats:device", metadata.device, 1);
         }
 
-        await pipeline.exec();
+        await Promise.all([
+            pipeline.exec(),
+            trackActorActivity({
+                actorMember,
+                actorType: "anonymous",
+                country: metadata.country,
+                device: metadata.device ?? "unknown",
+                userAgent: metadata.userAgent,
+                anonId: visitorId,
+                queryIncrement: eventType === "query" ? 1 : 0,
+            }),
+        ]);
     } catch (error) {
         console.error("Failed to track analytics event:", error);
     }
@@ -285,8 +474,21 @@ export async function trackSelectionPerformance(params: {
  * Track an authenticated user query event in Postgres.
  * Also handles migrating stats from an anonymous visitor ID if provided.
  */
-export async function trackAuthenticatedQueryEvent(userId: string, anonId?: string): Promise<void> {
+export async function trackAuthenticatedQueryEvent(
+    userId: string,
+    anonOrOptions?: string | {
+        anonId?: string;
+        country?: string;
+        device?: "mobile" | "desktop" | "unknown";
+        userAgent?: string;
+    }
+): Promise<void> {
     try {
+        const options = typeof anonOrOptions === "string"
+            ? { anonId: anonOrOptions }
+            : (anonOrOptions ?? {});
+        const anonId = options.anonId;
+
         // 1. Fetch user to check if admin
         const user = await prisma.user.findUnique({
             where: { id: userId },
@@ -301,16 +503,24 @@ export async function trackAuthenticatedQueryEvent(userId: string, anonId?: stri
         let migratedQueries = 0;
         if (anonId && anonId.startsWith("anon_")) {
             const visitorKey = `visitor:${anonId}`;
+            const anonActorMember = actorMemberFromAnonId(anonId);
             const existing = await kv.hgetall<Record<string, string | number>>(visitorKey);
 
             if (existing && existing.queryCount) {
                 migratedQueries = Number(existing.queryCount);
 
                 // Atomic migration: decrement KV total and remove visitor record
+                const cleanupPipeline = kv.pipeline();
+                cleanupPipeline.srem(LEGACY_VISITORS_SET_KEY, anonId);
+                cleanupPipeline.del(visitorKey);
+                cleanupPipeline.del(actorHashKey(anonActorMember));
+                cleanupPipeline.decrby("queries:total", migratedQueries);
+                for (const dayKey of getRecentDayKeys(30)) {
+                    cleanupPipeline.srem(activeDayKey(dayKey), anonActorMember);
+                }
                 await Promise.all([
-                    kv.srem("visitors", anonId),
-                    kv.del(visitorKey),
-                    kv.decrby("queries:total", migratedQueries)
+                    cleanupPipeline.exec(),
+                    kv.exec(["ZREM", ACTOR_LAST_SEEN_KEY, anonActorMember]),
                 ]);
             }
         }
@@ -328,6 +538,17 @@ export async function trackAuthenticatedQueryEvent(userId: string, anonId?: stri
                 lastQueryAt: new Date(),
             },
         });
+
+        await trackActorActivity({
+            actorMember: actorMemberFromUserId(userId),
+            actorType: "authenticated",
+            country: options.country,
+            device: options.device ?? "unknown",
+            userAgent: options.userAgent,
+            userId,
+            anonId: anonId ?? null,
+            queryIncrement: migratedQueries + 1,
+        });
     } catch (error) {
         console.error("Failed to track authenticated query event:", error);
     }
@@ -339,7 +560,16 @@ function bigIntToNumber(value: bigint | null | undefined): number | null {
     return Number.isFinite(asNumber) ? asNumber : null;
 }
 
-async function getLoggedInUserStats(limit: number = 200): Promise<LoggedInUserData[]> {
+function numberOrZero(value: unknown): number {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+async function getLoggedInUserStatsUncached(): Promise<LoggedInUserData[]> {
+    if (isAnalyticsDbInBackoff()) {
+        return [];
+    }
+
     try {
         type UserRow = Prisma.UserGetPayload<{
             select: {
@@ -362,8 +592,7 @@ async function getLoggedInUserStats(limit: number = 200): Promise<LoggedInUserDa
                     createdAt: true,
                     lastQueryAt: true,
                 },
-                orderBy: [{ lastQueryAt: "desc" }, { createdAt: "desc" }],
-                take: limit,
+                orderBy: [{ createdAt: "desc" }],
             }),
             prisma.repoScan.groupBy({
                 by: ["userId"],
@@ -455,9 +684,34 @@ async function getLoggedInUserStats(limit: number = 200): Promise<LoggedInUserDa
 
         return rows;
     } catch (error) {
+        if (activateAnalyticsDbBackoff("logged-in user stats", error)) {
+            return [];
+        }
         console.error("Failed to query logged-in user stats:", error);
         return [];
     }
+}
+
+const getCachedLoggedInUserStats = unstable_cache(
+    async (): Promise<LoggedInUserData[]> => getLoggedInUserStatsUncached(),
+    ["admin-logged-in-users-v2"],
+    { revalidate: DEFAULT_ADMIN_ANALYTICS_REVALIDATE_SECONDS, tags: ["admin-logged-in-users", "admin-analytics-details"] },
+);
+
+async function getLoggedInUserStatsPage(limit: number, cursor?: string | null): Promise<{
+    rows: LoggedInUserData[];
+    nextCursor: string | null;
+    total: number;
+}> {
+    const safeLimit = Math.max(1, Math.min(200, Math.floor(limit)));
+    const offset = parseOffsetCursor(cursor);
+    const allRows = await getCachedLoggedInUserStats();
+    const rows = allRows.slice(offset, offset + safeLimit);
+    return {
+        rows,
+        nextCursor: nextOffsetCursor(offset, rows.length, allRows.length),
+        total: allRows.length,
+    };
 }
 
 function dayKeyFromDate(date: Date): string {
@@ -651,30 +905,305 @@ async function getGeoDeviceStatsFromHashes(): Promise<{
     }
 }
 
-async function getBoundedVisitorIds(limit: number): Promise<string[]> {
-    const safeLimit = Math.max(1, Math.floor(limit));
+async function getRecentVisitorsPage(
+    limit: number,
+    cursor?: string | null,
+    loggedInUserLookup?: Map<string, LoggedInUserData>
+): Promise<{ rows: VisitorData[]; nextCursor: string | null }> {
+    const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+    const offset = parseOffsetCursor(cursor);
+    const stop = offset + safeLimit - 1;
+
+    const getLegacyRecentVisitorsPage = async (): Promise<{ rows: VisitorData[]; nextCursor: string | null }> => {
+        try {
+            const visitorIdsRaw = await kv.smembers(LEGACY_VISITORS_SET_KEY);
+            if (!Array.isArray(visitorIdsRaw) || visitorIdsRaw.length === 0) {
+                return { rows: [], nextCursor: null };
+            }
+
+            const visitorIds = visitorIdsRaw.filter((id): id is string => typeof id === "string" && id.length > 0);
+            if (visitorIds.length === 0) {
+                return { rows: [], nextCursor: null };
+            }
+
+            const pipeline = kv.pipeline();
+            visitorIds.forEach((id) => pipeline.hgetall(`visitor:${id}`));
+            const visitorHashes = await pipeline.exec() as Array<Record<string, string | number> | null>;
+
+            const legacyRows = visitorIds
+                .map((id, index): VisitorData | null => {
+                    const hash = visitorHashes[index] ?? {};
+                    const lastSeen = numberOrZero(hash.lastSeen);
+                    if (!Number.isFinite(lastSeen) || lastSeen <= 0) {
+                        return null;
+                    }
+
+                    const firstSeenCandidate = numberOrZero(hash.firstSeen);
+                    const firstSeen = firstSeenCandidate > 0 ? firstSeenCandidate : lastSeen;
+
+                    return {
+                        id,
+                        actorKey: actorMemberFromAnonId(id),
+                        actorType: "anonymous",
+                        userId: null,
+                        anonId: id,
+                        githubLogin: null,
+                        email: null,
+                        country: typeof hash.country === "string" ? hash.country : "Unknown",
+                        device: typeof hash.device === "string" ? hash.device : "unknown",
+                        lastSeen,
+                        firstSeen,
+                        queryCount: numberOrZero(hash.queryCount ?? 0),
+                    };
+                })
+                .filter((row): row is VisitorData => row !== null)
+                .sort((a, b) => b.lastSeen - a.lastSeen);
+
+            if (legacyRows.length === 0) {
+                return { rows: [], nextCursor: null };
+            }
+
+            const rows = legacyRows.slice(offset, offset + safeLimit);
+            return {
+                rows,
+                nextCursor: nextOffsetCursor(offset, rows.length, legacyRows.length),
+            };
+        } catch (error) {
+            console.error("Failed to fetch recent visitors via legacy visitor hashes:", error);
+            return { rows: [], nextCursor: null };
+        }
+    };
 
     try {
-        const randomMembers = await kv.exec(["SRANDMEMBER", "visitors", safeLimit]) as string[] | string | null;
-        if (Array.isArray(randomMembers)) {
-            return randomMembers.filter((value): value is string => typeof value === "string");
+        const range = await kv.exec(["ZREVRANGE", ACTOR_LAST_SEEN_KEY, offset, stop, "WITHSCORES"]) as string[] | null;
+        if (!Array.isArray(range) || range.length === 0) {
+            return getLegacyRecentVisitorsPage();
         }
-        if (typeof randomMembers === "string") {
-            return [randomMembers];
+
+        const actorMembers: string[] = [];
+        const scores = new Map<string, number>();
+        for (let i = 0; i < range.length; i += 2) {
+            const member = range[i];
+            const score = Number(range[i + 1]);
+            if (typeof member !== "string" || !Number.isFinite(score)) continue;
+            actorMembers.push(member);
+            scores.set(member, score);
         }
+
+        if (actorMembers.length === 0) {
+            return getLegacyRecentVisitorsPage();
+        }
+
+        const pipeline = kv.pipeline();
+        actorMembers.forEach((member) => pipeline.hgetall(actorHashKey(member)));
+        const actorHashes = await pipeline.exec() as Array<Record<string, string | number> | null>;
+
+        const rows: VisitorData[] = actorMembers.map((member, index) => {
+            const hash = actorHashes[index] ?? {};
+            const isUser = member.startsWith("user:");
+            const actorType: VisitorData["actorType"] = isUser ? "authenticated" : "anonymous";
+            const actorId = isUser ? member.slice("user:".length) : member.slice("anon:".length);
+            const linkedAccount = isUser ? loggedInUserLookup?.get(actorId) : undefined;
+            const fallbackLastSeen = scores.get(member) ?? 0;
+            const parsedLastSeen = numberOrZero(hash.lastSeen ?? fallbackLastSeen);
+            const lastSeen = Number.isFinite(parsedLastSeen) ? parsedLastSeen : fallbackLastSeen;
+            const parsedFirstSeen = numberOrZero(hash.firstSeen ?? lastSeen);
+
+            return {
+                id: actorId,
+                actorKey: member,
+                actorType,
+                userId: isUser ? actorId : null,
+                anonId: isUser ? null : actorId,
+                githubLogin: linkedAccount?.githubLogin ?? (typeof hash.githubLogin === "string" ? hash.githubLogin : null),
+                email: linkedAccount?.email ?? (typeof hash.email === "string" ? hash.email : null),
+                country: typeof hash.country === "string" ? hash.country : "Unknown",
+                device: typeof hash.device === "string" ? hash.device : "unknown",
+                lastSeen,
+                firstSeen: Number.isFinite(parsedFirstSeen) ? parsedFirstSeen : lastSeen,
+                queryCount: numberOrZero(hash.queryCount ?? 0),
+            };
+        });
+
+        return {
+            rows,
+            nextCursor: actorMembers.length < safeLimit
+                ? null
+                : nextOffsetCursor(offset, actorMembers.length),
+        };
     } catch (error) {
-        console.error("Failed to fetch bounded visitor ids via SRANDMEMBER:", error);
+        console.error("Failed to fetch recent visitors via recency index:", error);
+        return { rows: [], nextCursor: null };
     }
+}
 
+async function getActiveUsers24hFromRecencyIndex(): Promise<number> {
     try {
-        const allMembers = await kv.smembers("visitors");
-        if (!Array.isArray(allMembers)) {
-            return [];
-        }
-        return (allMembers as string[]).slice(-safeLimit);
+        const now = Date.now();
+        const active24hRaw = await kv.exec(["ZCOUNT", ACTOR_LAST_SEEN_KEY, now - (24 * 60 * 60 * 1000), "+inf"]);
+        return numberOrZero(active24hRaw);
     } catch (error) {
-        console.error("Failed to fetch visitor ids via SMEMBERS fallback:", error);
-        return [];
+        console.error("Failed to compute 24h activity count from recency index:", error);
+        return 0;
+    }
+}
+
+function toRetentionResult(returningUsers30d: number, activeUsers30d: number): { returningUsers30d: number; retentionRate30d: number } {
+    return {
+        returningUsers30d,
+        retentionRate30d: activeUsers30d > 0
+            ? Number(((returningUsers30d / activeUsers30d) * 100).toFixed(1))
+            : 0,
+    };
+}
+
+function hasAtLeastTwoDistinctDaysInWindow(firstSeen: number, lastSeen: number, windowStart: number): boolean {
+    if (lastSeen < windowStart) {
+        return false;
+    }
+    const boundedFirst = Math.max(firstSeen, windowStart);
+    return dayKeyFromDate(new Date(boundedFirst)) !== dayKeyFromDate(new Date(lastSeen));
+}
+
+async function getRetentionMetrics30dFallback(windowStart: number): Promise<{ returningUsers30d: number; retentionRate30d: number }> {
+    try {
+        const range = await kv.exec(["ZRANGEBYSCORE", ACTOR_LAST_SEEN_KEY, windowStart, "+inf", "WITHSCORES"]) as string[] | null;
+        if (!Array.isArray(range) || range.length === 0) {
+            return toRetentionResult(0, 0);
+        }
+
+        const actorMembers: string[] = [];
+        const lastSeenByActor = new Map<string, number>();
+        for (let i = 0; i < range.length; i += 2) {
+            const member = range[i];
+            const score = Number(range[i + 1]);
+            if (typeof member !== "string" || !Number.isFinite(score)) continue;
+            actorMembers.push(member);
+            lastSeenByActor.set(member, score);
+        }
+
+        if (actorMembers.length === 0) {
+            return toRetentionResult(0, 0);
+        }
+
+        const pipeline = kv.pipeline();
+        actorMembers.forEach((member) => pipeline.hgetall(actorHashKey(member)));
+        const actorHashes = await pipeline.exec() as Array<Record<string, string | number> | null>;
+
+        let returningUsers30d = 0;
+        for (let i = 0; i < actorMembers.length; i += 1) {
+            const member = actorMembers[i];
+            const hash = actorHashes[i] ?? {};
+            const fallbackLastSeen = lastSeenByActor.get(member) ?? 0;
+            const lastSeen = numberOrZero(hash.lastSeen ?? fallbackLastSeen);
+            const firstSeen = numberOrZero(hash.firstSeen ?? lastSeen);
+            const queryCount = numberOrZero(hash.queryCount ?? 0);
+
+            const appearsOnMultipleDays = hasAtLeastTwoDistinctDaysInWindow(firstSeen, lastSeen, windowStart);
+            // During rollout warmup, day-level sets may be incomplete. queryCount>=2 is a conservative repeat-usage fallback.
+            if (appearsOnMultipleDays || queryCount >= 2) {
+                returningUsers30d += 1;
+            }
+        }
+
+        return toRetentionResult(returningUsers30d, actorMembers.length);
+    } catch (error) {
+        console.error("Failed to compute fallback 30d retention metrics:", error);
+        return toRetentionResult(0, 0);
+    }
+}
+
+async function getLegacyRetentionMetrics30d(windowStart: number): Promise<{ returningUsers30d: number; retentionRate30d: number }> {
+    try {
+        const legacyVisitorIds = await kv.smembers(LEGACY_VISITORS_SET_KEY);
+        if (!Array.isArray(legacyVisitorIds) || legacyVisitorIds.length === 0) {
+            return toRetentionResult(0, 0);
+        }
+
+        const validVisitorIds = legacyVisitorIds
+            .filter((id): id is string => typeof id === "string" && id.length > 0);
+        if (validVisitorIds.length === 0) {
+            return toRetentionResult(0, 0);
+        }
+
+        const pipeline = kv.pipeline();
+        validVisitorIds.forEach((id) => pipeline.hgetall(`visitor:${id}`));
+        const visitorHashes = await pipeline.exec() as Array<Record<string, string | number> | null>;
+
+        let activeUsers30d = 0;
+        let returningUsers30d = 0;
+
+        for (let i = 0; i < validVisitorIds.length; i += 1) {
+            const hash = visitorHashes[i] ?? {};
+            const lastSeen = numberOrZero(hash.lastSeen);
+            if (lastSeen < windowStart) {
+                continue;
+            }
+
+            activeUsers30d += 1;
+            const firstSeen = numberOrZero(hash.firstSeen ?? lastSeen);
+            const queryCount = numberOrZero(hash.queryCount ?? 0);
+
+            const appearsOnMultipleDays = hasAtLeastTwoDistinctDaysInWindow(firstSeen, lastSeen, windowStart);
+            if (appearsOnMultipleDays || queryCount >= 2) {
+                returningUsers30d += 1;
+            }
+        }
+
+        return toRetentionResult(returningUsers30d, activeUsers30d);
+    } catch (error) {
+        console.error("Failed to compute legacy 30d retention metrics:", error);
+        return toRetentionResult(0, 0);
+    }
+}
+
+async function getRetentionMetrics30d(): Promise<{ returningUsers30d: number; retentionRate30d: number }> {
+    try {
+        const now = Date.now();
+        const windowStart = now - (30 * 24 * 60 * 60 * 1000);
+        const dayKeys = getRecentDayKeys(30);
+        const pipeline = kv.pipeline();
+        dayKeys.forEach((day) => pipeline.smembers(activeDayKey(day)));
+        const dayMembers = await pipeline.exec() as Array<string[] | null>;
+
+        const activityDaysByActor = new Map<string, number>();
+        for (const members of dayMembers) {
+            if (!Array.isArray(members)) continue;
+            for (const member of members) {
+                activityDaysByActor.set(member, (activityDaysByActor.get(member) ?? 0) + 1);
+            }
+        }
+
+        const activeUsers30d = activityDaysByActor.size;
+        let returningUsers30d = 0;
+        activityDaysByActor.forEach((days) => {
+            if (days >= 2) {
+                returningUsers30d += 1;
+            }
+        });
+
+        let best = toRetentionResult(returningUsers30d, activeUsers30d);
+
+        const fallback = await getRetentionMetrics30dFallback(windowStart);
+        if (
+            fallback.returningUsers30d > best.returningUsers30d ||
+            (fallback.returningUsers30d === best.returningUsers30d && fallback.retentionRate30d > best.retentionRate30d)
+        ) {
+            best = fallback;
+        }
+
+        const legacyFallback = await getLegacyRetentionMetrics30d(windowStart);
+        if (
+            legacyFallback.returningUsers30d > best.returningUsers30d ||
+            (legacyFallback.returningUsers30d === best.returningUsers30d && legacyFallback.retentionRate30d > best.retentionRate30d)
+        ) {
+            best = legacyFallback;
+        }
+
+        return best;
+    } catch (error) {
+        console.error("Failed to compute 30d retention metrics:", error);
+        return { returningUsers30d: 0, retentionRate30d: 0 };
     }
 }
 
@@ -737,31 +1266,48 @@ async function getSelectionPerformance(window: SelectionPerformanceWindow): Prom
 async function getAnalyticsSummaryUncached(): Promise<AnalyticsSummaryData> {
     try {
         const adminUsername = process.env.ADMIN_GITHUB_USERNAME?.trim();
-        const [anonVisitorCountRaw, totalAnonQueriesRaw, manualAdjustments, kvInfo, geoDeviceStats, authUserAgg] = await Promise.all([
-            kv.scard("visitors"),
+        const [actorCountRaw, anonVisitorCountRaw, totalAnonQueriesRaw, manualAdjustments, kvInfo, geoDeviceStats] = await Promise.all([
+            kv.exec(["ZCARD", ACTOR_LAST_SEEN_KEY]),
+            kv.scard(LEGACY_VISITORS_SET_KEY),
             kv.get<number>("queries:total"),
             getManualAnalyticsAdjustments(),
             getKVStats(),
             getGeoDeviceStatsFromHashes(),
-            prisma.user.aggregate({
-                where: adminUsername ? {
-                    OR: [
-                        { githubLogin: { not: adminUsername } },
-                        { githubLogin: null },
-                    ],
-                } : {},
-                _sum: { queryCount: true },
-                _count: { id: true },
-            }),
         ]);
 
-        const totalAnonVisitors = Number(anonVisitorCountRaw || 0);
-        const totalAnonQueries = Number(totalAnonQueriesRaw || 0);
-        const totalLoggedInUsers = Number(authUserAgg._count.id || 0);
-        const authQueryTotal = Number(authUserAgg._sum.queryCount || 0);
+        const totalActors = numberOrZero(actorCountRaw);
+        const totalAnonVisitors = numberOrZero(anonVisitorCountRaw);
+        const totalAnonQueries = numberOrZero(totalAnonQueriesRaw);
+        let totalLoggedInUsers = 0;
+        let authQueryTotal = 0;
+
+        if (!isAnalyticsDbInBackoff()) {
+            try {
+                const authUserAgg = await prisma.user.aggregate({
+                    where: adminUsername ? {
+                        OR: [
+                            { githubLogin: { not: adminUsername } },
+                            { githubLogin: null },
+                        ],
+                    } : {},
+                    _sum: { queryCount: true },
+                    _count: { id: true },
+                });
+                totalLoggedInUsers = numberOrZero(authUserAgg._count.id);
+                authQueryTotal = numberOrZero(authUserAgg._sum.queryCount);
+            } catch (error) {
+                if (!activateAnalyticsDbBackoff("summary aggregate", error)) {
+                    console.error("Failed to fetch authenticated summary counters:", error);
+                }
+            }
+        }
+
+        const totalVisitors = totalActors > 0
+            ? totalActors + manualAdjustments.visitors
+            : totalAnonVisitors + manualAdjustments.visitors + totalLoggedInUsers;
 
         return {
-            totalVisitors: totalAnonVisitors + manualAdjustments.visitors + totalLoggedInUsers,
+            totalVisitors,
             totalQueries: totalAnonQueries + manualAdjustments.queries + authQueryTotal,
             totalLoggedInUsers,
             deviceStats: geoDeviceStats.deviceStats,
@@ -790,16 +1336,18 @@ async function getAnalyticsSummaryUncached(): Promise<AnalyticsSummaryData> {
 export const getAnalyticsSummary = unstable_cache(
     async (): Promise<AnalyticsSummaryData> => getAnalyticsSummaryUncached(),
     ["admin-analytics-summary-v1"],
-    { revalidate: 90, tags: ["admin-analytics-summary"] },
+    { revalidate: DEFAULT_ADMIN_ANALYTICS_REVALIDATE_SECONDS, tags: ["admin-analytics-summary", "admin-analytics-snapshot"] },
 );
 
 export async function getAnalyticsDetails(options: AnalyticsDetailsOptions = {}): Promise<Partial<AnalyticsData>> {
     const {
         visitorLimit = DEFAULT_VISITOR_DETAIL_LIMIT,
+        visitorCursor,
         loggedInLimit = DEFAULT_LOGGED_IN_DETAIL_LIMIT,
+        loggedInCursor,
         includeSelection = true,
         includeFunnel = true,
-        includeFalsePositiveReview = true,
+        includeFalsePositiveReview = false,
         includeKvHistory = true,
     } = options;
 
@@ -807,11 +1355,10 @@ export async function getAnalyticsDetails(options: AnalyticsDetailsOptions = {})
         const safeVisitorLimit = Math.max(1, Math.min(100, Math.floor(visitorLimit)));
         const safeLoggedInLimit = Math.max(1, Math.min(200, Math.floor(loggedInLimit)));
 
-        const [visitorIdsRaw, loggedInUsers, selection24h, selection7d, reportFunnel, falsePositiveReview] = await Promise.all([
-            getBoundedVisitorIds(safeVisitorLimit),
-            getLoggedInUserStats(safeLoggedInLimit).catch((error) => {
+        const [loggedInPage, selection24h, selection7d, reportFunnel, falsePositiveReview, activeUsers24h, retentionMetrics] = await Promise.all([
+            getLoggedInUserStatsPage(safeLoggedInLimit, loggedInCursor).catch((error) => {
                 console.error("Failed to fetch logged-in user analytics:", error);
-                return [];
+                return { rows: [], nextCursor: null, total: 0 };
             }),
             includeSelection ? getSelectionPerformance("24h") : Promise.resolve(EMPTY_SELECTION_METRICS),
             includeSelection ? getSelectionPerformance("7d") : Promise.resolve(EMPTY_SELECTION_METRICS),
@@ -819,36 +1366,13 @@ export async function getAnalyticsDetails(options: AnalyticsDetailsOptions = {})
                 console.error("Failed to fetch report funnel analytics:", error);
                 return emptyReportFunnelMetrics();
             }) : Promise.resolve(emptyReportFunnelMetrics()),
-            includeFalsePositiveReview ? getFalsePositiveReviewSummary().catch((error) => {
-                console.error("Failed to fetch false positive review data:", error);
-                return EMPTY_FALSE_POSITIVE_REVIEW;
-            }) : Promise.resolve(EMPTY_FALSE_POSITIVE_REVIEW),
+            includeFalsePositiveReview ? getCachedFalsePositiveReviewSummary() : Promise.resolve(EMPTY_FALSE_POSITIVE_REVIEW),
+            getActiveUsers24hFromRecencyIndex(),
+            getRetentionMetrics30d(),
         ]);
 
-        const sortedVisitorIds = visitorIdsRaw;
-        const visitorPipeline = kv.pipeline();
-        sortedVisitorIds.forEach((id) => visitorPipeline.hgetall(`visitor:${id}`));
-        const visitorDetails = await visitorPipeline.exec() as Array<Partial<VisitorData> | null>;
-
-        const recentVisitors: VisitorData[] = [];
-        let activeUsers24h = 0;
-        const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
-
-        visitorDetails.forEach((details, index) => {
-            if (!details) return;
-            const visitor: VisitorData = {
-                id: sortedVisitorIds[index],
-                country: details.country ?? "Unknown",
-                device: details.device ?? "unknown",
-                lastSeen: Number(details.lastSeen),
-                firstSeen: Number(details.firstSeen ?? details.lastSeen),
-                queryCount: Number(details.queryCount ?? 0),
-            };
-            recentVisitors.push(visitor);
-            if (visitor.lastSeen > oneDayAgo) {
-                activeUsers24h += 1;
-            }
-        });
+        const loggedInLookup = new Map<string, LoggedInUserData>(loggedInPage.rows.map((row) => [row.id, row]));
+        const visitorsPage = await getRecentVisitorsPage(safeVisitorLimit, visitorCursor, loggedInLookup);
 
         let kvStats: AnalyticsData["kvStats"] | undefined;
         if (includeKvHistory) {
@@ -862,9 +1386,14 @@ export async function getAnalyticsDetails(options: AnalyticsDetailsOptions = {})
         }
 
         return {
+            activeNow: 0,
             activeUsers24h,
-            recentVisitors,
-            loggedInUsers,
+            returningUsers30d: retentionMetrics.returningUsers30d,
+            retentionRate30d: retentionMetrics.retentionRate30d,
+            recentVisitors: visitorsPage.rows,
+            loggedInUsers: loggedInPage.rows,
+            nextVisitorCursor: visitorsPage.nextCursor,
+            nextLoggedInCursor: loggedInPage.nextCursor,
             searchPerformance: includeSelection ? {
                 byWindow: {
                     "24h": selection24h,
@@ -878,9 +1407,14 @@ export async function getAnalyticsDetails(options: AnalyticsDetailsOptions = {})
     } catch (error) {
         console.error("Failed to fetch analytics details:", error);
         return {
+            activeNow: 0,
             activeUsers24h: 0,
+            returningUsers30d: 0,
+            retentionRate30d: 0,
             recentVisitors: [],
             loggedInUsers: [],
+            nextVisitorCursor: null,
+            nextLoggedInCursor: null,
             searchPerformance: includeSelection ? {
                 byWindow: {
                     "24h": EMPTY_SELECTION_METRICS,
@@ -915,9 +1449,14 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
             totalLoggedInUsers: summary.totalLoggedInUsers,
             deviceStats: summary.deviceStats,
             countryStats: summary.countryStats,
+            activeNow: details.activeNow ?? 0,
             activeUsers24h: details.activeUsers24h ?? 0,
+            returningUsers30d: details.returningUsers30d ?? 0,
+            retentionRate30d: details.retentionRate30d ?? 0,
             recentVisitors: details.recentVisitors ?? [],
             loggedInUsers: details.loggedInUsers ?? [],
+            nextVisitorCursor: details.nextVisitorCursor ?? null,
+            nextLoggedInCursor: details.nextLoggedInCursor ?? null,
             kvStats: {
                 currentSize: summary.kvStats?.currentSize ?? 0,
                 maxSize: summary.kvStats?.maxSize ?? 256 * 1024 * 1024,
@@ -937,12 +1476,17 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
         return {
             totalVisitors: 0,
             totalQueries: 0,
+            activeNow: 0,
             activeUsers24h: 0,
+            returningUsers30d: 0,
+            retentionRate30d: 0,
             totalLoggedInUsers: 0,
             deviceStats: {},
             countryStats: {},
             recentVisitors: [],
             loggedInUsers: [],
+            nextVisitorCursor: null,
+            nextLoggedInCursor: null,
             searchPerformance: {
                 byWindow: {
                     "24h": EMPTY_SELECTION_METRICS,
@@ -959,6 +1503,56 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
         };
     }
 }
+
+export const getAdminAnalyticsSnapshot = unstable_cache(
+    async (): Promise<AnalyticsData> => {
+        const [summary, details] = await Promise.all([
+            getAnalyticsSummary(),
+            getAnalyticsDetails({
+                visitorLimit: DEFAULT_VISITOR_DETAIL_LIMIT,
+                loggedInLimit: DEFAULT_LOGGED_IN_DETAIL_LIMIT,
+                includeSelection: true,
+                includeFunnel: true,
+                includeFalsePositiveReview: false,
+                includeKvHistory: true,
+            }),
+        ]);
+
+        return {
+            totalVisitors: summary.totalVisitors,
+            totalQueries: summary.totalQueries,
+            totalLoggedInUsers: summary.totalLoggedInUsers,
+            deviceStats: summary.deviceStats,
+            countryStats: summary.countryStats,
+            activeNow: details.activeNow ?? 0,
+            activeUsers24h: details.activeUsers24h ?? 0,
+            returningUsers30d: details.returningUsers30d ?? 0,
+            retentionRate30d: details.retentionRate30d ?? 0,
+            recentVisitors: details.recentVisitors ?? [],
+            loggedInUsers: details.loggedInUsers ?? [],
+            nextVisitorCursor: details.nextVisitorCursor ?? null,
+            nextLoggedInCursor: details.nextLoggedInCursor ?? null,
+            kvStats: {
+                currentSize: summary.kvStats?.currentSize ?? 0,
+                maxSize: summary.kvStats?.maxSize ?? 256 * 1024 * 1024,
+                history: details.kvStats?.history ?? [],
+            },
+            searchPerformance: details.searchPerformance ?? {
+                byWindow: {
+                    "24h": EMPTY_SELECTION_METRICS,
+                    "7d": EMPTY_SELECTION_METRICS,
+                },
+            },
+            reportFunnel: details.reportFunnel ?? emptyReportFunnelMetrics(),
+            falsePositiveReview: details.falsePositiveReview ?? EMPTY_FALSE_POSITIVE_REVIEW,
+        };
+    },
+    ["admin-analytics-snapshot-v1"],
+    {
+        revalidate: DEFAULT_ADMIN_ANALYTICS_REVALIDATE_SECONDS,
+        tags: ["admin-analytics-snapshot", "admin-analytics-summary", "admin-analytics-details"],
+    }
+);
 
 interface PublicStatsData {
     totalVisitors: number;

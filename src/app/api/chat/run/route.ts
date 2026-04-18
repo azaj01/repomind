@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { getAnonymousActorId } from "@/lib/actor-id";
+import { ANON_COOKIE_NAME, getAnonymousActorId } from "@/lib/actor-id";
 import { getInvalidSessionApiError, getSessionAuthState, getSessionUserId } from "@/lib/session-guard";
 
 type CreateRunBody = {
@@ -33,7 +33,8 @@ export async function POST(req: NextRequest) {
     }
 
     const userId = getSessionUserId(session);
-    const actorId = userId ?? getAnonymousActorId(req.headers);
+    const anonCookieId = req.cookies.get(ANON_COOKIE_NAME)?.value ?? null;
+    const actorId = userId ?? getAnonymousActorId(req.headers, anonCookieId);
 
     const body = (await req.json()) as Partial<CreateRunBody>;
     const scope = body.scope;
@@ -100,7 +101,8 @@ export async function GET(req: NextRequest) {
     }
 
     const userId = getSessionUserId(session);
-    const actorId = userId ?? getAnonymousActorId(req.headers);
+    const anonCookieId = req.cookies.get(ANON_COOKIE_NAME)?.value ?? null;
+    const actorId = userId ?? getAnonymousActorId(req.headers, anonCookieId);
 
     const { searchParams } = new URL(req.url);
     const runId = searchParams.get("runId") ?? "";
@@ -133,4 +135,3 @@ export async function GET(req: NextRequest) {
         updatedAt: run.updatedAt.toISOString(),
     });
 }
-

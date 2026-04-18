@@ -125,24 +125,23 @@ export async function createFalsePositiveSubmission(input: CreateFalsePositiveSu
 }
 
 export async function getFalsePositiveReviewSummary(limit = 50): Promise<FalsePositiveReviewSummary> {
-    const [records, counts] = await Promise.all([
-        prisma.reportFalsePositive.findMany({
-            orderBy: { createdAt: "desc" },
-            take: limit,
-            include: {
-                submittedByUser: {
-                    select: { githubLogin: true },
-                },
-                reviewedByUser: {
-                    select: { githubLogin: true },
-                },
+    const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+    const records = await prisma.reportFalsePositive.findMany({
+        orderBy: { createdAt: "desc" },
+        take: safeLimit,
+        include: {
+            submittedByUser: {
+                select: { githubLogin: true },
             },
-        }),
-        prisma.reportFalsePositive.groupBy({
-            by: ["status"],
-            _count: { _all: true },
-        }),
-    ]);
+            reviewedByUser: {
+                select: { githubLogin: true },
+            },
+        },
+    });
+    const counts = await prisma.reportFalsePositive.groupBy({
+        by: ["status"],
+        _count: { _all: true },
+    });
 
     const countMap = new Map(counts.map((row) => [row.status, row._count._all]));
 

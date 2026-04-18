@@ -10,7 +10,8 @@
  * No orchestration, no raw GitHub shapes, no inline context building.
  */
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { revalidateTag } from "next/cache";
 import type { ReportFalsePositiveReason } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { isAdminUser } from "@/lib/admin-auth";
@@ -28,6 +29,7 @@ import {
     getRecentProfileCommitsSnapshot,
 } from "@/lib/github";
 import {
+    ADMIN_ANALYTICS_CACHE_TAGS,
     trackEvent,
     trackAuthenticatedQueryEvent,
     getPublicStats,
@@ -35,6 +37,7 @@ import {
     resetReportConversionMetrics,
     type ReportConversionEvent,
 } from "@/lib/analytics";
+import { ANON_COOKIE_NAME, isValidAnonymousCookieId } from "@/lib/actor-id";
 import { getRepoIndexStatus } from "@/lib/services/repo-index-service";
 import type { StreamUpdate } from "@/lib/streaming-types";
 import type { GitHubProfile } from "@/lib/github";
@@ -129,11 +132,24 @@ function classifyStreamError(error: unknown): { message: string; code?: string }
  */
 async function trackQueryEvent(visitorId: string | undefined): Promise<void> {
     const session = await auth();
+    const h = await headers();
+    const cookieStore = await cookies();
+    const userAgent = h.get("user-agent") ?? "";
+    const country = h.get("x-vercel-ip-country") ?? "Unknown";
+    const device = /mobile/i.test(userAgent) ? "mobile" : "desktop";
+    const cookieAnonId = cookieStore.get(ANON_COOKIE_NAME)?.value;
+    const anonIdFromCookie = isValidAnonymousCookieId(cookieAnonId) ? `anon_${cookieAnonId}` : undefined;
+    const anonId = visitorId && visitorId.startsWith("anon_") ? visitorId : anonIdFromCookie;
     
     // If authenticated, we use trackAuthenticatedQueryEvent which handles 
     // migration from anonId (visitorId) and excludes admins.
     if (session?.user?.id) {
-        await trackAuthenticatedQueryEvent(session.user.id, visitorId);
+        await trackAuthenticatedQueryEvent(session.user.id, {
+            anonId,
+            country,
+            device,
+            userAgent,
+        });
         return;
     }
 
@@ -142,16 +158,27 @@ async function trackQueryEvent(visitorId: string | undefined): Promise<void> {
         return;
     }
 
-    if (!visitorId) return;
+    if (!anonId) return;
 
     try {
-        const h = await headers();
-        const userAgent = h.get("user-agent") ?? "";
-        const country = h.get("x-vercel-ip-country") ?? "Unknown";
-        const device = /mobile/i.test(userAgent) ? "mobile" : "desktop";
-        await trackEvent(visitorId, "query", { country, device, userAgent });
+        await trackEvent(anonId, "query", { country, device, userAgent });
     } catch (e) {
         console.error("Analytics tracking failed:", e);
+    }
+}
+
+function revalidateAdminAnalytics() {
+    for (const tag of ADMIN_ANALYTICS_CACHE_TAGS) {
+        try {
+            revalidateTag(tag, "max");
+        } catch (error) {
+            // Some unit-test contexts do not provide Next.js revalidation store.
+            if (process.env.NODE_ENV === "test") {
+                console.warn(`Skipped revalidateTag(${tag}) in test context`, error);
+            } else {
+                throw error;
+            }
+        }
     }
 }
 
@@ -1133,11 +1160,13 @@ export async function updateReportFalsePositiveReviewStatus(input: {
         throw new Error("Invalid status");
     }
 
-    return updateFalsePositiveStatus({
+    const updated = await updateFalsePositiveStatus({
         submissionId: input.submissionId,
         status: input.status,
         reviewedByUserId: userId ?? null,
     });
+    revalidateAdminAnalytics();
+    return updated;
 }
 
 export async function startFindingFixVerification(input: {
@@ -1171,6 +1200,7 @@ export async function resetAdminReportFunnel() {
     }
 
     await resetReportConversionMetrics();
+    revalidateAdminAnalytics();
 
     return { ok: true };
 }
@@ -1203,6 +1233,7 @@ export async function deleteLoggedInUserAccount(input: { userId: string }) {
     await prisma.user.delete({
         where: { id: input.userId },
     });
+    revalidateAdminAnalytics();
 
     return { ok: true, deletedUserId: input.userId };
 }

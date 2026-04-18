@@ -16,6 +16,7 @@ vi.mock("@/lib/auth", () => ({
 }));
 
 vi.mock("@/lib/actor-id", () => ({
+    ANON_COOKIE_NAME: "rm_anon_id",
     getAnonymousActorId: getAnonymousActorIdMock,
 }));
 

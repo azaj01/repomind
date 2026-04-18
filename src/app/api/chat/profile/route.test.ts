@@ -38,7 +38,10 @@ vi.mock("@/lib/cache", () => ({
 }));
 
 vi.mock("@/lib/actor-id", () => ({
+    ANON_COOKIE_NAME: "rm_anon_id",
+    getAnonymousCookieIdFromActorId: vi.fn(),
     getAnonymousActorId: getAnonymousActorIdMock,
+    isValidAnonymousCookieId: vi.fn().mockReturnValue(false),
 }));
 
 import { POST } from "@/app/api/chat/profile/route";
@@ -247,7 +250,12 @@ describe("POST /api/chat/profile", () => {
 
         expect(response.status).toBe(200);
         // Auth user tracked via trackAuthenticatedQueryEvent, NOT trackEvent
-        expect(trackAuthenticatedQueryEventMock).toHaveBeenCalledWith("user_123", undefined);
+        expect(trackAuthenticatedQueryEventMock).toHaveBeenCalledWith("user_123", {
+            anonId: undefined,
+            country: "IN",
+            device: "mobile",
+            userAgent: "Mozilla/5.0 (iPhone; Mobile)",
+        });
         expect(trackEventMock).not.toHaveBeenCalled();
         expect(consumeToolBudgetUsageMock).toHaveBeenCalledWith("profile", "authenticated", "user_123", 2);
     });

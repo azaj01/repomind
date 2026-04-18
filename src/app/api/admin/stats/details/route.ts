@@ -14,6 +14,13 @@ function parseLimit(value: string | null, fallback: number, max: number): number
     return Math.max(1, Math.min(max, parsed));
 }
 
+function parseCursor(value: string | null): string | null {
+    if (!value) return null;
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed)) return null;
+    return String(Math.max(0, parsed));
+}
+
 export async function GET(req: NextRequest) {
     try {
         const session = await auth();
@@ -22,14 +29,18 @@ export async function GET(req: NextRequest) {
         }
 
         const visitorLimit = parseLimit(req.nextUrl.searchParams.get("visitorLimit"), 10, 100);
+        const visitorCursor = parseCursor(req.nextUrl.searchParams.get("visitorCursor"));
         const loggedInLimit = parseLimit(req.nextUrl.searchParams.get("loggedInLimit"), 10, 200);
+        const loggedInCursor = parseCursor(req.nextUrl.searchParams.get("loggedInCursor"));
 
         const details = await getAnalyticsDetails({
             visitorLimit,
+            visitorCursor,
             loggedInLimit,
+            loggedInCursor,
             includeSelection: true,
             includeFunnel: true,
-            includeFalsePositiveReview: true,
+            includeFalsePositiveReview: false,
             includeKvHistory: true,
         });
 
