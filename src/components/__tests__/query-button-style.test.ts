@@ -12,13 +12,13 @@ const repoSearchSource = readFileSync(
 );
 
 describe("query button modernized styling", () => {
-    it("applies focused-input-theme gradient style to chat send button", () => {
-        expect(chatInputSource).toContain("from-purple-700 via-purple-600 to-indigo-600");
+    it("applies accessible focus-ring and active purple styling to chat send button", () => {
         expect(chatInputSource).toContain("focus-visible:ring-purple-500/60");
+        expect(chatInputSource).toContain("bg-purple-500/10 text-purple-400 border-purple-500/20");
     });
 
-    it("applies matching focused-input-theme gradient style to repo search submit button", () => {
-        expect(repoSearchSource).toContain("from-purple-700 via-purple-600 to-indigo-600");
-        expect(repoSearchSource).toContain("focus-visible:ring-purple-500/60");
+    it("applies visible keyboard focus styling to repo search submit button", () => {
+        expect(repoSearchSource).toContain("focus-visible:ring-1");
+        expect(repoSearchSource).toContain("focus-visible:ring-white/10");
     });
 });

@@ -86,6 +86,7 @@ describe("getRepoFileTree", () => {
         expect(result).toEqual({
             tree: [{ path: "src/index.ts", type: "blob", sha: "s1", size: 10 }],
             hiddenFiles: [],
+            treeSha: "abc123",
         });
         expect(getTreeMock).not.toHaveBeenCalled();
         expect(cacheFileTreeMock).not.toHaveBeenCalled();

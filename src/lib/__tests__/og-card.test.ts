@@ -5,10 +5,10 @@ describe("resolveOgCardSpec", () => {
     it("falls back to the home marketing card for unknown types", () => {
         const spec = resolveOgCardSpec(new URLSearchParams("type=unknown"), "https://repomind.in");
 
-        expect(spec.eyebrow).toBe("Homepage");
-        expect(spec.title).toBe("Chat with any GitHub repo or profile");
+        expect(spec.eyebrow).toBe("RepoMind");
+        expect(spec.title).toBe("AI-Powered Code Intelligence | RepoMind");
         expect(spec.asset).toBe("https://repomind.in/assets/landing_page.png");
-        expect(spec.chips).toEqual(["Repo chat", "Profile intel", "Security scans"]);
+        expect(spec.chips).toEqual(["Chat", "Analyze", "Secure"]);
     });
 
     it("builds repo cards with chat intent and repository stats", () => {
@@ -53,9 +53,9 @@ describe("resolveOgCardSpec", () => {
             "https://repomind.in",
         );
 
-        expect(spec.eyebrow).toBe("Shared Security Report");
+        expect(spec.eyebrow).toBe("RepoMind Security Report");
         expect(spec.title).toBe("acme/widget");
-        expect(spec.description).toContain("2 critical");
+        expect(spec.description).toContain("Review 2 critical, 1 high, 0 medium, 4 low findings");
         expect(spec.description).toContain("Security Health Score 72/100 (B)");
         expect(spec.chips[0]).toBe("Health 72/100");
         expect(spec.chips[1]).toBe("Grade B");

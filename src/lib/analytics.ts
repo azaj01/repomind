@@ -960,6 +960,106 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
     }
 }
 
+interface PublicStatsData {
+    totalVisitors: number;
+    totalQueries: number;
+    totalScans: number;
+}
+
+interface ReadWithFallbackResult<T> {
+    value: T;
+    failed: boolean;
+}
+
+const PUBLIC_STATS_LAST_GOOD_KEY = "stats:public:last-good:v1";
+const PUBLIC_STATS_LAST_GOOD_TTL_SECONDS = 24 * 60 * 60;
+const PUBLIC_STATS_READ_RETRY_ATTEMPTS = 2;
+const PUBLIC_STATS_READ_RETRY_DELAY_MS = 120;
+
+let inMemoryLastKnownPublicStats: PublicStatsData | null = null;
+
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function readWithRetry<T>(label: string, reader: () => Promise<T>): Promise<T> {
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= PUBLIC_STATS_READ_RETRY_ATTEMPTS; attempt += 1) {
+        try {
+            return await reader();
+        } catch (error) {
+            lastError = error;
+            if (attempt < PUBLIC_STATS_READ_RETRY_ATTEMPTS) {
+                await sleep(PUBLIC_STATS_READ_RETRY_DELAY_MS * attempt);
+            }
+        }
+    }
+
+    console.error(`[Analytics] ${label} failed after retries:`, lastError);
+    throw lastError;
+}
+
+async function readWithFallback<T>(label: string, reader: () => Promise<T>, fallback: T): Promise<ReadWithFallbackResult<T>> {
+    try {
+        const value = await readWithRetry(label, reader);
+        return { value, failed: false };
+    } catch {
+        return { value: fallback, failed: true };
+    }
+}
+
+function hasAnyPublicStatsValue(stats: PublicStatsData): boolean {
+    return stats.totalVisitors > 0 || stats.totalQueries > 0 || stats.totalScans > 0;
+}
+
+function isValidPublicStats(candidate: unknown): candidate is PublicStatsData {
+    if (!candidate || typeof candidate !== "object") return false;
+
+    const maybeStats = candidate as Record<string, unknown>;
+    return (
+        typeof maybeStats.totalVisitors === "number" &&
+        Number.isFinite(maybeStats.totalVisitors) &&
+        maybeStats.totalVisitors >= 0 &&
+        typeof maybeStats.totalQueries === "number" &&
+        Number.isFinite(maybeStats.totalQueries) &&
+        maybeStats.totalQueries >= 0 &&
+        typeof maybeStats.totalScans === "number" &&
+        Number.isFinite(maybeStats.totalScans) &&
+        maybeStats.totalScans >= 0
+    );
+}
+
+async function persistLastKnownPublicStats(stats: PublicStatsData): Promise<void> {
+    inMemoryLastKnownPublicStats = stats;
+
+    try {
+        await kv.set(PUBLIC_STATS_LAST_GOOD_KEY, { ...stats, updatedAt: Date.now() }, {
+            ex: PUBLIC_STATS_LAST_GOOD_TTL_SECONDS,
+        });
+    } catch (error) {
+        console.error("[Analytics] Failed to persist last-known public stats:", error);
+    }
+}
+
+async function getLastKnownPublicStats(): Promise<PublicStatsData | null> {
+    if (inMemoryLastKnownPublicStats) {
+        return inMemoryLastKnownPublicStats;
+    }
+
+    try {
+        const snapshot = await kv.get<unknown>(PUBLIC_STATS_LAST_GOOD_KEY);
+        if (isValidPublicStats(snapshot)) {
+            inMemoryLastKnownPublicStats = snapshot;
+            return snapshot;
+        }
+    } catch (error) {
+        console.error("[Analytics] Failed to load last-known public stats snapshot:", error);
+    }
+
+    return null;
+}
+
 /**
  * Fetch lightweight, aggregated stats for public viewing (e.g. landing page).
  * Cache for 5 minutes to speed up landing page requests while staying fresh.
@@ -968,55 +1068,82 @@ const getCachedPublicStats = unstable_cache(
     async () => {
         try {
             const adminUsername = process.env.ADMIN_GITHUB_USERNAME?.trim();
-            
-            // 1. Fetch KV data
-            const [anonVisitorCountRaw, totalAnonQueriesRaw, manualAdjustments] = await Promise.all([
-                kv.scard("visitors"),
-                kv.get<number>("queries:total"),
-                getManualAnalyticsAdjustments(),
+
+            const [anonVisitorCountRaw, totalAnonQueriesRaw, manualAdjustments, totalScans, loggedInUserCount, authQueryTotal] = await Promise.all([
+                readWithFallback("kv.scard(visitors)", () => kv.scard("visitors"), 0),
+                readWithFallback("kv.get(queries:total)", () => kv.get<number>("queries:total"), 0),
+                readWithFallback("manual analytics adjustments", () => getManualAnalyticsAdjustments(), { visitors: 0, queries: 0 }),
+                readWithFallback(
+                    "prisma.repoScan.count(public stats)",
+                    () => prisma.repoScan.count({
+                        where: adminUsername ? {
+                            OR: [
+                                { userId: null },
+                                { user: { githubLogin: { not: adminUsername } } },
+                                { user: { githubLogin: null } }
+                            ]
+                        } : {}
+                    }),
+                    0
+                ),
+                readWithFallback(
+                    "prisma.user.count(public stats)",
+                    () => prisma.user.count({
+                        where: adminUsername ? {
+                            OR: [
+                                { githubLogin: { not: adminUsername } },
+                                { githubLogin: null }
+                            ]
+                        } : {}
+                    }),
+                    0
+                ),
+                readWithFallback(
+                    "prisma.user.aggregate(public stats)",
+                    async () => {
+                        const aggregate = await prisma.user.aggregate({
+                            where: adminUsername ? {
+                                OR: [
+                                    { githubLogin: { not: adminUsername } },
+                                    { githubLogin: null }
+                                ]
+                            } : {},
+                            _sum: { queryCount: true }
+                        });
+
+                        return Number(aggregate._sum.queryCount || 0);
+                    },
+                    0
+                ),
             ]);
 
-            // Count all IDs in KV. These are exclusively anonymous visitors or unmigrated historical records.
-            const totalAnonVisitors = Number(anonVisitorCountRaw || 0);
-            const totalAnonQueries = Number(totalAnonQueriesRaw || 0);
+            const totalAnonVisitors = Number(anonVisitorCountRaw.value || 0);
+            const totalAnonQueries = Number(totalAnonQueriesRaw.value || 0);
 
-            // 2. Fetch Postgres data (excluding admin)
-            const [totalScans, loggedInUserCount, authQueryAgg] = await Promise.all([
-                prisma.repoScan.count({
-                    where: adminUsername ? {
-                        OR: [
-                            { userId: null },
-                            { user: { githubLogin: { not: adminUsername } } },
-                            { user: { githubLogin: null } }
-                        ]
-                    } : {}
-                }),
-                prisma.user.count({ 
-                    where: adminUsername ? { 
-                        OR: [
-                            { githubLogin: { not: adminUsername } },
-                            { githubLogin: null }
-                        ]
-                    } : {} 
-                }),
-                prisma.user.aggregate({
-                    where: adminUsername ? { 
-                        OR: [
-                            { githubLogin: { not: adminUsername } },
-                            { githubLogin: null }
-                        ]
-                    } : {},
-                    _sum: { queryCount: true }
-                })
-            ]);
-
-            const authQueryTotal = authQueryAgg._sum.queryCount || 0;
-
-            const finalStats = {
-                totalVisitors: totalAnonVisitors + manualAdjustments.visitors + loggedInUserCount,
-                totalQueries: totalAnonQueries + manualAdjustments.queries + authQueryTotal,
-                totalScans,
+            const finalStats: PublicStatsData = {
+                totalVisitors: totalAnonVisitors + manualAdjustments.value.visitors + loggedInUserCount.value,
+                totalQueries: totalAnonQueries + manualAdjustments.value.queries + authQueryTotal.value,
+                totalScans: totalScans.value,
             };
+
+            const hadReadFailure = [
+                anonVisitorCountRaw,
+                totalAnonQueriesRaw,
+                manualAdjustments,
+                totalScans,
+                loggedInUserCount,
+                authQueryTotal,
+            ].some((entry) => entry.failed);
+
+            if (!hadReadFailure && hasAnyPublicStatsValue(finalStats)) {
+                await persistLastKnownPublicStats(finalStats);
+            } else if (hadReadFailure) {
+                const fallbackStats = await getLastKnownPublicStats();
+                if (fallbackStats) {
+                    console.warn("[Analytics] Using last-known public stats after transient read failures.");
+                    return fallbackStats;
+                }
+            }
 
             // Debug log for admin visibility (only in server console)
             console.log("[Analytics] Calculated public stats:", finalStats);
@@ -1024,6 +1151,12 @@ const getCachedPublicStats = unstable_cache(
             return finalStats;
         } catch (error: unknown) {
             console.error("Failed to fetch public stats:", error);
+            const fallbackStats = await getLastKnownPublicStats();
+            if (fallbackStats) {
+                console.warn("[Analytics] Returning last-known public stats after hard failure.");
+                return fallbackStats;
+            }
+
             return {
                 totalVisitors: 0,
                 totalQueries: 0,
@@ -1031,7 +1164,7 @@ const getCachedPublicStats = unstable_cache(
             };
         }
     },
-    ["public-stats-v2"], // Bumped key to force refresh
+    ["public-stats-v3"], // Bumped key to force refresh
     {
         revalidate: 300,
         tags: ["public-stats"],
