@@ -30,10 +30,10 @@ export function getGenAI(): GoogleGenerativeAI {
 }
 
 /** Default model for all general-purpose AI tasks (chat, analysis, generation) */
-export const DEFAULT_MODEL = process.env.GEMINI_THINKING_MODEL || "gemini-3-flash-preview";
-export const FILE_SELECTOR_MODEL = process.env.GEMINI_FILE_SELECTOR_MODEL || "gemini-3.1-flash-lite-preview";
-export const LITE_MODEL = process.env.GEMINI_LITE_MODEL || "gemini-3.1-flash-lite-preview";
-export const THINKING_MODEL = process.env.GEMINI_THINKING_MODEL || "gemini-3-flash-preview";
+export const DEFAULT_MODEL = process.env.GEMINI_THINKING_MODEL || "gemini-3.8-flash";
+export const FILE_SELECTOR_MODEL = process.env.GEMINI_FILE_SELECTOR_MODEL || "gemini-3.5-flash-lite";
+export const LITE_MODEL = process.env.GEMINI_LITE_MODEL || "gemini-3.5-flash-lite";
+export const THINKING_MODEL = process.env.GEMINI_THINKING_MODEL || "gemini-3.8-flash";
 
 /** Supported model preferences for the user interface */
 export type ModelPreference = "flash" | "thinking";

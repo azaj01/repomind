@@ -6,7 +6,7 @@
   <a href="https://github.com/403errors/repomind"><img src="https://img.shields.io/github/stars/403errors/repomind?style=social" alt="GitHub stars" /></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License" /></a>
   <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-16-black" alt="Next.js" /></a>
-  <a href="https://ai.google.dev/"><img src="https://img.shields.io/badge/Gemini-3_Flash_Preview-blue" alt="Gemini" /></a>
+  <a href="https://ai.google.dev/"><img src="https://img.shields.io/badge/Gemini-3.8_Flash-blue" alt="Gemini" /></a>
 </p>
 
 <p align="center">
@@ -165,9 +165,9 @@ Open [http://localhost:3000](http://localhost:3000).
 
 Repo chat now uses separate models for file selection and answer generation:
 
-- `GEMINI_FILE_SELECTOR_MODEL` (default: `gemini-3.1-flash-lite-preview`)
-- `GEMINI_LITE_MODEL` (default: `gemini-3.1-flash-lite-preview`)
-- `GEMINI_THINKING_MODEL` (default: `gemini-3-flash-preview`)
+- `GEMINI_FILE_SELECTOR_MODEL` (default: `gemini-3.5-flash-lite`)
+- `GEMINI_LITE_MODEL` (default: `gemini-3.5-flash-lite`)
+- `GEMINI_THINKING_MODEL` (default: `gemini-3.8-flash`)
 
 ### Realtime Chat Feedback
 
